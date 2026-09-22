@@ -11,7 +11,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import Engine, build_info
+from . import build_info, create_engine
 from .format import HEADER, MAGIC
 
 
@@ -140,9 +140,7 @@ def run_once(engine: object, prompts: list[list[int]], output_length: int,
 def benchmark(model_path: Path, tokenizer_name: str, prompt_file: Path,
               output_length: int, warmups: int, repetitions: int,
               max_sequences: int, max_model_length: int, kv_cache_mib: int,
-              stop_on_eos: bool = False) -> dict:
-    if Engine is None:
-        raise RuntimeError("the CUDA extension is not installed")
+              stop_on_eos: bool = False, backend: str = "auto") -> dict:
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
@@ -159,7 +157,13 @@ def benchmark(model_path: Path, tokenizer_name: str, prompt_file: Path,
     prompts = [tokens for tokens in prompts if len(tokens) + output_length <= max_model_length]
     if not prompts or len(prompts) > max_sequences:
         raise ValueError("prompt count must be between 1 and max-sequences")
-    engine = Engine(model_path, max_sequences, max_model_length, kv_cache_mib << 20)
+    engine = create_engine(
+        model_path,
+        backend=backend,
+        max_num_sequences=max_sequences,
+        max_model_length=max_model_length,
+        kv_cache_bytes=kv_cache_mib << 20,
+    )
     eos = [int(tokenizer.eos_token_id)] if stop_on_eos else []
     for _ in range(warmups):
         run_once(engine, prompts, min(output_length, 4), eos)
@@ -183,20 +187,24 @@ def benchmark(model_path: Path, tokenizer_name: str, prompt_file: Path,
     output_tokens = sum(item.output_tokens for item in all_metrics)
     prompt_tokens = sum(item.prompt_tokens for item in all_metrics)
     total_seconds = sum(walls) / 1000.0
-    return {
+    result = {
         "schema_version": 1,
-        "implementation": "forge-fp16-paged",
+        "implementation": (
+            "forge-mlx-fp16-contiguous"
+            if getattr(engine, "backend", "cuda") == "mlx"
+            else "forge-cuda-fp16-paged"
+        ),
         "configuration": {
             "model_path": str(model_path), "tokenizer": tokenizer_name,
             "output_length": output_length, "warmups": warmups,
             "repetitions": repetitions, "concurrency": len(prompts),
             "prompt_token_lengths": [len(prompt) for prompt in prompts],
             "max_model_length": max_model_length, "kv_cache_mib": kv_cache_mib,
-            "stop_on_eos": stop_on_eos,
+            "stop_on_eos": stop_on_eos, "backend": getattr(engine, "backend", "cuda"),
         },
         "environment": {
             "platform": platform.platform(), "python": platform.python_version(),
-            "native_build": build_info(),
+            "native_build": engine.build_info() if hasattr(engine, "build_info") else build_info(),
             "git_commit": command_output(["git", "rev-parse", "HEAD"]),
             "nvidia_smi": command_output(["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"]),
             "nvcc": command_output(["nvcc", "--version"]),
@@ -214,11 +222,15 @@ def benchmark(model_path: Path, tokenizer_name: str, prompt_file: Path,
         "engine_stats": engine.stats(),
         "requests": [asdict(item) for item in all_metrics],
     }
+    if hasattr(engine, "close"):
+        engine.close()
+    return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark Forge LLM continuous batching")
     parser.add_argument("--model", type=Path, required=True)
+    parser.add_argument("--backend", choices=["auto", "cuda", "mlx"], default="auto")
     parser.add_argument("--tokenizer", default="Qwen/Qwen2.5-0.5B-Instruct")
     parser.add_argument("--prompts", type=Path, required=True,
                         help="JSON array of strings or pre-tokenized integer arrays")
@@ -234,7 +246,8 @@ def main() -> None:
     args = parser.parse_args()
     result = benchmark(args.model, args.tokenizer, args.prompts, args.output_length,
                        args.warmups, args.repetitions, args.max_sequences,
-                       args.max_model_length, args.kv_cache_mib, args.stop_on_eos)
+                       args.max_model_length, args.kv_cache_mib, args.stop_on_eos,
+                       args.backend)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result["aggregate"], indent=2, sort_keys=True))

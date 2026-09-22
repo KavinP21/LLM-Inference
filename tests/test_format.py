@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -30,3 +31,19 @@ def test_tied_weight_alias_does_not_duplicate_data(tmp_path: Path) -> None:
                  aliases={"lm_head.weight": "model.embed_tokens.weight"})
     _, _, _, _, data_bytes, _, _ = HEADER.unpack_from(path.read_bytes())
     assert data_bytes == embedding.nbytes
+
+
+def test_transformers_5_rope_parameters_are_supported() -> None:
+    source = SimpleNamespace(
+        vocab_size=32,
+        hidden_size=8,
+        intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        max_position_embeddings=32_768,
+        eos_token_id=2,
+        rope_parameters={"rope_type": "default", "rope_theta": 1_000_000.0},
+        rms_norm_eps=1e-6,
+    )
+    assert ModelConfig.from_huggingface(source).rope_theta == 1_000_000.0

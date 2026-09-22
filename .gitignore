@@ -6,7 +6,7 @@ __pycache__/
 *.py[cod]
 *.engine
 *.safetensors
+models/
 benchmark-results/
 profiles/
 .DS_Store
-

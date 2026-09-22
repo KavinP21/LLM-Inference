@@ -16,5 +16,8 @@ jobs:
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
       - run: python3 -m pip install numpy pytest
-      - run: PYTHONPATH=python python3 -m pytest -q tests/test_format.py tests/test_benchmark.py
+      - run: >-
+          PYTHONPATH=python python3 -m pytest -q
+          tests/test_format.py tests/test_model_file_reader.py
+          tests/test_runtime.py tests/test_benchmark.py
       - run: bash -n tools/verify_wsl_environment.sh tools/run_sanitizer.sh

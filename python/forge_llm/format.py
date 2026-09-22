@@ -37,6 +37,14 @@ class ModelConfig:
         eos = getattr(config, "eos_token_id")
         if isinstance(eos, (list, tuple)):
             eos = eos[0]
+        # Transformers 5 moved RoPE fields into ``rope_parameters`` while
+        # older Qwen2 configs expose ``rope_theta`` directly.
+        rope_parameters = getattr(config, "rope_parameters", None) or {}
+        rope_theta = getattr(config, "rope_theta", None)
+        if rope_theta is None:
+            rope_theta = rope_parameters.get("rope_theta")
+        if rope_theta is None:
+            raise ValueError("Hugging Face config does not define rope_theta")
         return cls(
             vocab_size=int(getattr(config, "vocab_size")),
             hidden_size=int(getattr(config, "hidden_size")),
@@ -46,7 +54,7 @@ class ModelConfig:
             num_key_value_heads=int(getattr(config, "num_key_value_heads")),
             max_position_embeddings=int(getattr(config, "max_position_embeddings")),
             eos_token_id=int(eos),
-            rope_theta=float(getattr(config, "rope_theta")),
+            rope_theta=float(rope_theta),
             rms_norm_eps=float(getattr(config, "rms_norm_eps")),
         )
 
