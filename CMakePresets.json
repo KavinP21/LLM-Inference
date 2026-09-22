@@ -1,0 +1,38 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "host-debug",
+      "displayName": "Portable host debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/host-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FORGE_ENABLE_CUDA": "OFF",
+        "FORGE_BUILD_PYTHON": "OFF",
+        "FORGE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "cuda-release",
+      "displayName": "RTX 3070 Ti CUDA release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cuda-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "FORGE_ENABLE_CUDA": "ON",
+        "FORGE_BUILD_PYTHON": "ON",
+        "FORGE_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "host-debug", "configurePreset": "host-debug"},
+    {"name": "cuda-release", "configurePreset": "cuda-release"}
+  ],
+  "testPresets": [
+    {"name": "host-debug", "configurePreset": "host-debug", "output": {"outputOnFailure": true}},
+    {"name": "cuda-release", "configurePreset": "cuda-release", "output": {"outputOnFailure": true}}
+  ]
+}

@@ -1,0 +1,12 @@
+build/
+.cache/
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*.engine
+*.safetensors
+benchmark-results/
+profiles/
+.DS_Store
+

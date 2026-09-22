@@ -1,0 +1,27 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.13"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "forge-llm"
+version = "0.1.0"
+description = "A focused C++/CUDA inference runtime for Qwen2.5"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+export = ["torch>=2.4", "transformers>=4.43", "safetensors>=0.4"]
+test = ["pytest>=8", "torch>=2.4", "transformers>=4.43"]
+
+[project.scripts]
+forge-export = "forge_llm.export:main"
+forge-bench = "forge_llm.benchmark:main"
+forge-bench-reference = "forge_llm.benchmark_reference:main"
+forge-correctness = "forge_llm.correctness:main"
+
+[tool.scikit-build]
+cmake.args = ["-DFORGE_BUILD_PYTHON=ON"]
+wheel.packages = ["python/forge_llm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

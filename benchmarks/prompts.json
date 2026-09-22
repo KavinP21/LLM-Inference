@@ -1,0 +1,7 @@
+[
+  "Explain why autoregressive decoding is often memory-bandwidth bound.",
+  "Write a short C++ RAII wrapper for a GPU allocation.",
+  "What is the difference between prefill and decode in an LLM runtime?",
+  "Describe grouped-query attention in two paragraphs."
+]
+
