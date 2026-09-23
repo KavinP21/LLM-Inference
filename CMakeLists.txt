@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(forge_host
     src/model_file.cpp
+    src/model_validation.cpp
     src/qwen_validation.cpp
     src/sha256.cpp
     src/kv_cache.cpp

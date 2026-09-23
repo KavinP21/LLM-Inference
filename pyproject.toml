@@ -5,21 +5,23 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "forge-llm"
 version = "0.1.0"
-description = "A focused CUDA and MLX/Metal inference runtime for Qwen2.5"
+description = "A focused CUDA and MLX/Metal inference runtime for Qwen2 and Gemma 3"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.26"]
 
 [project.optional-dependencies]
-export = ["torch>=2.4", "transformers>=4.43", "safetensors>=0.4"]
+export = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 mlx = ["mlx>=0.32,<0.33; platform_system == 'Darwin' and platform_machine == 'arm64'"]
 test = ["pytest>=8"]
-reference = ["torch>=2.4", "transformers>=4.43", "safetensors>=0.4"]
+reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 
 [project.scripts]
 forge-export = "forge_llm.export:main"
 forge-bench = "forge_llm.benchmark:main"
 forge-bench-reference = "forge_llm.benchmark_reference:main"
 forge-correctness = "forge_llm.correctness:main"
+forge-validate-long-context = "forge_llm.long_context:main"
+forge-profile-attention = "forge_llm.profile_attention:main"
 
 [tool.scikit-build]
 cmake.args = ["-DFORGE_BUILD_PYTHON=ON"]

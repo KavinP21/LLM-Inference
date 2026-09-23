@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fcntl.h>
+#include <cmath>
 #include <limits>
 #include <numeric>
 #include <sys/mman.h>
@@ -16,7 +17,7 @@ namespace forge {
 namespace {
 
 constexpr std::array<char, 8> kMagic = {'F', 'O', 'R', 'G', 'E', 'L', 'L', 'M'};
-constexpr std::uint32_t kVersion = 1;
+constexpr std::uint32_t kVersion = 2;
 constexpr std::size_t kFixedHeaderBytes = 96;
 
 template <typename T>
@@ -58,13 +59,33 @@ void ModelConfig::validate() const {
             intermediate_size <= 262'144U && num_layers <= 1'024U,
         "model dimensions exceed runtime safety limits");
   check(num_attention_heads > 0 && num_kv_heads > 0, "attention head counts must be non-zero");
-  check(hidden_size % num_attention_heads == 0, "hidden size must divide attention heads");
+  if (model_type == ModelType::qwen2) {
+    check(hidden_size % num_attention_heads == 0 &&
+              head_dim() * num_attention_heads == hidden_size,
+          "Qwen hidden size must match its attention width");
+  }
   check(num_attention_heads % num_kv_heads == 0, "query heads must divide KV heads");
   check(head_dim() % 2 == 0, "RoPE requires an even head dimension");
   check(max_position_embeddings > 0, "maximum position count must be non-zero");
   check(max_position_embeddings <= 16'777'216U, "position limit exceeds runtime safety limit");
   check(eos_token_id < vocab_size, "EOS token id is outside the vocabulary");
-  check(rope_theta > 0.0F && rms_norm_eps > 0.0F, "invalid RoPE or RMSNorm configuration");
+  check(std::isfinite(rope_theta) && std::isfinite(rope_local_theta) &&
+            std::isfinite(rms_norm_eps) && std::isfinite(query_pre_attn_scalar) &&
+            std::isfinite(embedding_scale) && std::isfinite(attn_logit_softcapping) &&
+            std::isfinite(final_logit_softcapping) && std::isfinite(norm_weight_offset),
+        "model configuration contains a non-finite float");
+  check(rope_theta > 0.0F && rope_local_theta > 0.0F && rms_norm_eps > 0.0F &&
+            query_pre_attn_scalar > 0.0F && embedding_scale > 0.0F &&
+            attn_logit_softcapping >= 0.0F && final_logit_softcapping >= 0.0F,
+        "invalid model numerical configuration");
+  if (model_type == ModelType::gemma3_text) {
+    check(activation == ActivationType::gelu_pytorch_tanh && sliding_window > 0U &&
+              sliding_window_pattern > 0U && norm_weight_offset == 1.0F,
+          "unsupported Gemma 3 architecture configuration");
+  } else {
+    check(model_type == ModelType::qwen2 && activation == ActivationType::silu,
+          "unsupported model type or activation");
+  }
 }
 
 ModelFile::ModelFile(const std::filesystem::path& path) {
@@ -94,7 +115,9 @@ ModelFile::ModelFile(const std::filesystem::path& path) {
   const auto all = std::span<const std::byte>(mapping_, file_size_);
   std::size_t cursor = 0;
   for (char expected : kMagic) check(read_scalar<char>(all, cursor) == expected, "invalid model magic");
-  check(read_scalar<std::uint32_t>(all, cursor) == kVersion, "unsupported model format version");
+  const auto version = read_scalar<std::uint32_t>(all, cursor);
+  check(version == 1U || version == kVersion, "unsupported model format version");
+  format_version_ = version;
   const auto metadata_bytes = read_scalar<std::uint32_t>(all, cursor);
   data_start_ = read_scalar<std::uint64_t>(all, cursor);
   const auto data_bytes = read_scalar<std::uint64_t>(all, cursor);
@@ -118,10 +141,33 @@ ModelFile::ModelFile(const std::filesystem::path& path) {
   config_.num_layers = read_scalar<std::uint32_t>(metadata, cursor);
   config_.num_attention_heads = read_scalar<std::uint32_t>(metadata, cursor);
   config_.num_kv_heads = read_scalar<std::uint32_t>(metadata, cursor);
-  config_.max_position_embeddings = read_scalar<std::uint32_t>(metadata, cursor);
-  config_.eos_token_id = read_scalar<std::uint32_t>(metadata, cursor);
-  config_.rope_theta = read_scalar<float>(metadata, cursor);
-  config_.rms_norm_eps = read_scalar<float>(metadata, cursor);
+  if (version == 1U) {
+    config_.max_position_embeddings = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.eos_token_id = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.rope_theta = read_scalar<float>(metadata, cursor);
+    config_.rms_norm_eps = read_scalar<float>(metadata, cursor);
+    config_.attention_head_dim = config_.num_attention_heads == 0U
+                                     ? 0U
+                                     : config_.hidden_size / config_.num_attention_heads;
+    config_.rope_local_theta = config_.rope_theta;
+    config_.query_pre_attn_scalar = static_cast<float>(config_.attention_head_dim);
+  } else {
+    config_.attention_head_dim = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.max_position_embeddings = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.eos_token_id = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.model_type = static_cast<ModelType>(read_scalar<std::uint32_t>(metadata, cursor));
+    config_.activation = static_cast<ActivationType>(read_scalar<std::uint32_t>(metadata, cursor));
+    config_.sliding_window = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.sliding_window_pattern = read_scalar<std::uint32_t>(metadata, cursor);
+    config_.rope_theta = read_scalar<float>(metadata, cursor);
+    config_.rope_local_theta = read_scalar<float>(metadata, cursor);
+    config_.rms_norm_eps = read_scalar<float>(metadata, cursor);
+    config_.query_pre_attn_scalar = read_scalar<float>(metadata, cursor);
+    config_.embedding_scale = read_scalar<float>(metadata, cursor);
+    config_.attn_logit_softcapping = read_scalar<float>(metadata, cursor);
+    config_.final_logit_softcapping = read_scalar<float>(metadata, cursor);
+    config_.norm_weight_offset = read_scalar<float>(metadata, cursor);
+  }
   config_.validate();
   const auto tensor_count = read_scalar<std::uint32_t>(metadata, cursor);
   check(tensor_count < 10000U, "implausible tensor count");

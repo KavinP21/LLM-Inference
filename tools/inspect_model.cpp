@@ -1,5 +1,5 @@
 #include "forge/model_file.h"
-#include "forge/qwen_validation.h"
+#include "forge/model_validation.h"
 
 #include <iomanip>
 #include <iostream>
@@ -11,9 +11,13 @@ int main(int argc, char** argv) {
   }
   try {
     const forge::ModelFile model(argv[1]);
-    forge::validate_qwen2_weights(model);
+    forge::validate_model_weights(model);
     const auto& config = model.config();
-    std::cout << "format: Forge LLM v1\n"
+    const auto model_type = config.model_type == forge::ModelType::qwen2
+                                ? "qwen2"
+                                : "gemma3_text";
+    std::cout << "format: Forge LLM v" << model.format_version() << '\n'
+              << "model_type: " << model_type << '\n'
               << "vocab_size: " << config.vocab_size << '\n'
               << "hidden_size: " << config.hidden_size << '\n'
               << "intermediate_size: " << config.intermediate_size << '\n'
@@ -34,4 +38,3 @@ int main(int argc, char** argv) {
   }
   return 0;
 }
-

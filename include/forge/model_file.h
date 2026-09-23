@@ -31,12 +31,14 @@ class ModelFile {
   ModelFile& operator=(const ModelFile&) = delete;
 
   [[nodiscard]] const ModelConfig& config() const { return config_; }
+  [[nodiscard]] std::uint32_t format_version() const { return format_version_; }
   [[nodiscard]] const std::vector<TensorInfo>& tensors() const { return tensors_; }
   [[nodiscard]] const TensorInfo& tensor(const std::string& name) const;
   [[nodiscard]] std::span<const std::byte> tensor_bytes(const std::string& name) const;
   [[nodiscard]] const std::array<std::uint8_t, 32>& data_digest() const { return data_digest_; }
 
  private:
+  std::uint32_t format_version_{};
   ModelConfig config_{};
   std::vector<TensorInfo> tensors_;
   std::unordered_map<std::string, std::size_t> by_name_;

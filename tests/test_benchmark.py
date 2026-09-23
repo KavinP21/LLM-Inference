@@ -1,9 +1,8 @@
 from types import SimpleNamespace
 
+import numpy as np
 from forge_llm.benchmark import model_provenance, percentile, run_once
 from forge_llm.format import ModelConfig, write_engine
-
-import numpy as np
 
 
 class DummyEngine:
@@ -23,16 +22,23 @@ class DummyEngine:
         for request_id in list(self.remaining):
             self.remaining[request_id] -= 1
             finished = self.remaining[request_id] == 0
-            events.append(SimpleNamespace(request_id=request_id, token=42, finished=finished))
+            events.append(
+                SimpleNamespace(request_id=request_id, token=42, finished=finished)
+            )
             if finished:
                 del self.remaining[request_id]
         return events
 
     def stats(self) -> dict:
         active = len(self.remaining)
-        return {"kv_cache": {"allocated_blocks": active, "reserved_blocks": 0,
-                             "internal_fragmentation_tokens": active * 15,
-                             "occupancy": active / 4}}
+        return {
+            "kv_cache": {
+                "allocated_blocks": active,
+                "reserved_blocks": 0,
+                "internal_fragmentation_tokens": active * 15,
+                "occupancy": active / 4,
+            }
+        }
 
 
 def test_percentile_interpolates() -> None:
@@ -55,6 +61,6 @@ def test_model_provenance_reads_container_digest(tmp_path) -> None:
     config = ModelConfig(4, 2, 4, 1, 1, 1, 8, 1, 10000.0, 1e-6)
     result = write_engine(path, config, {"weight": np.ones((2, 2), dtype=np.float16)})
     provenance = model_provenance(path)
-    assert provenance["model_format_version"] == 1
+    assert provenance["model_format_version"] == 2
     assert provenance["model_data_sha256"] == result["data_sha256"]
     assert provenance["model_file_bytes"] == path.stat().st_size

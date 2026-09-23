@@ -1,5 +1,6 @@
-import pytest
+import math
 
+import pytest
 from forge_llm.runtime import IterationScheduler, KVBlockPool, SequenceState
 
 
@@ -7,15 +8,43 @@ def test_block_boundaries_and_fragmentation() -> None:
     cache = KVBlockPool(capacity_bytes=4 * 512, bytes_per_token=32)
     assert cache.reserve(1, 33)
     cache.ensure_tokens(1, 15)
+    first_block = cache.block_table(1)
+    assert len(first_block) == 1
     assert cache.stats()["allocated_blocks"] == 1
     assert cache.stats()["internal_fragmentation_tokens"] == 1
     cache.ensure_tokens(1, 16)
     assert cache.stats()["allocated_blocks"] == 1
     cache.ensure_tokens(1, 17)
+    assert cache.block_table(1)[0] == first_block[0]
+    assert len(set(cache.block_table(1))) == 2
     assert cache.stats()["allocated_blocks"] == 2
     assert cache.stats()["internal_fragmentation_tokens"] == 15
     cache.release(1)
     assert cache.stats()["allocated_blocks"] == 0
+
+
+def test_physical_block_ids_are_reclaimed_and_reused() -> None:
+    cache = KVBlockPool(capacity_bytes=2 * 512, bytes_per_token=32, layout="paged")
+    assert cache.reserve(1, 17)
+    cache.ensure_tokens(1, 17)
+    released = cache.release(1)
+    assert len(set(released)) == 2
+
+    assert cache.reserve(2, 17)
+    cache.ensure_tokens(2, 17)
+    assert set(cache.block_table(2)) == set(released)
+    assert cache.stats()["layout"] == "paged"
+
+
+@pytest.mark.parametrize("tokens", [15, 16, 17, 31, 32, 33])
+def test_allocator_block_boundary_matrix(tokens: int) -> None:
+    cache = KVBlockPool(capacity_bytes=4 * 512, bytes_per_token=32, layout="paged")
+    assert cache.reserve(1, 64)
+    cache.ensure_tokens(1, tokens)
+    assert len(cache.block_table(1)) == math.ceil(tokens / 16)
+    assert cache.stats()["internal_fragmentation_tokens"] == (
+        math.ceil(tokens / 16) * 16 - tokens
+    )
 
 
 def test_continuous_batch_order_and_reclamation() -> None:
@@ -42,6 +71,21 @@ def test_continuous_batch_order_and_reclamation() -> None:
     scheduler.cancel(third)
     assert cache.stats()["allocated_blocks"] == 0
     assert cache.stats()["reserved_blocks"] == 0
+
+
+def test_active_prefill_remains_scheduled_until_explicitly_finished() -> None:
+    cache = KVBlockPool(capacity_bytes=4 * 512, bytes_per_token=32)
+    scheduler = IterationScheduler(2, 64, 100, cache)
+    first = scheduler.submit([1, 2, 3], 2, [])
+    second = scheduler.submit([4, 5], 2, [])
+
+    assert scheduler.next().prefill == first
+    assert scheduler.next().prefill == first
+    scheduler.finish_prefill(first)
+    scheduler.append_token(first, 6)
+    schedule = scheduler.next()
+    assert schedule.prefill == second
+    assert schedule.decode == (first,)
 
 
 def test_reservations_prevent_mid_generation_overcommit() -> None:

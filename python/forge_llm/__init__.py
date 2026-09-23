@@ -9,13 +9,16 @@ try:
     from _forge import Engine as CudaEngine
     from _forge import SequenceState as CudaSequenceState
     from _forge import build_info as cuda_build_info
-except ImportError:  # CUDA extension is intentionally absent on Apple development hosts.
+except (
+    ImportError
+):  # CUDA extension is intentionally absent on Apple development hosts.
     CudaEngine = None
     CudaSequenceState = None
     cuda_build_info = None
 
 from .backends.mlx import mlx_build_info
-from .mlx_engine import MlxEngine, SequenceState as MlxSequenceState
+from .mlx_engine import MlxEngine
+from .mlx_engine import SequenceState as MlxSequenceState
 
 
 def create_engine(model_path: str | Path, *, backend: str = "auto", **kwargs: object):
