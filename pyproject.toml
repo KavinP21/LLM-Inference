@@ -16,6 +16,7 @@ test = ["pytest>=8"]
 reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 
 [project.scripts]
+forge-quantize = "forge_llm.quantization:main"
 forge-export = "forge_llm.export:main"
 forge-bench = "forge_llm.benchmark:main"
 forge-bench-reference = "forge_llm.benchmark_reference:main"

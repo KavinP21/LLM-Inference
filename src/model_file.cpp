@@ -17,7 +17,7 @@ namespace forge {
 namespace {
 
 constexpr std::array<char, 8> kMagic = {'F', 'O', 'R', 'G', 'E', 'L', 'L', 'M'};
-constexpr std::uint32_t kVersion = 2;
+constexpr std::uint32_t kVersion = 3;
 constexpr std::size_t kFixedHeaderBytes = 96;
 
 template <typename T>
@@ -46,6 +46,7 @@ std::size_t dtype_bytes(DType dtype) {
     case DType::fp16: return 2;
     case DType::fp32: return 4;
     case DType::int32: return 4;
+    case DType::int8: return 1;
   }
   throw Error("unknown tensor dtype");
 }
@@ -116,7 +117,7 @@ ModelFile::ModelFile(const std::filesystem::path& path) {
   std::size_t cursor = 0;
   for (char expected : kMagic) check(read_scalar<char>(all, cursor) == expected, "invalid model magic");
   const auto version = read_scalar<std::uint32_t>(all, cursor);
-  check(version == 1U || version == kVersion, "unsupported model format version");
+  check(version >= 1U && version <= kVersion, "unsupported model format version");
   format_version_ = version;
   const auto metadata_bytes = read_scalar<std::uint32_t>(all, cursor);
   data_start_ = read_scalar<std::uint64_t>(all, cursor);
@@ -129,6 +130,7 @@ ModelFile::ModelFile(const std::filesystem::path& path) {
   check(data_start_ % 256U == 0U, "tensor data is not 256-byte aligned");
   check(data_start_ <= file_size_ && data_bytes == file_size_ - data_start_,
         "invalid tensor data extent");
+  check(data_start_ >= kFixedHeaderBytes + metadata_bytes, "tensor data overlaps metadata");
 
   const auto metadata = all.subspan(kFixedHeaderBytes, metadata_bytes);
   check(sha256(metadata) == metadata_digest, "metadata checksum mismatch");
@@ -188,14 +190,58 @@ ModelFile::ModelFile(const std::filesystem::path& path) {
     check(cursor <= metadata.size() && name_bytes <= metadata.size() - cursor, "truncated tensor name");
     info.name.assign(reinterpret_cast<const char*>(metadata.data() + cursor), name_bytes);
     cursor += name_bytes;
+    check(!info.name.empty(), "empty tensor name");
     info.dtype = static_cast<DType>(dtype_raw);
-    check(info.nbytes == element_count(info) * dtype_bytes(info.dtype),
+    const auto elements = element_count(info);
+    const auto width = dtype_bytes(info.dtype);
+    check(elements <= std::numeric_limits<std::uint64_t>::max() / width,
+          "tensor byte count overflow");
+    check(info.nbytes == elements * width,
           "tensor byte count does not match shape: " + info.name);
     check(info.offset % 256U == 0U, "unaligned tensor: " + info.name);
     check(info.offset <= data_bytes && info.nbytes <= data_bytes - info.offset,
           "tensor outside data section: " + info.name);
     check(by_name_.emplace(info.name, tensors_.size()).second, "duplicate tensor: " + info.name);
     tensors_.push_back(std::move(info));
+  }
+  if (version == 3U) {
+    const auto count = read_scalar<std::uint32_t>(metadata, cursor);
+    check(count > 0 && count <= tensor_count, "invalid quantization count");
+    for (std::uint32_t index = 0; index < count; ++index) {
+      const auto name_size = read_scalar<std::uint16_t>(metadata, cursor);
+      QuantizationSpec spec;
+      spec.scheme = read_scalar<std::uint8_t>(metadata, cursor);
+      spec.axis = read_scalar<std::uint8_t>(metadata, cursor);
+      const auto scale_size = read_scalar<std::uint16_t>(metadata, cursor);
+      check(name_size > 0 && scale_size > 0 && cursor <= metadata.size() &&
+                static_cast<std::size_t>(name_size) + scale_size <= metadata.size() - cursor,
+            "truncated quantization names");
+      std::string name(reinterpret_cast<const char*>(metadata.data() + cursor), name_size);
+      cursor += name_size;
+      spec.scale_name.assign(reinterpret_cast<const char*>(metadata.data() + cursor), scale_size);
+      cursor += scale_size;
+      check(spec.scheme == 1U && spec.axis == 0U, "unsupported quantization scheme or axis");
+      check(quantization_.emplace(name, spec).second, "duplicate quantization descriptor");
+      const auto& weight = tensor(name);
+      const auto& scale = tensor(spec.scale_name);
+      check(weight.dtype == DType::int8 && weight.shape.size() == 2,
+            "INT8 descriptor requires a rank-2 signed INT8 weight");
+      check(scale.dtype == DType::fp32 && scale.shape == std::vector<std::uint32_t>{weight.shape[0]},
+            "INT8 scales require one FP32 value per output channel");
+      std::size_t scale_cursor = 0;
+      const auto scales = tensor_bytes(spec.scale_name);
+      while (scale_cursor < scales.size()) {
+        const auto value = read_scalar<float>(scales, scale_cursor);
+        check(std::isfinite(value) && value > 0.0F, "INT8 scales must be positive and finite");
+      }
+      const auto weights = tensor_bytes(name);
+      check(std::find(weights.begin(), weights.end(), std::byte{128}) == weights.end(),
+            "symmetric INT8 weights must be in [-127,127]");
+    }
+  }
+  for (const auto& info : tensors_) {
+    check(info.dtype != DType::int8 || quantization_.contains(info.name),
+          "INT8 tensor lacks quantization metadata");
   }
   check(cursor == metadata.size(), "unexpected trailing model metadata");
   std::vector<const TensorInfo*> by_offset;
