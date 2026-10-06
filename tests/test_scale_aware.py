@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from forge_llm.cached_policy import validate_search
 from forge_llm.model_file import ModelFile
 from forge_llm.precision_policy import seal_policy, validate_corpora, validate_policy
@@ -21,6 +20,8 @@ from forge_llm.scale_aware import (
 )
 from forge_llm.second_order import (
     DEFAULT_CONFIG as BASE_CONFIG,
+)
+from forge_llm.second_order import (
     CalibrationStats,
     block_moments,
     quantize_second_order,

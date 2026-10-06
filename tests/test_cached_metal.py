@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from forge_llm.cached_decode import replay_cached
 from forge_llm.calibrate_cached import calibrate
 from forge_llm.mlx_engine import MlxEngine

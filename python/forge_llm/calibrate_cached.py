@@ -21,6 +21,8 @@ from .precision_policy import canonical_sha256, seal_policy, validate_corpora
 from .quantization import dequantize_per_channel
 from .second_order import (
     ALGORITHM as STATS_ALGORITHM,
+)
+from .second_order import (
     DEFAULT_CONFIG,
     block_moments,
     quantize_second_order,
