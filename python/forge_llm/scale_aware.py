@@ -14,9 +14,13 @@ import numpy as np
 from .quantization import dequantize_per_channel, quantize_per_channel
 from .second_order import (
     DEFAULT_CONFIG as BASE_CONFIG,
+)
+from .second_order import (
     quantize_second_order,
-    validate_config as validate_base_config,
     validate_moments,
+)
+from .second_order import (
+    validate_config as validate_base_config,
 )
 
 ALGORITHM = "scale_aware_block_second_order_v1"

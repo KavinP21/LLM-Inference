@@ -9,7 +9,6 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "models" / "qwen2.5-0.5b.engine"
 MODEL_NAME = "Qwen2.5-0.5B-Instruct"
@@ -46,7 +45,9 @@ class ForgeChat(tk.Tk):
 
         header = ttk.Frame(outer)
         header.pack(fill="x", pady=(0, 16))
-        ttk.Label(header, text="Forge LLM", font=("SF Pro Display", 24, "bold")).pack(anchor="w")
+        ttk.Label(header, text="Forge LLM", font=("SF Pro Display", 24, "bold")).pack(
+            anchor="w"
+        )
         ttk.Label(
             header,
             text=f"{MODEL_NAME}  ·  Apple MLX",
@@ -64,10 +65,14 @@ class ForgeChat(tk.Tk):
         self.status_dot.pack(side="left")
         self.status_label = ttk.Label(status_row, text="Loading model…")
         self.status_label.pack(side="left", padx=(6, 0))
-        self.load_button = ttk.Button(status_row, text="Load model", command=self._start_loading)
+        self.load_button = ttk.Button(
+            status_row, text="Load model", command=self._start_loading
+        )
         self.load_button.pack(side="right")
 
-        ttk.Label(outer, text="Prompt", font=("SF Pro Text", 11, "bold")).pack(anchor="w")
+        ttk.Label(outer, text="Prompt", font=("SF Pro Text", 11, "bold")).pack(
+            anchor="w"
+        )
         self.prompt = tk.Text(
             outer,
             height=5,
@@ -86,17 +91,23 @@ class ForgeChat(tk.Tk):
         controls = ttk.Frame(outer)
         controls.pack(fill="x", pady=(0, 16))
         ttk.Label(controls, text="Max new tokens").pack(side="left")
-        self.max_tokens = ttk.Spinbox(controls, from_=1, to=MAX_GENERATION_TOKENS, width=8)
+        self.max_tokens = ttk.Spinbox(
+            controls, from_=1, to=MAX_GENERATION_TOKENS, width=8
+        )
         self.max_tokens.set("512")
         self.max_tokens.pack(side="left", padx=(8, 14))
         self.generate_button = ttk.Button(
             controls, text="Generate", command=self._generate, state="disabled"
         )
         self.generate_button.pack(side="left")
-        self.clear_button = ttk.Button(controls, text="Clear chat", command=self._clear_chat)
+        self.clear_button = ttk.Button(
+            controls, text="Clear chat", command=self._clear_chat
+        )
         self.clear_button.pack(side="left", padx=(8, 0))
 
-        ttk.Label(outer, text="Conversation", font=("SF Pro Text", 11, "bold")).pack(anchor="w")
+        ttk.Label(outer, text="Conversation", font=("SF Pro Text", 11, "bold")).pack(
+            anchor="w"
+        )
         response_frame = ttk.Frame(outer)
         response_frame.pack(fill="both", expand=True, pady=(6, 0))
         self.output = tk.Text(
@@ -137,8 +148,8 @@ class ForgeChat(tk.Tk):
         try:
             if not MODEL_PATH.exists():
                 raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
-            from transformers import AutoTokenizer
             from forge_llm import create_engine
+            from transformers import AutoTokenizer
 
             tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
             engine = create_engine(
@@ -174,7 +185,9 @@ class ForgeChat(tk.Tk):
         self.busy = True
         self.generate_button.configure(state="disabled")
         self._set_status("Generating…", "#8a5a00")
-        threading.Thread(target=self._run_generation, args=(prompt, max_tokens), daemon=True).start()
+        threading.Thread(
+            target=self._run_generation, args=(prompt, max_tokens), daemon=True
+        ).start()
 
     def _run_generation(self, prompt: str, max_tokens: int) -> None:
         try:
@@ -194,7 +207,9 @@ class ForgeChat(tk.Tk):
                 max_new_tokens=min(max_tokens, available_tokens),
                 eos_token_ids=[self.tokenizer.eos_token_id],
             )
-            response = self.tokenizer.decode(output_tokens, skip_special_tokens=True).strip()
+            response = self.tokenizer.decode(
+                output_tokens, skip_special_tokens=True
+            ).strip()
             self.events.put(("response", (prompt, response)))
         except Exception as exc:
             self.events.put(("error", str(exc)))
@@ -206,7 +221,9 @@ class ForgeChat(tk.Tk):
                 if kind == "ready":
                     self.engine, self.tokenizer = value  # type: ignore[misc]
                     self.context_limit = int(self.engine.max_model_length)
-                    self.device_name = str(self.engine.build_info().get("device", "Metal"))
+                    self.device_name = str(
+                        self.engine.build_info().get("device", "Metal")
+                    )
                     self.loading = False
                     self.load_button.configure(state="normal", text="Reload model")
                     self.generate_button.configure(state="normal")
@@ -229,7 +246,9 @@ class ForgeChat(tk.Tk):
                     self.busy = False
                     self.load_button.configure(
                         state="normal",
-                        text="Reload model" if self.engine is not None else "Load model",
+                        text="Reload model"
+                        if self.engine is not None
+                        else "Load model",
                     )
                     if self.engine is not None:
                         self.generate_button.configure(state="normal")
@@ -256,7 +275,11 @@ class ForgeChat(tk.Tk):
         self._write_output("\n\n".join(lines))
 
     def _ready_status(self) -> str:
-        context = f"{self.context_limit // 1024}K context" if self.context_limit else "context ready"
+        context = (
+            f"{self.context_limit // 1024}K context"
+            if self.context_limit
+            else "context ready"
+        )
         return f"Ready · {self.device_name} · {context}"
 
     def _clear_chat(self) -> None:

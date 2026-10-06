@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from forge_llm.cached_decode import replay_cached
 from forge_llm.cached_policy import (
     DEFAULT_SEARCH,

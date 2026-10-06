@@ -4,9 +4,8 @@ import sys
 
 import numpy as np
 import pytest
-
-from forge_llm.mlx_engine import MlxEngine
 from forge_llm.backends.mlx import MlxQwenModel
+from forge_llm.mlx_engine import MlxEngine
 from forge_llm.runtime import SequenceState
 from test_quantization import tiny_artifact
 

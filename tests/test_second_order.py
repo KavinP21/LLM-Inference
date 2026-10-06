@@ -252,11 +252,14 @@ def test_activation_capture_restores_method_and_samples_shared_group_once():
     previous = model._linear
     observed = []
     x = np.arange(20).reshape(5, 4)
-    with pytest.raises(RuntimeError, match="unchunked"), capture_inputs(
-        model,
-        {"cov_0": ["q", "k"]},
-        3,
-        lambda key, rows: observed.append((key, rows)),
+    with (
+        pytest.raises(RuntimeError, match="unchunked"),
+        capture_inputs(
+            model,
+            {"cov_0": ["q", "k"]},
+            3,
+            lambda key, rows: observed.append((key, rows)),
+        ),
     ):
         np.testing.assert_array_equal(model._linear(x, "q"), x)
         model._linear(x, "k")

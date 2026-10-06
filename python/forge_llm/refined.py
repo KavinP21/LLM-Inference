@@ -11,9 +11,15 @@ import numpy as np
 from .quantization import dequantize_per_channel, quantize_per_channel
 from .scale_aware import (
     DEFAULT_CONFIG as SCALE_CONFIG,
+)
+from .scale_aware import (
     DEFAULT_SEARCH as DEFAULT_SEARCH,
+)
+from .scale_aware import (
     quantize_scale_aware,
     row_objective,
+)
+from .scale_aware import (
     validate_config as validate_scale_config,
 )
 

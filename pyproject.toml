@@ -13,6 +13,7 @@ dependencies = ["numpy>=1.26"]
 export = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 mlx = ["mlx>=0.32,<0.33; platform_system == 'Darwin' and platform_machine == 'arm64'"]
 test = ["pytest>=8"]
+dev = ["ruff>=0.16,<0.17"]
 reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 
 [project.scripts]
@@ -35,3 +36,14 @@ wheel.packages = ["python/forge_llm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Optional backend/reference imports follow pytest.importorskip in these tests.
+"tests/*.py" = ["E402"]

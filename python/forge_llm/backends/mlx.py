@@ -1,8 +1,8 @@
 """Shared MLX execution primitives and the Qwen2 model adapter.
 
-The initial backend intentionally uses ordinary MLX operations.  It establishes
-the numerical and ownership contracts that later custom Metal kernels must
-preserve.  PyTorch and Transformers are not imported anywhere in this module.
+Native MLX operations provide the selectable baseline; custom Metal kernels
+accelerate eligible transformer and paged-attention shapes. PyTorch and
+Transformers are not imported by this execution backend.
 """
 
 from __future__ import annotations
