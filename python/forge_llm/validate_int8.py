@@ -62,11 +62,15 @@ def quality_gates(summary: dict, reclaimed: bool, cosine_gate: float = 0.999) ->
     return gates
 
 
-def verify_derivation(original, packed) -> dict:
+def verify_derivation(original, packed, calibration_stats: Path | None = None) -> dict:
     """Recompute every packed value and scale; never trust an export label."""
     if original.quantization or not packed.quantization:
         raise ValueError("validation requires FP16 source and INT8 candidate")
     calibrated = None
+    if calibration_stats is not None:
+        from .second_order import CalibrationStats
+
+        calibrated = CalibrationStats(calibration_stats, original)
     for name, spec in packed.quantization.items():
         if original.tensor_info(name).shape != packed.tensor_info(name).shape:
             raise ValueError("source and quantized tensor shapes differ")
@@ -103,6 +107,7 @@ def validate(
     positions: list[int],
     cosine_gate: float = 0.999,
     int8_mode: str = "metal",
+    calibration_stats: Path | None = None,
     decode_mode: str = "batched",
     cached_teacher_forcing: bool = False,
 ) -> dict:
@@ -158,7 +163,7 @@ def validate(
 
         if signature(original.config) != signature(packed.config):
             raise ValueError("FP16 and INT8 architecture configurations differ")
-        derivation = verify_derivation(original, packed)
+        derivation = verify_derivation(original, packed, calibration_stats)
         mx.random.seed(17)
         for name in packed.quantization:
             x = mx.random.normal((4, packed.tensor_info(name).shape[1])).astype(
@@ -371,6 +376,7 @@ def main() -> None:
         "--int8-mode", choices=["metal", "reconstruct"], default="metal"
     )
     parser.add_argument("--positions", type=int, nargs="+", default=[0, 1, 7, 15, 31])
+    parser.add_argument("--calibration-stats", type=Path)
     parser.add_argument(
         "--cached-logits",
         action="store_true",
@@ -390,6 +396,7 @@ def main() -> None:
         args.output_tokens,
         list(range(args.output_tokens)) if args.cached_logits else args.positions,
         int8_mode=args.int8_mode,
+        calibration_stats=args.calibration_stats,
         decode_mode=args.decode_mode,
         cached_teacher_forcing=args.cached_logits,
     )

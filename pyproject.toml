@@ -16,6 +16,7 @@ test = ["pytest>=8"]
 reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 
 [project.scripts]
+forge-calibrate-second-order = "forge_llm.calibrate_second_order:main"
 forge-calibrate-int8 = "forge_llm.calibrate_int8:main"
 forge-validate-int8 = "forge_llm.validate_int8:main"
 forge-profile-int8 = "forge_llm.profile_int8:main"

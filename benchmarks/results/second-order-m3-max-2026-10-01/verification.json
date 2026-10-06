@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "runtime_source_sha256": "21fa0be0da47cb8b14bef2bd7f799ce3a6ad6e3381a5026fc46f4d016d1bc898",
+  "evidence_index_sha256": "d98b44c416ba3990bbadc0e01984bfe294200459355019ef8f589ac277b45828",
+  "junit_sha256": "ec1d1166ce645a64f9502545af261dc439d801b2a93979207621f5f9198d32fe",
+  "verified_checksums": {
+    "indexed_json_files": 74,
+    "statistics_archives": 2,
+    "complete_file_bindings": 17
+  },
+  "tests": {
+    "executed": 141,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_path": "test-results.xml"
+  },
+  "quality_flags_recomputed_from_all_12_raw_summaries": true,
+  "all_artifacts_and_metadata_unchanged_across_measurement": true,
+  "strict_checkpoint_passed": false,
+  "scope": "Readback verification after the final full Python/Metal suite. Unit tests and resource consistency do not certify lossy quantization greedy quality. Existing C++ host/UBSan and both official artifact readers were also executed successfully; no fresh CMake build, ASan, RTX, Linux CI or hardware-counter pass is claimed."
+}

@@ -45,6 +45,7 @@ def quantize_model(
     *,
     retain_fp16: list[str] | None = None,
     policy: dict | None = None,
+    calibration_stats: str | Path | None = None,
 ) -> dict:
     source, output = Path(source), Path(output)
     if source.resolve() == output.resolve():
@@ -69,6 +70,29 @@ def quantize_model(
             if retain_fp16 is not None:
                 raise ValueError("use either a precision policy or explicit retention")
             retain_fp16 = validate_policy(policy, file.data_sha256, projection_names)
+        calibrated = None
+        second_order = policy is not None and policy["algorithm"] in {
+            "block_second_order_joint_forward_v1",
+        }
+        if second_order:
+            from .second_order import CalibrationStats
+
+            if calibration_stats is None:
+                raise ValueError(
+                    "second-order policy requires frozen calibration statistics"
+                )
+            calibrated = CalibrationStats(
+                Path(calibration_stats),
+                file,
+                expected_sha=policy["calibration_stats_sha256"],
+            )
+            if calibrated.config != policy["quantizer_config"]:
+                raise ValueError("policy and calibration configuration differ")
+            expected_algorithm = "block_second_order_joint_forward_v1"
+            if calibrated.algorithm != expected_algorithm:
+                raise ValueError("policy and calibration method differ")
+        elif calibration_stats is not None:
+            raise ValueError("calibration statistics require a second-order policy")
         retained = set(retain_fp16 or [])
         if len(retained) != len(retain_fp16 or []) or not retained <= projection_names:
             raise ValueError("retained FP16 names must be unique supported projections")
@@ -97,7 +121,10 @@ def quantize_model(
             else:
                 seen[key] = name
             if name in projection_names - retained:
-                packed, scales = quantize_per_channel(tensors[name])
+                if calibrated is None:
+                    packed, scales = quantize_per_channel(tensors[name])
+                else:
+                    packed, scales, _ = calibrated.quantize(name, tensors[name])
                 max_error = max(
                     max_error,
                     float(
@@ -139,7 +166,8 @@ def quantize_model(
             quantized_source_projection_bytes=quantized_source_bytes,
             precision_policy=policy,
             precision_policy_sha256=canonical_sha256(policy) if policy else None,
-            quantization_method="rtn_v1",
+            quantization_method=calibrated.method if calibrated else "rtn_v1",
+            calibration_stats_sha256=calibrated.sha256 if calibrated else None,
             quality_status="experimental; calibration is not held-out certification",
         )
     write_manifest(manifest_path, result, str(source))
@@ -157,6 +185,11 @@ def main() -> None:
     choice.add_argument(
         "--policy", type=Path, help="source-bound calibration report/policy"
     )
+    parser.add_argument(
+        "--calibration-stats",
+        type=Path,
+        help="frozen source-bound NPZ for a second-order policy",
+    )
     args = parser.parse_args()
     policy = json.loads(args.policy.read_text()) if args.policy else None
     if policy is not None and "policy" in policy:
@@ -168,6 +201,7 @@ def main() -> None:
                 args.output,
                 retain_fp16=args.retain_fp16,
                 policy=policy,
+                calibration_stats=args.calibration_stats,
             ),
             indent=2,
             sort_keys=True,

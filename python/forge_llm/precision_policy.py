@@ -112,8 +112,22 @@ def validate_policy(
         raise ValueError("unsupported precision policy")
     if policy.get("algorithm") not in {
         "single_projection_logit_ablation_v1",
+        "block_second_order_joint_forward_v1",
     }:
         raise ValueError("unsupported precision selection algorithm")
+    if policy["algorithm"] in {
+        "block_second_order_joint_forward_v1",
+    }:
+        from .second_order import validate_config
+
+        validate_config(policy.get("quantizer_config"))
+        checksum = policy.get("calibration_stats_sha256")
+        if (
+            not isinstance(checksum, str)
+            or len(checksum) != 64
+            or any(c not in "0123456789abcdef" for c in checksum)
+        ):
+            raise ValueError("invalid calibration statistics checksum")
     if policy.get("policy_sha256") != seal_policy(policy)["policy_sha256"]:
         raise ValueError("precision policy checksum mismatch")
     if policy.get("source_data_sha256") != source_sha:
