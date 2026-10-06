@@ -196,6 +196,9 @@ class IterationScheduler:
         input_ids: Iterable[int],
         max_new_tokens: int,
         eos_token_ids: Iterable[int],
+        *,
+        shared_blocks: tuple[int, ...] = (),
+        shared_tokens: int = 0,
     ) -> int:
         prompt = self._tokens(input_ids)
         eos = frozenset(self._tokens(eos_token_ids))
@@ -219,7 +222,13 @@ class IterationScheduler:
         if (
             invalid
             or active >= self.max_sequences
-            or not self.cache.reserve(request_id, request.maximum_tokens)
+            or not (
+                self.cache.reserve_shared(
+                    request_id, request.maximum_tokens, shared_blocks, shared_tokens
+                )
+                if shared_blocks
+                else self.cache.reserve(request_id, request.maximum_tokens)
+            )
         ):
             request.state = SequenceState.REJECTED
             self.requests[request_id] = request
