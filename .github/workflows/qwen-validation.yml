@@ -12,5 +12,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: python3 -m pip install numpy pytest
       - run: PYTHONPATH=python python3 -m pytest -q tests/test_qwen_validation_driver.py
