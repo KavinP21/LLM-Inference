@@ -82,6 +82,13 @@ def prepare(root):
         **frozen["files_sha256"],
     }
     bindings.update({str(p): file_sha256(p) for p in prior.rglob("*") if p.is_file()})
+    incomplete = Path("benchmarks/results/prefix-cache-m3-max-2026-10-02")
+    # Preserve the source-bound partial run that exposed unsupported Qwen
+    # attention dispatch. New validation never overwrites or reuses its rows.
+    if incomplete.exists():
+        bindings.update(
+            {str(p): file_sha256(p) for p in incomplete.rglob("*") if p.is_file()}
+        )
     check_bindings(bindings)
     # Prior live audits were run BEFORE this milestone changed runtime sources.
     # Their captured source/results remain immutable; do not forge a new live
@@ -158,6 +165,7 @@ def contract(root):
     check_bindings(value["files_sha256"])
     check_bindings(value["prior_files_sha256"])
     check_sources(root, value["source_archive"])
+    check_bindings(value["source_archive"]["files_sha256"])
     return value
 
 

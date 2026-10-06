@@ -1,0 +1,24 @@
+{
+  "benchmarks_executed": false,
+  "captured_source_members_verified": 104,
+  "contract_sha256": "051ef3d3492f97d7fa875e8915e3989a8b9d0721a757d1925fc8da7da7e487b8",
+  "gates": {
+    "gemma-32k": true,
+    "gemma-chunk127": true,
+    "gemma-chunk512": true,
+    "gemma-stress": true,
+    "qwen-32k": true,
+    "qwen-chunk127": true,
+    "qwen-chunk512": true,
+    "qwen-stress": true
+  },
+  "live_archived_sources_verified": true,
+  "milestone_passed": false,
+  "prior_complete_files_verified": 160,
+  "readback_passed": true,
+  "runtime_source_sha256": "e46b6d7dfaa230e49d6748925330b0f8b916db305f9c347f0a6cc281da398892",
+  "schema_version": 1,
+  "stopping_reason": "User requested a safe stopping point within ten minutes. Parent was interrupted after durable validation and before any timing.",
+  "validation_checkpoint_sha256": "a435dc53e542261565639c9a93b5638175d158879a965143d2a297cf11f0481c",
+  "validation_passed": true
+}

@@ -434,7 +434,7 @@ class MlxQwenModel:
     def _fast_attention(
         self, query, key, value, *, scale: float | None = None, mask="causal"
     ):
-        """Use MLX's fused GQA attention without materializing the score matrix."""
+        """Use fused GQA where eligible, with MLX's bounded short-tail fallback."""
         mx = self.mx
         q = mx.transpose(query, (1, 0, 2))[None, :, :, :]
         k = mx.transpose(key, (1, 0, 2))[None, :, :, :]
@@ -448,6 +448,19 @@ class MlxQwenModel:
             force_fused=(
                 int(key.shape[0]) >= 256
                 and self.head_dim in self._fused_attention_head_dims
+                # MLX 0.32.2 vector mode (<=8 queries) has stricter GQA/head
+                # limits than full attention. Let its dispatcher safely fall
+                # back for unsupported short tails; do not catch arbitrary
+                # execution errors or force an unavailable fused kernel.
+                and (
+                    int(query.shape[0]) > 8
+                    or (
+                        self.head_dim in {64, 96, 128, 192, 256}
+                        and int(query.shape[0])
+                        * (int(query.shape[1]) // int(key.shape[1]))
+                        <= 32
+                    )
+                )
             ),
         )
         return mx.transpose(output[0], (1, 0, 2)).reshape(query.shape[0], -1)

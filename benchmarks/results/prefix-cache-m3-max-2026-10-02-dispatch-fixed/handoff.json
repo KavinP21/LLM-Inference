@@ -1,0 +1,23 @@
+{
+  "all_owned_sessions_finished": true,
+  "benchmarks_executed": false,
+  "gpu_driver_exit": 130,
+  "gpu_driver_stopped_at_utc": "2026-10-02 20:29:29 UTC",
+  "milestone_passed": false,
+  "next_phase": "benchmark, then audit and final-audit; do not rerun prepare/all against this root",
+  "requested_stop_at_utc": "2026-10-02 20:27:14 UTC",
+  "resume_guide": "docs/prefix-cache-handoff.md",
+  "resume_guide_sha256": "316253e100bb06d2175704e2783e5808ddadf025596d13330c173b236c0becd3",
+  "runtime_source_sha256": "e46b6d7dfaa230e49d6748925330b0f8b916db305f9c347f0a6cc281da398892",
+  "schema_version": 1,
+  "status": "validation_complete_performance_pending",
+  "test_results_sha256": "6ae5a22add1037571ba6e28a50344c40e6caace7531092884f0d346052ba37ce",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 365
+  },
+  "validation_passed": true,
+  "validation_readback_sha256": "7589f47f552da1e1bd1d215ca2d806a2b2c9700c3680a60bd16d9d52df14cfb3"
+}
