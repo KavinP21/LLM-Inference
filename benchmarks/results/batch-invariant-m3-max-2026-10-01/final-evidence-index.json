@@ -1,0 +1,437 @@
+{
+  "auditor_sha256": "587b06ada88e3c216badf8dcaf63db6da42b9919164352b526b09b915aa9508b",
+  "batch_consistency_checkpoint_passed": true,
+  "checkpoint_files": [
+    {
+      "path": "regression/checkpoint.json",
+      "sha256": "8091c42ddd6c2cfa4cba865ca19534c311f55b63dbeda7c23d933f726403fd07"
+    },
+    {
+      "path": "resources-and-matrix/checkpoint.json",
+      "sha256": "2ff85099409e0a782dcd2a18805cff3dc345ec7f7a597b212a6de55004378bfd"
+    },
+    {
+      "path": "extended-stage-replay/checkpoint.json",
+      "sha256": "4f3c24bb5bd3657f3792b7f8776b88706b088f2a6244fdbb755313cfa051f3ec"
+    }
+  ],
+  "counts": {
+    "batch": 6,
+    "boundary": 6,
+    "context": 6,
+    "performance": 32,
+    "stage": 4
+  },
+  "exact_rowwise_arrival_logit_rows": 16230,
+  "exact_rowwise_boundary_logit_rows": 1728,
+  "excluded_diagnostics": [
+    "gemma-stage-trace.json",
+    "gemma-fp16-batching.json"
+  ],
+  "fresh_cross_artifact_exact_cases_out_of_25": {
+    "gemma": {
+      "metal": 22,
+      "reconstruct": 22
+    },
+    "qwen": {
+      "metal": 19,
+      "reconstruct": 19
+    }
+  },
+  "limitations": "Same-artifact consistency only. No cross-artifact INT8 pass, Transformers corpus certification, CUDA validation, GPU counter attribution or production tail-latency certification.",
+  "published_raw_records": [
+    {
+      "passed": true,
+      "path": "regression/qwen-fp16-batch.json",
+      "purpose": "batch",
+      "sha256": "0a5879d93bd366c2fdfaf832ba3417cd06229baf1face5b70f08a2d6dd81cf08"
+    },
+    {
+      "passed": true,
+      "path": "regression/qwen-mixed-metal-batch.json",
+      "purpose": "batch",
+      "sha256": "840792d7066b315a86903a6d7d207b71ebbae77299a451dae95b0041e0425bb4"
+    },
+    {
+      "passed": true,
+      "path": "regression/qwen-mixed-reconstruct-batch.json",
+      "purpose": "batch",
+      "sha256": "bed58ab12fca9613863c611263d43a8511eb3d02491d2d42b6f5f89233cb65b0"
+    },
+    {
+      "passed": true,
+      "path": "regression/gemma-fp16-batch.json",
+      "purpose": "batch",
+      "sha256": "e38d60076de2498ded12c35788ffe208c1a6de0b7cd5e39a03a37212dd219840"
+    },
+    {
+      "passed": true,
+      "path": "regression/gemma-mixed-metal-batch.json",
+      "purpose": "batch",
+      "sha256": "7146b5bb745113edd872713b6d93c82f3023e1f2d05f26778f6c734d7300063b"
+    },
+    {
+      "passed": true,
+      "path": "regression/gemma-mixed-reconstruct-batch.json",
+      "purpose": "batch",
+      "sha256": "e5fda2aa0f28ba0bddc5d40a20cb01951cf2f78b713109ecb2ceb5cd3f2eaf99"
+    },
+    {
+      "passed": true,
+      "path": "regression/gemma-stages-batched.json",
+      "purpose": "stage_or_performance",
+      "sha256": "3cf96bab1e71b7997cfaa19fe767c079eb7f97ac711d18dbcf71d548949d3ba4"
+    },
+    {
+      "passed": true,
+      "path": "regression/gemma-stages-rowwise.json",
+      "purpose": "stage_or_performance",
+      "sha256": "2a550c75a41076d9592fb71d56ccc28af7782837811fa1d5bcd04de27baceb33"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/qwen-fp16-boundary.json",
+      "purpose": "boundary",
+      "sha256": "9c589f7e9094251f0cc3e5f6448a50177958b4f4ff8bbecb19ac1062440c7bee"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/qwen-fp16-32k.json",
+      "purpose": "context",
+      "sha256": "efbbff93104711ba1ec859e3dfc9777daa7bb451f0139e609ab95381f4473980"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/qwen-mixed-metal-boundary.json",
+      "purpose": "boundary",
+      "sha256": "885882b30a0a73e71ef3a0ed44bd507f8ce2ed78bd8df8fa1899017d14808997"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/qwen-mixed-metal-32k.json",
+      "purpose": "context",
+      "sha256": "8124043879e35ce81b4ebe9809a0dff61ef115f07abe9fba39863f9f448d68ce"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/qwen-mixed-reconstruct-boundary.json",
+      "purpose": "boundary",
+      "sha256": "5ca532baca7d4b391d67254b37eae024e13f08bb47211221c5e8dcfac9937d88"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/qwen-mixed-reconstruct-32k.json",
+      "purpose": "context",
+      "sha256": "4321ae51c12b0ed7b71611fa4af994019a88a3707b032d94f06e11fd9e65bf9d"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/gemma-fp16-boundary.json",
+      "purpose": "boundary",
+      "sha256": "719936d118f9575b77610bf72fc10916d320bffacbf4592eb354228ae0c9aaac"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/gemma-fp16-32k.json",
+      "purpose": "context",
+      "sha256": "9ae62f593b128b42ae9b237a31146a1d77ee61000124158782dbee6f26b6bb91"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/gemma-mixed-metal-boundary.json",
+      "purpose": "boundary",
+      "sha256": "42aaacddb2e6d595ac5fe379fb6bc174a9e1f4d205aef2b89f0200eb063555d8"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/gemma-mixed-metal-32k.json",
+      "purpose": "context",
+      "sha256": "572736e007aba93147936a22e53c6b88c894f7ad9596ac4630cedb1be8f0cc47"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/gemma-mixed-reconstruct-boundary.json",
+      "purpose": "boundary",
+      "sha256": "f377efa5f236f21f45dc6ccf89289a53f1525ae28073cec18c5596f140eb8f2e"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/gemma-mixed-reconstruct-32k.json",
+      "purpose": "context",
+      "sha256": "fd08561ef01f451be03dbe56b368c9382e6813e3742aa2c3e65face06c5a8fa5"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-batched-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "08e3ce5d8b66a685645d1eb3db89f27b2e4c3cac17700cb09ec9b90560ae6abe"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-rowwise-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "b0649341dbe2f6fe7d0050aaa91363d0f3d0e3571218de4f1bc420e1351b8b29"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-rowwise-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "b5c38f0b9068a98702f4bcdc7fe82c22b72d940cb5146adb5af213dade0bba01"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-batched-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "ae3cef4f290ec1e3393753126cd74f0ecca4e842902f8115495d79233d2afa2e"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-batched-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "c49a070c00bf797c453ea40a9f8f5eea38dba218b27f70729c353587158e99cf"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-rowwise-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "1d71d07fb5cb29005d9dc0635b044c6b700028d4976dca3811f018f84816a25e"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-rowwise-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "e2b617608c3940fd2563d858658ea9a469c1640422e8124c7a8149d02c5636eb"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-fp16-batched-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "80b7e0a82d5d329fbda3b0b82f4241dbbef6ec045a3248cf8b08923b8114cd54"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-batched-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "c7f094be1867a7b6bdfe85290b90af48b892d586d930495daee240693c9c39a7"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-rowwise-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "f81b935a42a21e22b1ab9fe5d3fc127801ec4cb14c5e432b453576fb2378ecdf"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-rowwise-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "a054ac20bda3a9b1e2a3085f6a9240e2929a9abd3fc329f2bb231ec5fbfdc05e"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-batched-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "e7162a9acdb2d968a505acf106a5ccf880fd47a0b96cb8c9f50ac5afde0fd8dd"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-batched-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "3223a31163c4dd579bfff6e619ab3033e4d0df95ddb88c39172360bba082885e"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-rowwise-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "e74873f827ec7c1da12ba41f279d40a58c4fd9f12e8ce1ab1f660968200859f0"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-rowwise-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "642b6d4943966900a24e41dcc12dc4f728ea46677c5d6ecd4658fec545ffe4f6"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-batched-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "d841fb73557d5a2b337f9739685ef64d8a790e08aae165665d49d669911e4dce"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-batched-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "7305fe6a7c5ca744b29cf9326a157b2347302a40cb86383b4ad1c6bed3ed79b9"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-rowwise-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "a496a55d9838498cb1b0bb614f5177d96ef5e0d95f097bb499f769fce4508640"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-rowwise-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "128bffa19614fd8249975a14983459d94a3b5351458f14c020c9ceef49f55322"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-batched-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "2b339f7322e2a4927c632ad0553ed20e81ac9a8215a66ccf9650c520334bc6ce"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-batched-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "fbb7a7a2e68d28743361969de2bf4cbf0c105facaefbf38abbc5448fd1eb9ba8"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-rowwise-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "6eb9be91ac99ba4a5bafd0a2b3d7479594a86e9c5e944076cf63f59398dcb7a5"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-rowwise-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "8876e78d2afdc242390fce3b062fc8f95fb03db9c50ec0e6e467fe3915dd96bd"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-fp16-batched-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "0cc590b9e9397463d59ed457f0c709d2208b20dd8c2ee2c730afa776db6dce04"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-batched-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "9fc8e9dd8277311e189b0648199bf96324e630794acf05c01526f15553b9c617"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-rowwise-p128-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "7086f64a2eca9daae3ceeca54fde6e5aebcc5a7b253fca3b91ffe968bc8e2c09"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-rowwise-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "7ee758d1b2c09fc0c0e0ad1817c7bd8910445c874cd357ec3a337553ec3c86b5"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-batched-p128-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "0e7784f9b4d9efa1a74d639a6a9503273550d6dbd78269ea307714d678a96698"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-batched-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "cdb0244912e0b967cd0581ad3804d507af29d6a6af18f536ce1a6fbd82213262"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-rowwise-p1024-c1.json",
+      "purpose": "stage_or_performance",
+      "sha256": "a08fde796ca02fabe30bbb6e2351cc9743bf6d2c844376b01f72e31c375d0d39"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-rowwise-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "37820ca6ad7d214a315fef4208dd32b0edbef0d103fd5e87de5aad45ece2a0eb"
+    },
+    {
+      "passed": true,
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-batched-p1024-c8.json",
+      "purpose": "stage_or_performance",
+      "sha256": "5afe3cf5955bbe8f28d694f2d0fbc589c9763fba4df0d5cde5a9b0126cf151c6"
+    },
+    {
+      "passed": true,
+      "path": "extended-stage-replay/gemma-stages-batched.json",
+      "purpose": "stage_or_performance",
+      "sha256": "d22d19b3a9bd1debb26292d03a78c5432a8179137303181b4a637dc81af00fd4"
+    },
+    {
+      "passed": true,
+      "path": "extended-stage-replay/gemma-stages-rowwise.json",
+      "purpose": "stage_or_performance",
+      "sha256": "924ff4b45e18d319e548dafadc5a5b9e5a8b95ce889126789a9541430f1149b4"
+    }
+  ],
+  "runtime_source_sha256": "a96763acc8106e313efe3df1e3dde5f2a77ebc01f8c9974ef854325d6461d649",
+  "schema_version": 1,
+  "strict_int8_quality_passed": false,
+  "workload_files": [
+    {
+      "path": "resources-and-matrix/matrix/qwen-fp16-p128-c1-workload.json",
+      "sha256": "6bebe3d4e48566e10a96cf47175869b5f44e32b546f43c82795f6ab329a18c15"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-fp16-p128-c8-workload.json",
+      "sha256": "afcf55dfa86f035e0a97269e1c7b21f73c45c8442c062c6c9224821a0313e598"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-fp16-p1024-c1-workload.json",
+      "sha256": "52af255adc798f71ec7c838191acf826d45cee9a927a7ef435788ae4571ce9e0"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-fp16-p1024-c8-workload.json",
+      "sha256": "5fe0163c8201af661706eea94d07933fb364b04dff4d96f43b19ebf433c46144"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-p128-c1-workload.json",
+      "sha256": "6bebe3d4e48566e10a96cf47175869b5f44e32b546f43c82795f6ab329a18c15"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-p128-c8-workload.json",
+      "sha256": "afcf55dfa86f035e0a97269e1c7b21f73c45c8442c062c6c9224821a0313e598"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-p1024-c1-workload.json",
+      "sha256": "52af255adc798f71ec7c838191acf826d45cee9a927a7ef435788ae4571ce9e0"
+    },
+    {
+      "path": "resources-and-matrix/matrix/qwen-mixed-metal-p1024-c8-workload.json",
+      "sha256": "5fe0163c8201af661706eea94d07933fb364b04dff4d96f43b19ebf433c46144"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-fp16-p128-c1-workload.json",
+      "sha256": "6bebe3d4e48566e10a96cf47175869b5f44e32b546f43c82795f6ab329a18c15"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-fp16-p128-c8-workload.json",
+      "sha256": "afcf55dfa86f035e0a97269e1c7b21f73c45c8442c062c6c9224821a0313e598"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-fp16-p1024-c1-workload.json",
+      "sha256": "52af255adc798f71ec7c838191acf826d45cee9a927a7ef435788ae4571ce9e0"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-fp16-p1024-c8-workload.json",
+      "sha256": "5fe0163c8201af661706eea94d07933fb364b04dff4d96f43b19ebf433c46144"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-p128-c1-workload.json",
+      "sha256": "6bebe3d4e48566e10a96cf47175869b5f44e32b546f43c82795f6ab329a18c15"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-p128-c8-workload.json",
+      "sha256": "afcf55dfa86f035e0a97269e1c7b21f73c45c8442c062c6c9224821a0313e598"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-p1024-c1-workload.json",
+      "sha256": "52af255adc798f71ec7c838191acf826d45cee9a927a7ef435788ae4571ce9e0"
+    },
+    {
+      "path": "resources-and-matrix/matrix/gemma-mixed-metal-p1024-c8-workload.json",
+      "sha256": "5fe0163c8201af661706eea94d07933fb364b04dff4d96f43b19ebf433c46144"
+    }
+  ]
+}

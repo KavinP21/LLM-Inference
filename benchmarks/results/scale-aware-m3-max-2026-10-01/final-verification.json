@@ -1,0 +1,43 @@
+{
+  "audit_script_sha256": "ba163b1d5651f1c7917e5ba4ad5a6d12a1439e1fadbcc544ca6df6e0c46ca72b",
+  "cached_calibration_rows": 2048,
+  "calibration_stage_passed": false,
+  "captured_source_files_verified": 67,
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "94c10909233a85c5b6d03930962e868ac3a3c3b43751393cd5d0fc34d58f8074"
+  },
+  "final_tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 222
+  },
+  "held_out_inference_executed": false,
+  "limitations": "Post-registration audit, not fitting or performance. Rechecks raw calibration, complete files, independent reconstruction records and JUnit. A passed evidence readback does not waive the failed exact-token gates or certify direct kernels, held-out quality, 32K, or CUDA for this method.",
+  "objective_verification_sha256": "253c9f23bf26afb6cbcb5086ac9a126bebed051706813734f90b68b1f427e3ce",
+  "pre_fit_files_verified": 15,
+  "prior_complete_files_unchanged": 93,
+  "readback_passed": true,
+  "reconstruction_readback": {
+    "gemma": {
+      "baseline_objective": 3.0208195364985,
+      "changed_scale_rows": 89925,
+      "matrices": 23,
+      "rows": 153216,
+      "scale_aware_objective": 2.737583225157922
+    },
+    "qwen": {
+      "baseline_objective": 3.331734579205517,
+      "changed_scale_rows": 58194,
+      "matrices": 21,
+      "rows": 102144,
+      "scale_aware_objective": 2.766992568843525
+    }
+  },
+  "schema_version": 1,
+  "stage_verification_sha256": "fdc99f571a7011f22ab1aeaf098bab6f4984851f905578edd57e8d3ed3f8122b",
+  "strict_checkpoint_passed": false,
+  "test_results_sha256": "f6af1f623f7cdafcf283b4e5074b9eabbeaa23996c58987b4554182b702d3925"
+}

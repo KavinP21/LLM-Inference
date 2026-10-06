@@ -1,0 +1,26 @@
+{
+  "all_requested_gates_passed": true,
+  "checks": [
+    "trace"
+  ],
+  "driver_sha256": "7ebd33e1d9cdb6906db02fcf50fd9933e05f477ebe7d4e66014c1c7eb8a232d9",
+  "limitation": "Batch consistency is independent of cross-artifact INT8 quality. No CUDA claims or GPU-counter evidence.",
+  "records": [
+    {
+      "gate": null,
+      "passed": true,
+      "path": "gemma-stages-batched.json",
+      "runtime_source_sha256": "a96763acc8106e313efe3df1e3dde5f2a77ebc01f8c9974ef854325d6461d649",
+      "sha256": "d22d19b3a9bd1debb26292d03a78c5432a8179137303181b4a637dc81af00fd4"
+    },
+    {
+      "gate": null,
+      "passed": true,
+      "path": "gemma-stages-rowwise.json",
+      "runtime_source_sha256": "a96763acc8106e313efe3df1e3dde5f2a77ebc01f8c9974ef854325d6461d649",
+      "sha256": "924ff4b45e18d319e548dafadc5a5b9e5a8b95ce889126789a9541430f1149b4"
+    }
+  ],
+  "runtime_source_sha256": "a96763acc8106e313efe3df1e3dde5f2a77ebc01f8c9974ef854325d6461d649",
+  "schema_version": 1
+}

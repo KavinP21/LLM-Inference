@@ -1,0 +1,57 @@
+{
+  "cached_calibration_rows": 2048,
+  "calibration_checkpoint_sha256": "2c9215bf59d7ffda4962769d100562318012c3c3fafddce928e5ee8b7748aa2d",
+  "calibration_files_verified": 4,
+  "calibration_stage_passed": false,
+  "captured_source_files_verified": 110,
+  "contract_sha256": "dbb4d87da4e690154e21b5486ed0fbe172547068dc329686664b9fa2af3903e9",
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "5387bb7931410a40862e9ca6d6d9d635af37f0d5b3fd8d63e28808f74b09561b"
+  },
+  "gates": {
+    "gemma": {
+      "cache_reclaimed": true,
+      "exact_cached_decisions": true,
+      "exact_free_continuations": true,
+      "local_reconstruction_bound": true,
+      "minimum_projection_fraction": true,
+      "numerical": false,
+      "passed": false
+    },
+    "qwen": {
+      "cache_reclaimed": true,
+      "exact_cached_decisions": true,
+      "exact_free_continuations": true,
+      "local_reconstruction_bound": true,
+      "minimum_projection_fraction": true,
+      "numerical": true,
+      "passed": true
+    }
+  },
+  "held_out_inference_executed": false,
+  "limitations": "Whole-file hashes and recorded cases validate this calibration stage only. Per-row bound assertions are backed by independent operator tests, not a language-quality guarantee. No held-out/performance/RTX/counter evidence is supplied.",
+  "pre_fit_files_verified": 21,
+  "prior_complete_files_unchanged": 115,
+  "readback_passed": true,
+  "schema_version": 1,
+  "selected_local_objectives": {
+    "gemma": {
+      "changed_scale_rows": 88561,
+      "fixed_scale_objective": 2.9957021781372593,
+      "refined_objective": 2.625237830198215,
+      "refinement_changed_elements": 5192931,
+      "scale_aware_objective": 2.7135700344296922
+    },
+    "qwen": {
+      "changed_scale_rows": 58500,
+      "fixed_scale_objective": 3.694775125921689,
+      "refined_objective": 2.8915224966643867,
+      "refinement_changed_elements": 2816074,
+      "scale_aware_objective": 2.9793724632544425
+    }
+  },
+  "source_archive_sha256": "3d134625eba2a6526d067e519e461759bfab1f2ade5ec3cb478a63b08da952bc",
+  "strict_checkpoint_passed": false
+}

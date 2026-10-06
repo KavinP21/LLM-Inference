@@ -1,0 +1,139 @@
+{
+  "aggregate": {
+    "e2e_ms": {
+      "p50": 273.778583,
+      "p95": 283.3042208,
+      "p99": 284.15094416
+    },
+    "generated_tokens_per_second": 115.38586951252164,
+    "prompt_tokens_per_second": 461.54347805008655,
+    "tpot_ms": {
+      "p50": 8.184020161290324,
+      "p95": 8.259162903225805,
+      "p99": 8.265842258064515
+    },
+    "ttft_ms": {
+      "p50": 20.5395,
+      "p95": 27.316724999999998,
+      "p99": 27.919144999999997
+    }
+  },
+  "configuration": {
+    "backend": "mlx",
+    "capture_path": null,
+    "concurrency": 1,
+    "kv_cache_mib": 512,
+    "max_model_length": 2048,
+    "mlx_kernel_mode": "full",
+    "model_path": "models/qwen2.5-0.5b.engine",
+    "output_length": 32,
+    "prompt_token_lengths": [
+      128
+    ],
+    "repetitions": 3,
+    "stop_on_eos": false,
+    "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+    "warmups": 5
+  },
+  "engine_stats": {
+    "attention_tile_size": 1024,
+    "backend": "mlx",
+    "custom_metal": true,
+    "kv_cache": {
+      "allocated_blocks": 0,
+      "allocation_failures": 0,
+      "free_blocks": 2730,
+      "internal_fragmentation_tokens": 0,
+      "layout": "paged",
+      "live_tokens": 0,
+      "occupancy": 0.0,
+      "peak_allocated_blocks": 10,
+      "reserved_blocks": 0,
+      "total_blocks": 2730,
+      "unreserved_blocks": 2730
+    },
+    "kv_capacity_bytes": 536739840,
+    "kv_device_bytes": 0,
+    "kv_materialized_blocks": 0,
+    "kv_peak_device_bytes": 1966080,
+    "kv_peak_materialized_blocks": 10,
+    "metal_paged_attention": true,
+    "model_bytes": 988065536,
+    "model_type": "qwen2",
+    "prefill_chunk_size": 512,
+    "scheduler": {
+      "cancelled": 0,
+      "completed": 8,
+      "rejected": 0,
+      "running": 0,
+      "submitted": 8,
+      "waiting": 0
+    }
+  },
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "native_build": {
+      "architecture": "applegpu_g15s",
+      "backend": "mlx",
+      "device": "Apple M3 Max",
+      "mlx_version": "0.32.2"
+    },
+    "nvcc": null,
+    "nvidia_smi": null,
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.12.10"
+  },
+  "gpu_samples": {
+    "gpu_utilization_mean_percent": null,
+    "gpu_utilization_peak_percent": null,
+    "memory_peak_mib": null,
+    "power_mean_watts": null,
+    "power_peak_watts": null,
+    "sample_count": 0
+  },
+  "implementation": "forge-mlx-fp16-paged-full",
+  "mlx_memory": {
+    "active_bytes_before_recorded_repetitions": 988065664,
+    "incremental_peak_active_bytes": 197887002,
+    "peak_active_bytes_during_recorded_repetitions": 1185952666
+  },
+  "model": {
+    "model_data_sha256": "87dde32c2f28ffbcb70016efea4332c4306e3f72c64f9df131def7654bff6c45",
+    "model_file_bytes": 988084480,
+    "model_format_version": 1
+  },
+  "peak_kv_cache": {
+    "allocated_blocks": 10,
+    "internal_fragmentation_tokens": 15,
+    "occupancy": 0.003663003663003663,
+    "reserved_blocks": 1
+  },
+  "peak_kv_cache_bytes": 1966080,
+  "requests": [
+    {
+      "e2e_ms": 284.362625,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 6,
+      "tpot_ms": 8.267512096774192,
+      "ttft_ms": 28.06975
+    },
+    {
+      "e2e_ms": 273.778583,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 7,
+      "tpot_ms": 8.184020161290324,
+      "ttft_ms": 20.073958
+    },
+    {
+      "e2e_ms": 273.716792,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 8,
+      "tpot_ms": 8.167009419354839,
+      "ttft_ms": 20.5395
+    }
+  ],
+  "schema_version": 1
+}

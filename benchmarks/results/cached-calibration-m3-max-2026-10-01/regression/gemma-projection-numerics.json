@@ -1,0 +1,1005 @@
+{
+  "configuration": {
+    "decode_mode": "rowwise",
+    "row_counts": [
+      1,
+      2,
+      8
+    ],
+    "script_sha256": "019e76105188f4daa149c1f98b22327021514acbebb0eafaf9b91a9bc1f5ebaf",
+    "seed": 7321
+  },
+  "direct_bitwise_projection_cases": 0,
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "native_build": {
+      "architecture": "applegpu_g15s",
+      "backend": "mlx",
+      "device": "Apple M3 Max",
+      "mlx_version": "0.32.2"
+    },
+    "runtime_source_sha256": "057470340b804ce78266f34e44c6ba347ddb0be2fb1d84298df42b4e7bab9a27"
+  },
+  "gates": {
+    "all_native_projections_match_composed": true,
+    "all_reconstructed_values_match_numpy": true,
+    "passed": true
+  },
+  "limitations": "Synthetic same-input projections isolate evaluation differences, not exact Metal compiler instructions, all possible inputs, model quality, or measured performance. Direct mismatches are retained and never drive calibration.",
+  "model": {
+    "model_data_sha256": "d1c24ccdb1729cf2f35bdb7a1f5e541a0dea9cbde8756c867648d3e90220f117",
+    "model_file_bytes": 1824053760,
+    "model_format_version": 3
+  },
+  "observations": [
+    {
+      "direct_different_elements": 11,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 3.5878484322578022e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.1.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 17,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.831487085795488e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.1.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 56,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.2639576028652063e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.1.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 12,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.1373933752794134e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.11.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 22,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.7513308316496974e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.11.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 48,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.163731761294106e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.11.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 1,
+      "direct_max_absolute_error": 1.52587890625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.1139842825614833e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        1152,
+        1024
+      ],
+      "weight": "model.layers.11.self_attn.o_proj.weight"
+    },
+    {
+      "direct_different_elements": 3,
+      "direct_max_absolute_error": 7.62939453125e-06,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.784855217974821e-07,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        1152,
+        1024
+      ],
+      "weight": "model.layers.11.self_attn.o_proj.weight"
+    },
+    {
+      "direct_different_elements": 8,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 3.371793062915567e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        1152,
+        1024
+      ],
+      "weight": "model.layers.11.self_attn.o_proj.weight"
+    },
+    {
+      "direct_different_elements": 3,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.457921960790765e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.12.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 11,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.7647729020770916e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.12.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 63,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.1260807256407214e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.12.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 3,
+      "direct_max_absolute_error": 3.0517578125e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.4476544004126885e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.13.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 19,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.012612811321481e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.13.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 61,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.612072156920446e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.13.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 7,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.3796681359773655e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.14.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 10,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.640005262402528e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.14.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 57,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.631251571520776e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.14.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 8,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.0888830500801701e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.15.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 15,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.2301455459220563e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.15.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 57,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.0429993252350713e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.15.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 6,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.063328156162372e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.18.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 13,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.524478338606465e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.18.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 69,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.70719295194294e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.18.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 7,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.535728774065952e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.2.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 10,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.567002606643699e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.2.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 61,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 6.0277711864359895e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.2.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 5,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.256858941028023e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.20.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 14,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.0714322082280765e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.20.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 63,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.057673896363802e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.20.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 13,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.165011869500171e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.21.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 18,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 8.246012764437206e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.21.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 52,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 6.467577676129067e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.21.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 10,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.7750738876271754e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.22.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 13,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.203627360634004e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.22.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 44,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.662590256776728e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.22.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 5,
+      "direct_max_absolute_error": 3.0517578125e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.7428646948337994e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.22.mlp.up_proj.weight"
+    },
+    {
+      "direct_different_elements": 13,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.454450697977185e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.22.mlp.up_proj.weight"
+    },
+    {
+      "direct_different_elements": 60,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.532118604245168e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.22.mlp.up_proj.weight"
+    },
+    {
+      "direct_different_elements": 8,
+      "direct_max_absolute_error": 1.52587890625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 8.82913327385247e-07,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.23.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 22,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.6223458369088005e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.23.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 52,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 6.188727287233072e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.23.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 7,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 9.706998479030046e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.24.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 16,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 9.444570432345897e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.24.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 69,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 9.192468207858498e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.24.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 8,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.9452369805330117e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.25.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 12,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.232018966428646e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.25.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 39,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.951053540149899e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.25.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 11,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 2.495000469203394e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.3.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 23,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 9.437138850146702e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.3.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 58,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 9.756710017332752e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.3.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 9,
+      "direct_max_absolute_error": 3.0517578125e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.3304538126055328e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.4.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 14,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.127228304881558e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.4.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 53,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 8.967351537736045e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.4.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 8,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 6.655398640391037e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.5.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 10,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.179058883151832e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.5.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 57,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.640971443185314e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.5.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 9,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.0288498105803278e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.6.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 16,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 8.638954220008057e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.6.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 76,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.3040536101139624e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.6.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 7,
+      "direct_max_absolute_error": 7.62939453125e-06,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.2282556477073866e-07,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.7.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 15,
+      "direct_max_absolute_error": 1.52587890625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 4.775590450644355e-07,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.7.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 65,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 9.183197611619276e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.7.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 7,
+      "direct_max_absolute_error": 0.0001220703125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 5.340758057969815e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.8.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 15,
+      "direct_max_absolute_error": 0.00048828125,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.3924566780412411e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.8.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 65,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 7.270695357013588e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.8.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 12,
+      "direct_max_absolute_error": 6.103515625e-05,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 3.930686703009454e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 1,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.9.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 23,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 1.0522830603477811e-05,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 2,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.9.mlp.gate_proj.weight"
+    },
+    {
+      "direct_different_elements": 53,
+      "direct_max_absolute_error": 0.000244140625,
+      "direct_projection_bitwise_equal": false,
+      "direct_relative_l2_error": 6.485438974697312e-06,
+      "native_projection_bitwise_equal": true,
+      "reconstruction_bitwise_equal": true,
+      "rows": 8,
+      "shape": [
+        6912,
+        1152
+      ],
+      "weight": "model.layers.9.mlp.gate_proj.weight"
+    }
+  ],
+  "purpose": "Separate reconstruction identity from projection evaluation; not fitting/timing.",
+  "schema_version": 1
+}

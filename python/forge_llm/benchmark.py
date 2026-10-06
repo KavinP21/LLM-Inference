@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import platform
@@ -114,6 +115,26 @@ def command_output(command: list[str]) -> str | None:
         return None
 
 
+def source_provenance() -> dict[str, object]:
+    """Fingerprint runtime sources, including uncommitted/new implementation files."""
+    root = Path(__file__).resolve().parents[2]
+    digest = hashlib.sha256()
+    paths = []
+    for directory in ["python", "include", "src"]:
+        paths.extend(
+            path
+            for path in (root / directory).rglob("*")
+            if path.suffix in {".py", ".h", ".hpp", ".cpp", ".cu", ".cuh"}
+        )
+    for path in sorted(paths):
+        digest.update(str(path.relative_to(root)).encode() + b"\0" + path.read_bytes())
+    return {
+        "git_commit": command_output(["git", "rev-parse", "HEAD"]),
+        "git_dirty": bool(command_output(["git", "status", "--porcelain"])),
+        "runtime_source_sha256": digest.hexdigest(),
+    }
+
+
 def model_provenance(path: Path) -> dict[str, str | int]:
     with path.open("rb") as stream:
         header = stream.read(HEADER.size)
@@ -192,14 +213,20 @@ def benchmark(
     backend: str = "auto",
     mlx_kernel_mode: str = "full",
     capture_path: Path | None = None,
+    int8_mode: str = "auto",
+    decode_mode: str = "batched",
 ) -> dict:
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    if output_length <= 0 or repetitions <= 0 or warmups < 0:
+        raise ValueError(
+            "output_length and repetitions must be positive; warmups must be nonnegative"
+        )
     payload = json.loads(prompt_file.read_text())
     if not isinstance(payload, list):
         raise TypeError("prompt file must be a JSON array")
     if all(isinstance(item, str) for item in payload):
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         prompts = [
             tokenizer(text, add_special_tokens=True).input_ids for text in payload
         ]
@@ -212,9 +239,10 @@ def benchmark(
         prompts = payload
     else:
         raise ValueError("prompts must be all strings or all non-empty token-id arrays")
-    prompts = [
-        tokens for tokens in prompts if len(tokens) + output_length <= max_model_length
-    ]
+    if any(len(tokens) + output_length > max_model_length for tokens in prompts):
+        raise ValueError(
+            "workload exceeds max_model_length; no requests were silently dropped"
+        )
     if not prompts or len(prompts) > max_sequences:
         raise ValueError("prompt count must be between 1 and max-sequences")
     engine_options = {
@@ -227,14 +255,28 @@ def benchmark(
             raise ValueError("unknown MLX kernel mode")
         engine_options["custom_metal"] = mlx_kernel_mode != "baseline"
         engine_options["metal_paged_attention"] = mlx_kernel_mode == "full"
+        engine_options["int8_mode"] = int8_mode
+        engine_options["decode_mode"] = decode_mode
+    elif decode_mode != "batched":
+        raise ValueError("rowwise decode is only supported by the MLX backend")
     engine = create_engine(model_path, backend=backend, **engine_options)
+    if stop_on_eos:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     eos = [int(tokenizer.eos_token_id)] if stop_on_eos else []
     for _ in range(warmups):
-        run_once(engine, prompts, min(output_length, 4), eos)
+        run_once(engine, prompts, output_length, eos)
 
     all_metrics: list[RequestMetric] = []
     walls = []
     cache_peaks = []
+    mlx_memory: dict[str, int] | None = None
+    mlx_memory_baseline: int | None = None
+    if getattr(engine, "backend", "cuda") == "mlx":
+        mx = engine.model.mx
+        mlx_memory_baseline = int(mx.get_active_memory())
+        mx.reset_peak_memory()
     gpu_sampler = GpuSampler()
     gpu_sampler.start()
     try:
@@ -262,16 +304,31 @@ def benchmark(
             cache_peaks.append(cache_peak)
     finally:
         gpu_metrics = gpu_sampler.stop()
+    if mlx_memory_baseline is not None:
+        peak_active_bytes = int(engine.model.mx.get_peak_memory())
+        mlx_memory = {
+            "active_bytes_before_recorded_repetitions": mlx_memory_baseline,
+            "peak_active_bytes_during_recorded_repetitions": peak_active_bytes,
+            "incremental_peak_active_bytes": max(
+                0, peak_active_bytes - mlx_memory_baseline
+            ),
+        }
     ttft = [item.ttft_ms for item in all_metrics]
     tpot = [item.tpot_ms for item in all_metrics if item.tpot_ms is not None]
     e2e = [item.e2e_ms for item in all_metrics]
     output_tokens = sum(item.output_tokens for item in all_metrics)
     prompt_tokens = sum(item.prompt_tokens for item in all_metrics)
     total_seconds = sum(walls) / 1000.0
+    engine_stats = engine.stats()
     result = {
         "schema_version": 1,
         "implementation": (
-            f"forge-mlx-fp16-paged-{mlx_kernel_mode}"
+            (
+                f"forge-mlx-int8-paged-{mlx_kernel_mode}-{int8_mode}"
+                if engine_stats["quantized_matrices"]
+                else f"forge-mlx-fp16-paged-{mlx_kernel_mode}"
+            )
+            + ("-rowwise" if decode_mode == "rowwise" else "")
             if getattr(engine, "backend", "cuda") == "mlx"
             else "forge-cuda-fp16-paged"
         ),
@@ -283,11 +340,16 @@ def benchmark(
             "repetitions": repetitions,
             "concurrency": len(prompts),
             "prompt_token_lengths": [len(prompt) for prompt in prompts],
+            "workload_sha256": hashlib.sha256(prompt_file.read_bytes()).hexdigest(),
+            "workload_seed": None,  # Explicit token IDs/text, not an in-run random generator.
             "max_model_length": max_model_length,
             "kv_cache_mib": kv_cache_mib,
             "stop_on_eos": stop_on_eos,
             "backend": getattr(engine, "backend", "cuda"),
             "mlx_kernel_mode": mlx_kernel_mode,
+            "int8_mode": int8_mode,
+            "decode_mode": decode_mode,
+            "warmup_output_length": output_length,
             "capture_path": str(capture_path) if capture_path is not None else None,
         },
         "environment": {
@@ -296,7 +358,7 @@ def benchmark(
             "native_build": engine.build_info()
             if hasattr(engine, "build_info")
             else build_info(),
-            "git_commit": command_output(["git", "rev-parse", "HEAD"]),
+            **source_provenance(),
             "nvidia_smi": command_output(
                 [
                     "nvidia-smi",
@@ -330,7 +392,9 @@ def benchmark(
         "peak_kv_cache": {
             key: max(item[key] for item in cache_peaks) for key in cache_peaks[0]
         },
-        "engine_stats": engine.stats(),
+        "peak_kv_cache_bytes": engine_stats.get("kv_peak_device_bytes"),
+        "mlx_memory": mlx_memory,
+        "engine_stats": engine_stats,
         "requests": [asdict(item) for item in all_metrics],
     }
     if hasattr(engine, "close"):
@@ -358,6 +422,17 @@ def main() -> None:
     parser.add_argument("--max-sequences", type=int, default=16)
     parser.add_argument("--max-model-length", type=int, default=2048)
     parser.add_argument("--kv-cache-mib", type=int, default=512)
+    parser.add_argument(
+        "--decode-mode",
+        choices=["batched", "rowwise"],
+        default="batched",
+        help="MLX decode projections: batched throughput or single-row reductions",
+    )
+    parser.add_argument(
+        "--int8-mode",
+        choices=["auto", "dequantize", "metal", "reconstruct"],
+        default="auto",
+    )
     parser.add_argument(
         "--stop-on-eos",
         action="store_true",
@@ -389,6 +464,8 @@ def main() -> None:
         args.backend,
         args.mlx_kernel_mode,
         args.capture,
+        args.int8_mode,
+        args.decode_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

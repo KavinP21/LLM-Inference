@@ -26,15 +26,18 @@ from .format import (
     HEADER,
     MAGIC,
     MODEL_TYPES_BY_ID,
+    QUANTIZATION,
     TENSOR,
     VERSION,
     ModelConfig,
+    QuantizationSpec,
 )
 
 _DTYPES: dict[int, np.dtype] = {
     1: np.dtype("<f2"),
     2: np.dtype("<f4"),
     3: np.dtype("<i4"),
+    4: np.dtype("i1"),
 }
 
 
@@ -77,7 +80,7 @@ class ModelFile:
         ) = HEADER.unpack_from(self._mapping)
         if magic != MAGIC:
             raise ValueError("invalid model magic")
-        if version not in {1, VERSION}:
+        if not 1 <= version <= VERSION:
             raise ValueError(f"unsupported model format version {version}")
         self.version = version
         metadata_end = HEADER.size + metadata_size
@@ -207,6 +210,32 @@ class ModelFile:
             info = TensorInfo(name, dtype, tuple(shape), offset, nbytes)
             tensors[name] = info
             ordered.append(info)
+        quantization: dict[str, QuantizationSpec] = {}
+        if version == 3:
+            if cursor + 4 > len(metadata):
+                raise ValueError("truncated quantization count")
+            count = struct.unpack_from("<I", metadata, cursor)[0]
+            cursor += 4
+            if not 0 < count <= tensor_count:
+                raise ValueError("invalid quantization count")
+            for _ in range(count):
+                if cursor + QUANTIZATION.size > len(metadata):
+                    raise ValueError("truncated quantization descriptor")
+                name_size, scheme, axis, scale_size = QUANTIZATION.unpack_from(
+                    metadata, cursor
+                )
+                cursor += QUANTIZATION.size
+                if cursor + name_size + scale_size > len(metadata):
+                    raise ValueError("truncated quantization names")
+                name = metadata[cursor : cursor + name_size].decode("utf-8")
+                cursor += name_size
+                scale_name = metadata[cursor : cursor + scale_size].decode("utf-8")
+                cursor += scale_size
+                if not name or not scale_name or name in quantization:
+                    raise ValueError("empty or duplicate quantization descriptor")
+                if scheme != 1 or axis != 0:
+                    raise ValueError("unsupported quantization scheme or axis")
+                quantization[name] = QuantizationSpec(scale_name, scheme, axis)
         if cursor != len(metadata):
             raise ValueError("unexpected trailing model metadata")
 
@@ -226,6 +255,36 @@ class ModelFile:
         self.data_size = data_size
         self.data_sha256 = data_digest.hex()
         self.tensors = tensors
+        self.quantization = quantization
+        self._validate_quantization()
+
+    def _validate_quantization(self) -> None:
+        for name, spec in self.quantization.items():
+            weight = self.tensor_info(name)
+            scale = self.tensor_info(spec.scale_name)
+            if weight.dtype != np.dtype("i1") or len(weight.shape) != 2:
+                raise ValueError(
+                    f"INT8 descriptor requires a rank-2 signed INT8 weight: {name}"
+                )
+            if scale.dtype != np.dtype("<f4") or scale.shape != (weight.shape[0],):
+                raise ValueError(
+                    f"INT8 scales require one FP32 value per output channel: {name}"
+                )
+            scales = self.tensor_numpy(spec.scale_name)
+            valid = bool(np.all(np.isfinite(scales) & (scales > 0)))
+            del scales
+            if not valid:
+                raise ValueError(f"INT8 scales must be positive and finite: {name}")
+            weight_data = self.tensor_numpy(name)
+            valid = bool(np.all(weight_data != -128))
+            del weight_data
+            if not valid:
+                raise ValueError(
+                    f"symmetric INT8 weights must be in [-127,127]: {name}"
+                )
+        for name, tensor in self.tensors.items():
+            if tensor.dtype == np.dtype("i1") and name not in self.quantization:
+                raise ValueError(f"INT8 tensor lacks quantization metadata: {name}")
 
     @staticmethod
     def _validate_config(config: ModelConfig) -> None:

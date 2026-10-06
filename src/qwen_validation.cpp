@@ -8,14 +8,19 @@
 
 namespace forge {
 
-void validate_qwen2_weights(const ModelFile& file) {
+void validate_qwen2_weights(const ModelFile& file, bool allow_int8) {
+  check(allow_int8 || file.quantization().empty(),
+        "CUDA INT8 execution is not implemented; use an FP16 artifact");
   const auto& config = file.config();
   check(config.model_type == ModelType::qwen2,
         "CUDA Qwen execution requires a Qwen2 model artifact");
-  const auto expect = [&file](const std::string& name,
+  const auto expect = [&file, allow_int8](const std::string& name,
                               std::initializer_list<std::uint32_t> shape) {
     const auto& tensor = file.tensor(name);
-    check(tensor.dtype == DType::fp16, "Qwen execution requires an FP16 tensor: " + name);
+    const bool quantized = allow_int8 && name.starts_with("model.layers.") &&
+                           name.ends_with("_proj.weight") && file.quantization().contains(name);
+    check(tensor.dtype == DType::fp16 || (quantized && tensor.dtype == DType::int8),
+          "Qwen execution requires an FP16 tensor: " + name);
     check(tensor.shape == std::vector<std::uint32_t>(shape),
           "unexpected shape for " + name);
   };

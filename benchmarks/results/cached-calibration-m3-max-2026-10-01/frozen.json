@@ -1,0 +1,95 @@
+{
+  "artifacts": {
+    "gemma": {
+      "calibration_passed": false,
+      "calibration_report": "benchmarks/results/cached-calibration-m3-max-2026-10-01/calibration/gemma-calibration.json",
+      "calibration_stats_sha256": "6b493353e9fe60d6c4a928b8aa6ca044596532b48c48f958dfb244168beae6f0",
+      "model": "models/cached-calibration/gemma-3-1b-it-int8-cached.engine",
+      "model_provenance": {
+        "model_data_sha256": "d1c24ccdb1729cf2f35bdb7a1f5e541a0dea9cbde8756c867648d3e90220f117",
+        "model_file_bytes": 1824053760,
+        "model_format_version": 3
+      },
+      "policy_sha256": "8040a7975e5d7d3e870e0ba67dd05efa4c79a16057ca944dab70737252febf0a",
+      "rtn_control": "models/cached-calibration/gemma-3-1b-it-int8-cached-rtn-control.engine",
+      "rtn_control_provenance": {
+        "model_data_sha256": "a08c0ae0b100de9d511c90d1e8d4686bfd2b15e80bcc58c4a29cebc4ec26d397",
+        "model_file_bytes": 1824053760,
+        "model_format_version": 3
+      },
+      "source": "models/gemma-3-1b-it.engine",
+      "stats": "models/cached-calibration/gemma-stats.npz",
+      "tokenizer": "google/gemma-3-1b-it"
+    },
+    "qwen": {
+      "calibration_passed": false,
+      "calibration_report": "benchmarks/results/cached-calibration-m3-max-2026-10-01/calibration/qwen-calibration.json",
+      "calibration_stats_sha256": "beed0adc2973e610210aa6bb81dc02b32b490be1ed14d2e37f8dd992f45adf52",
+      "model": "models/cached-calibration/qwen2.5-0.5b-int8-cached.engine",
+      "model_provenance": {
+        "model_data_sha256": "3534c26f05b966f5142177cb62bc580a984091df19e83dc99430f08302dc4395",
+        "model_file_bytes": 896975360,
+        "model_format_version": 3
+      },
+      "policy_sha256": "cca72323bcd18a22ce317af446845d603b546e1f9380bae2f11db58383d58904",
+      "rtn_control": "models/cached-calibration/qwen2.5-0.5b-int8-cached-rtn-control.engine",
+      "rtn_control_provenance": {
+        "model_data_sha256": "e21b666f2d8b0103b74f43e49668de17d77694324213b4cbaad822c5a942dd58",
+        "model_file_bytes": 896975360,
+        "model_format_version": 3
+      },
+      "source": "models/qwen2.5-0.5b.engine",
+      "stats": "models/cached-calibration/qwen-stats.npz",
+      "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct"
+    }
+  },
+  "contract": "Both policies and whole files frozen before ANY held-out inference; 25% floor; all 32 cached positions; rowwise; no post-regression retuning.",
+  "corpora_sha256": {
+    "benchmarks/cached-calibration-prompts.json": "db2b452350184becfdb14bbd300586e62aa8a2ee1aafd43af5d4926fe1516320",
+    "benchmarks/cached-regression-prompts.json": "067866228160841d4c345a2b22ea45b59a99745ecca325510a7bb617690f0307",
+    "benchmarks/quality-prompts.json": "baef64219fb99c91c6f572df6624a3b87ba63cdc2ed40c0d1fd3def973bd7685",
+    "benchmarks/second-order-regression-prompts.json": "59db3b7a2488601e4de71bd2140da70f2e51e885410be3c31d60610d36ef0786"
+  },
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "057470340b804ce78266f34e44c6ba347ddb0be2fb1d84298df42b4e7bab9a27"
+  },
+  "files_sha256": {
+    "benchmarks/results/cached-calibration-m3-max-2026-10-01/calibration/gemma-calibration.json": "0ab69b9feb9548eba8d5a2670372e8fdb9d23ef7fbc814df5c665937db681252",
+    "benchmarks/results/cached-calibration-m3-max-2026-10-01/calibration/qwen-calibration.json": "f1b39b0bfb08f161afed9dfb15b0e6b5053e20d92538e5dd2a63ab773e19d5e8",
+    "models/cached-calibration/gemma-3-1b-it-int8-cached-rtn-control.engine": "9983ed79afd6c8418d79515d20c80f8ec682246f3416bb890be4c7fc627a5c80",
+    "models/cached-calibration/gemma-3-1b-it-int8-cached-rtn-control.engine.json": "64389bcaf09d661e37fdb33a8f79c99359e7805283dfe7ff9d39ef316aba864c",
+    "models/cached-calibration/gemma-3-1b-it-int8-cached.engine": "1416a44ee0e2e27221ff9a22eea5b42dd2311ded66c8f4c0fd0ff2b836548734",
+    "models/cached-calibration/gemma-3-1b-it-int8-cached.engine.json": "0778597fed83ffab2e04ac25b4713af24d9e86475e617c4a63d6fdab8ef7c9ae",
+    "models/cached-calibration/gemma-stats.npz": "6b493353e9fe60d6c4a928b8aa6ca044596532b48c48f958dfb244168beae6f0",
+    "models/cached-calibration/qwen-stats.npz": "beed0adc2973e610210aa6bb81dc02b32b490be1ed14d2e37f8dd992f45adf52",
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached-rtn-control.engine": "788615f1a2dbe897ccfd74f2533e6143eab0cd0c3a1861177a349fbbb289a96a",
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached-rtn-control.engine.json": "28c72a869c1c9044e3ab1d17ed9568647a677f3839446aa871e63391374b914a",
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached.engine": "2caf6f8f28f291ca9e00486c1db885fab30ea625e2737c567a6deb20dc9b3041",
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached.engine.json": "3f4800dd6865b583d024f2a3f0a0ac1038a8df27b6e678fa5649dd786c73e4c0",
+    "models/gemma-3-1b-it.engine": "55737a6b2262afec580cc53ce74c716473307e0785db6d908806802c52d293ae",
+    "models/gemma-3-1b-it.engine.json": "e72d85d9fc259e56714d7869729c9963fc205ffcba952505e787cb0e82037dd7",
+    "models/qwen2.5-0.5b.engine": "b982ede847f394bb5c4d1e54455eeaa5cb04904150a4db2ecc039c8519efdc18",
+    "models/qwen2.5-0.5b.engine.json": "0c27cb30e055c15006f636143a5a1b60809dad3ca9eae9c69e62285400638920"
+  },
+  "frozen_at_utc": "2026-10-01T21:32:36.678559+00:00",
+  "schema_version": 1,
+  "search_config": {
+    "candidate_pool": 8,
+    "full_trial_count": 4,
+    "probe_cases": 4,
+    "removal_pool": 4,
+    "repair_rounds": 3
+  },
+  "tools_sha256": {
+    "benchmarks/check_second_order_integrity.py": "9975fc7fe91c0796ee09eaa0c3575a61b97964ede1c8499ff8ed2de7cb4770cc",
+    "benchmarks/gpu_guard.py": "e7ec440187388c1a2a8b97c5e218521236c826d65f84bdf0c8b3625bfabf6bdf",
+    "benchmarks/probe_int8_numerics.py": "019e76105188f4daa149c1f98b22327021514acbebb0eafaf9b91a9bc1f5ebaf",
+    "benchmarks/run_cached_checkpoint.py": "c162d4a273b7a4676d181f06153184af13069aff311a1f03eb6803ee7a0edc12",
+    "benchmarks/run_int8_matrix.py": "dd4f01c409d6a365189490d210775a4cb12eb3e7f855ce34b030a011ae9f1742",
+    "benchmarks/run_second_order_checkpoint.py": "d1d7b73c73f293c4957396e5866c16488a83056a8c96a562674628046f5b197a",
+    "benchmarks/validate_batch_boundaries.py": "9b7c10c37ffdfec49264d0f6580c60251abe1b932b62fcf870a64b850ea401dd",
+    "benchmarks/validate_batch_numerics.py": "beae1e9904892f9cfd97a32a0e84a627e72356df587b37082fe1c50a54c62d0d"
+  }
+}

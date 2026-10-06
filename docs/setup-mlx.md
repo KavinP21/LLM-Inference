@@ -48,6 +48,10 @@ mixed-length batched decode, and cancellation cleanup through MLX.
 
 ## Official checkpoint
 
+For an opt-in accuracy-oriented decode policy, use `decode_mode="rowwise"` with the Python engine
+or `--decode-mode rowwise` with benchmark/context tools. The throughput-oriented default is
+unchanged. Read [the numerical policy](decode-numerics.md) for exact scope and performance costs.
+
 The model is downloaded only for local validation and the `models/` directory is ignored by Git.
 
 ```bash
@@ -167,3 +171,22 @@ MTL_CAPTURE_ENABLED=1 forge-bench \
 
 Open the ignored bundle in Xcode. Do not report the capture-instrumented latency as normal runtime
 performance.
+
+## Experimental INT8 checkpoint
+
+Run `forge-quantize FP16.engine INT8.engine`, then explicitly select the new artifact with
+`int8_mode="metal"` (or `"dequantize"` for its baseline). See
+[the quantization runbook](quantization.md) before using it: the current real-model quality gates
+have not passed. The ordinary FP16 artifacts and desktop app defaults are unchanged.
+
+Separate-corpus mixed-precision calibration and `int8_mode="reconstruct"` are now available.
+Reconstruction uses native MLX matmul even during decode, trading extra temporary matrices/launches
+for the composed baseline's accumulation order. See
+[the hardening report](mlx-int8-hardening-results.md): both numerical gates pass, but neither frozen
+policy passes every exact-greedy case. Keep FP16 for ordinary use.
+
+For the newer cached-decode calibration/repair experiment use the
+[cached checkpoint runbook](cached-calibration.md). It requires fresh artifact/result directories,
+freezes both policies before regression, and observes every cached decode position. Old policies,
+results, normal engine defaults, and app behavior remain unchanged. Calibration alone is not a
+release-quality certificate.

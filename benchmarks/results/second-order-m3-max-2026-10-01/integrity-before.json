@@ -1,0 +1,76 @@
+{
+  "files": {
+    "benchmarks/results/second-order-m3-max-2026-10-01/calibration/gemma-calibration.json": {
+      "bytes": 247671,
+      "sha256": "6a5a4bb2ace03ac4567ecbcf9bbf06dc4815794648e3b7a860ea82a9f4037549"
+    },
+    "benchmarks/results/second-order-m3-max-2026-10-01/calibration/qwen-calibration.json": {
+      "bytes": 240712,
+      "sha256": "3db609acc6a085a32c00dcc2bfcc13b3c381c046d1cb70b2951227a1f911f087"
+    },
+    "benchmarks/results/second-order-m3-max-2026-10-01/frozen.json": {
+      "bytes": 3307,
+      "sha256": "7e001c8747059fd8708ce10863b058870a8998438e6bb9d83b01dbde8fbfb0cb"
+    },
+    "models/gemma-3-1b-it.engine": {
+      "bytes": 1999794688,
+      "sha256": "55737a6b2262afec580cc53ce74c716473307e0785db6d908806802c52d293ae"
+    },
+    "models/gemma-3-1b-it.engine.json": {
+      "bytes": 266,
+      "sha256": "e72d85d9fc259e56714d7869729c9963fc205ffcba952505e787cb0e82037dd7"
+    },
+    "models/qwen2.5-0.5b.engine": {
+      "bytes": 988084480,
+      "sha256": "b982ede847f394bb5c4d1e54455eeaa5cb04904150a4db2ecc039c8519efdc18"
+    },
+    "models/qwen2.5-0.5b.engine.json": {
+      "bytes": 239,
+      "sha256": "0c27cb30e055c15006f636143a5a1b60809dad3ca9eae9c69e62285400638920"
+    },
+    "models/second-order/gemma-3-1b-it-int8-second-order-rtn-control.engine": {
+      "bytes": 1825228544,
+      "sha256": "c4c60f638f3f78903392f89182c050f41f4af709b35220a0ec0a5f028daffdf5"
+    },
+    "models/second-order/gemma-3-1b-it-int8-second-order-rtn-control.engine.json": {
+      "bytes": 8278,
+      "sha256": "129eada92c7f98a4318f75abbfd737683f3b1fc6f7abf44c06c71e48baf9da60"
+    },
+    "models/second-order/gemma-3-1b-it-int8-second-order.engine": {
+      "bytes": 1825228544,
+      "sha256": "144c39d8ab247cba4c52a2d9950555825946c125c3d4a9c9adde1fd7578de2cb"
+    },
+    "models/second-order/gemma-3-1b-it-int8-second-order.engine.json": {
+      "bytes": 17889,
+      "sha256": "e367fe52f76355d04e73486798779f2e7bed6a800d99a2ddd7467832ba847f5f"
+    },
+    "models/second-order/gemma-stats.npz": {
+      "bytes": 136355380,
+      "sha256": "96a5de48ca18020146bb5b2817b0594fd89d53563b273f540157faa1f38b32d8"
+    },
+    "models/second-order/qwen-stats.npz": {
+      "bytes": 92836404,
+      "sha256": "4adfbb6c00029089be1a54da5e1a085cd1688967cee1962a3b32d3e2ac771e6f"
+    },
+    "models/second-order/qwen2.5-0.5b-int8-second-order-rtn-control.engine": {
+      "bytes": 896176128,
+      "sha256": "911a39a87fabf1dc4e7098da2453c26aad383d702730c1a1e85996082cf4d126"
+    },
+    "models/second-order/qwen2.5-0.5b-int8-second-order-rtn-control.engine.json": {
+      "bytes": 7635,
+      "sha256": "f1ace9e7455494fb71eece7f5c0f7a5967876ab87fec9794ba5ea972a0427cb6"
+    },
+    "models/second-order/qwen2.5-0.5b-int8-second-order.engine": {
+      "bytes": 896176128,
+      "sha256": "2fff58cf5d420bd1597081916cd6d846c3a7c2b2b7b0181e968bd729da30771b"
+    },
+    "models/second-order/qwen2.5-0.5b-int8-second-order.engine.json": {
+      "bytes": 16583,
+      "sha256": "30286f437aaece15b531ecd0a3fa322caad0e31759a6bfe13b8a98e5d8d285cf"
+    }
+  },
+  "matches_baseline": true,
+  "runtime_source_sha256": "21fa0be0da47cb8b14bef2bd7f799ce3a6ad6e3381a5026fc46f4d016d1bc898",
+  "schema_version": 1,
+  "scope": "Complete file bytes, including architecture/descriptors; read-only and outside timed inference."
+}

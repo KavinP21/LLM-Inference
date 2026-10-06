@@ -15,6 +15,7 @@ import numpy as np
 from ..model_contract import validate_qwen2_weights
 from ..model_file import ModelFile
 from ..paged_kv import MlxPagedKVStore
+from .int8_kernels import Int8LinearKernels
 from .metal_kernels import MetalKernelSuite
 
 if TYPE_CHECKING:
@@ -70,6 +71,8 @@ class MlxQwenModel:
         attention_tile_size: int = 1024,
         custom_metal: bool = True,
         metal_paged_attention: bool = True,
+        int8_mode: str = "auto",
+        decode_mode: str = "batched",
         _model_file: ModelFile | None = None,
     ) -> None:
         self.mx = _mlx()
@@ -84,6 +87,14 @@ class MlxQwenModel:
         self.custom_metal = bool(custom_metal)
         self.metal_paged_attention = bool(metal_paged_attention and custom_metal)
         try:
+            if int8_mode not in {"auto", "dequantize", "metal", "reconstruct"}:
+                raise ValueError(
+                    "int8_mode must be auto, dequantize, metal or reconstruct"
+                )
+            self.int8_mode = int8_mode
+            if decode_mode not in {"batched", "rowwise"}:
+                raise ValueError("decode_mode must be batched or rowwise")
+            self.decode_mode = decode_mode
             if not 0 < self.max_model_length <= self.config.max_position_embeddings:
                 raise ValueError(
                     "runtime context limit exceeds the model context limit"
@@ -101,6 +112,11 @@ class MlxQwenModel:
             )
             self.mx.eval(self.rope_frequencies)
             self.metal = MetalKernelSuite(self.mx) if self.custom_metal else None
+            self.int8 = (
+                Int8LinearKernels(self.mx)
+                if self.file.quantization and int8_mode != "dequantize"
+                else None
+            )
         except Exception:
             self.file.close()
             raise
@@ -126,8 +142,68 @@ class MlxQwenModel:
         mx.eval(*aliases.values())
         return result
 
-    def _linear(self, x, weight_name: str, bias_name: str | None = None):
-        output = x @ self.weights[weight_name].T
+    def _decode_linear(self, x, weight_name: str, bias_name: str | None = None):
+        if x.ndim != 2:
+            raise ValueError("decode projection inputs must have rank two")
+        return self._linear(
+            x, weight_name, bias_name, rowwise=self.decode_mode == "rowwise"
+        )
+
+    def _linear(
+        self,
+        x,
+        weight_name: str,
+        bias_name: str | None = None,
+        *,
+        rowwise: bool = False,
+    ):
+        """Optional single-row reductions, without splitting attention or prefill.
+
+        A reconstructed matrix is shared by all row GEMVs in this call. This
+        policy changes launch/weight-reuse efficiency, not dtype or tie handling.
+        """
+
+        def multiply(weight):
+            if rowwise and x.shape[0] > 1:
+                return self.mx.concatenate(
+                    [x[i : i + 1] @ weight.T for i in range(x.shape[0])], axis=0
+                )
+            return x @ weight.T
+
+        weight = self.weights[weight_name]
+        spec = self.file.quantization.get(weight_name)
+        if spec is None:
+            output = multiply(weight)
+        else:
+            scales = self.weights[spec.scale_name]
+            rows = 1 if rowwise else x.size // x.shape[-1]
+            if (
+                self.int8 is not None
+                and self.int8_mode != "reconstruct"
+                and rows <= self.int8.max_rows
+            ):
+                output = (
+                    self.mx.concatenate(
+                        [
+                            self.int8.linear(x[i : i + 1], weight, scales)
+                            for i in range(x.shape[0])
+                        ],
+                        axis=0,
+                    )
+                    if rowwise and x.shape[0] > 1
+                    else self.int8.linear(x, weight, scales)
+                )
+            else:
+                # Ephemeral FP16 reconstruction feeds MLX's optimized prefill
+                # GEMM. It is never cached as a second resident weight copy.
+                reconstructed = (
+                    self.int8.reconstruct(weight, scales)
+                    if self.int8 is not None
+                    else (weight.astype(self.mx.float32) * scales[:, None]).astype(
+                        self.mx.float16
+                    )
+                )
+                output = multiply(reconstructed)
         if bias_name is not None:
             output = output + self.weights[bias_name]
         return output
@@ -358,7 +434,7 @@ class MlxQwenModel:
     def _fast_attention(
         self, query, key, value, *, scale: float | None = None, mask="causal"
     ):
-        """Use MLX's fused GQA attention without materializing the score matrix."""
+        """Use fused GQA where eligible, with MLX's bounded short-tail fallback."""
         mx = self.mx
         q = mx.transpose(query, (1, 0, 2))[None, :, :, :]
         k = mx.transpose(key, (1, 0, 2))[None, :, :, :]
@@ -372,6 +448,19 @@ class MlxQwenModel:
             force_fused=(
                 int(key.shape[0]) >= 256
                 and self.head_dim in self._fused_attention_head_dims
+                # MLX 0.32.2 vector mode (<=8 queries) has stricter GQA/head
+                # limits than full attention. Let its dispatcher safely fall
+                # back for unsupported short tails; do not catch arbitrary
+                # execution errors or force an unavailable fused kernel.
+                and (
+                    int(query.shape[0]) > 8
+                    or (
+                        self.head_dim in {64, 96, 128, 192, 256}
+                        and int(query.shape[0])
+                        * (int(query.shape[1]) // int(key.shape[1]))
+                        <= 32
+                    )
+                )
             ),
         )
         return mx.transpose(output[0], (1, 0, 2)).reshape(query.shape[0], -1)
@@ -609,21 +698,22 @@ class MlxQwenModel:
         position_array = mx.array(positions, dtype=mx.int32)
         key_lengths = [position + 1 for position in positions]
         touched: set[int] = set()
+        linear = self._decode_linear
         normalized = self._rms_norm(hidden, "model.layers.0.input_layernorm.weight")
 
         for layer in range(self.config.num_hidden_layers):
             prefix = f"model.layers.{layer}."
-            query = self._linear(
+            query = linear(
                 normalized,
                 prefix + "self_attn.q_proj.weight",
                 prefix + "self_attn.q_proj.bias",
             ).reshape(batch, self.config.num_attention_heads, self.head_dim)
-            key = self._linear(
+            key = linear(
                 normalized,
                 prefix + "self_attn.k_proj.weight",
                 prefix + "self_attn.k_proj.bias",
             ).reshape(batch, self.config.num_key_value_heads, self.head_dim)
-            value = self._linear(
+            value = linear(
                 normalized,
                 prefix + "self_attn.v_proj.weight",
                 prefix + "self_attn.v_proj.bias",
@@ -642,19 +732,15 @@ class MlxQwenModel:
             attention = self._paged_decode_attention_batch(
                 query, layer, block_tables, key_lengths, store
             )
-            attention_output = self._linear(
-                attention, prefix + "self_attn.o_proj.weight"
-            )
+            attention_output = linear(attention, prefix + "self_attn.o_proj.weight")
             hidden, normalized = self._residual_rms_norm(
                 hidden,
                 attention_output,
                 prefix + "post_attention_layernorm.weight",
             )
-            gate = self._linear(normalized, prefix + "mlp.gate_proj.weight")
-            up = self._linear(normalized, prefix + "mlp.up_proj.weight")
-            mlp_output = self._linear(
-                self._swiglu(gate, up), prefix + "mlp.down_proj.weight"
-            )
+            gate = linear(normalized, prefix + "mlp.gate_proj.weight")
+            up = linear(normalized, prefix + "mlp.up_proj.weight")
+            mlp_output = linear(self._swiglu(gate, up), prefix + "mlp.down_proj.weight")
             next_norm = (
                 f"model.layers.{layer + 1}.input_layernorm.weight"
                 if layer + 1 < self.config.num_hidden_layers
@@ -662,7 +748,7 @@ class MlxQwenModel:
             )
             hidden, normalized = self._residual_rms_norm(hidden, mlp_output, next_norm)
 
-        logits = self._linear(normalized, "lm_head.weight").astype(mx.float32)
+        logits = linear(normalized, "lm_head.weight").astype(mx.float32)
         mx.eval(logits)
         store.materialize(touched)
         return logits
@@ -744,6 +830,9 @@ class MlxQwenModel:
         return np.asarray(logits[-1])
 
     def close(self) -> None:
+        # Closing an engine must release its resident weights even if callers
+        # retain the closed Engine object. MLX may keep freed buffers in its cache.
+        self.weights.clear()
         self.file.close()
 
     def __enter__(self) -> Self:

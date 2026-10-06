@@ -24,6 +24,33 @@ residual/RMSNorm and SwiGLU fusions, while retaining an independently selectable
 
 - A deterministic, checksummed, 256-byte-aligned model container and Hugging Face exporter.
 - Version-2 multi-family metadata with backward-compatible version-1 Qwen loading.
+- Experimental version-3 weight-only INT8 artifacts, per-output-channel FP32 scales, and a custom
+  Metal small-batch linear kernel for both families; see [quantization](docs/quantization.md).
+- Separate-corpus precision calibration, explicit mixed FP16/INT8 policies, and an accuracy-oriented
+  reconstruction mode; [numerical gates improve but greedy gates still fail](docs/mlx-int8-hardening-results.md).
+- Activation-calibrated block-diagonal INT8 error compensation and joint precision selection,
+  with frozen-before-regression statistics, strict derivation checks, and same-partition RTN controls;
+  [the new experiment has mixed quality results and remains uncertified](docs/mlx-second-order-results.md).
+- Actual cached-decode activation/probe coverage, bounded full-calibration policy repair, and
+  all-position numerical regression; [the cached checkpoint remains experimental](docs/mlx-cached-calibration-results.md).
+- Activation-weighted scale selection with whole-row reconstruction fallback, backward-compatible
+  packed execution, and a pre-registered stop-before-held-out calibration stage;
+  see [the contract](docs/scale-aware-quantization.md) and
+  [the completed calibration results (exact-token gates failed)](docs/mlx-scale-aware-results.md).
+- Bounded integer-coordinate refinement with fixed fitted scales, fresh calibration, complete-row
+  fallback, and independent coefficient/objective readback; see [the contract](docs/refined-quantization.md)
+  and [results (Qwen calibration passes; Gemma numerical gate fails)](docs/mlx-refined-results.md).
+- A separate, sealed Qwen-only downstream validation driver with all-position held-out checks,
+  native/composed byte controls, immutable evidence, and quality-gated resource/performance stages;
+  see [the downstream contract](docs/qwen-validation.md). Direct Metal and Gemma cannot inherit
+  native Qwen acceptance; [the held-out exact-token gate fails](docs/mlx-qwen-validation-results.md).
+  The [delivery roadmap](docs/roadmap.md) counts the remaining major milestones and resumes independent
+  FP16 prefix-cache work without weakening quantization gates.
+- Opt-in FP16 MLX prefix caching with immutable shared pages, reference-counted ownership,
+  partial-tail copy-on-write, namespace-scoped reuse, bounded LRU eviction and safe admission;
+  see [the contract and API](docs/prefix-cache.md). [All registered validation gates pass](docs/mlx-prefix-cache-results.md);
+  timing/final qualification is deferred at the user's [safe stopping point](docs/prefix-cache-handoff.md).
+  Original FP16/app defaults remain unchanged.
 - Strict, backend-independent Qwen2 and Gemma 3 tensor/configuration validation.
 - A safe Python memory-mapped reader sharing the C++ model-container contract.
 - Full FP16 Qwen2 and Gemma 3 MLX execution paths with physical paged K/V storage.
@@ -31,6 +58,8 @@ residual/RMSNorm and SwiGLU fusions, while retaining an independently selectable
 - Bounded-workspace fused GQA attention plus an exact online-softmax tiled reference path.
 - Shape-specialized custom Metal transformer fusions and direct block-table paged decode attention.
 - Chunked prefill to 32K and batched one-token decode across all runnable requests.
+- Explicit MLX decode numerical policy: unchanged `batched` default or optional single-row
+  projections with batched attention; see [the contract](docs/decode-numerics.md).
 - A backend-neutral Python scheduler and KV-capacity accounting layer.
 - Automatic or explicit `mlx`/`cuda` backend selection through one Python API.
 - RAII CUDA activation/workspace arenas and cached cuBLASLt execution context.
@@ -42,7 +71,7 @@ residual/RMSNorm and SwiGLU fusions, while retaining an independently selectable
 - FCFS iteration-level continuous batching with cancellation and immediate reclamation.
 - A pybind11 API, reproducible JSON benchmark runner, portable host tests, and CI.
 
-Not yet implemented on MLX: quantization, probabilistic sampling, prefix caching, HTTP serving, or
+Not yet implemented on MLX: 4-bit quantization, probabilistic sampling, speculative decoding, HTTP serving, or
 distributed execution. The custom attention kernel reads a packed physical-page tensor through
 per-request block tables, but MLX arrays are immutable and the Python API cannot expose independent
 page allocations as one pointer-addressable pool. The runtime therefore stacks live layer-pages
@@ -104,6 +133,13 @@ PY
 
 The asynchronous interface consists of `submit`, `step`, `cancel`, and `stats`. Each `step` returns
 token events for active requests, allowing new requests to join between decode iterations.
+
+For repeated prompts, opt into MLX prefix reuse with `prefix_cache_bytes` and
+`prefix_cache_max_entries`. The retention budget is within the total KV budget; use
+`decode_mode="rowwise"` for the qualified exact numerical policy. `submit`/`generate` accept
+`cache_namespace`, and `clear_prefix_cache()` releases retained cache pins without cancelling
+active requests. Cached pages intentionally survive request completion. Full API examples,
+32K retention sizing and limitations are in [the prefix-cache contract](docs/prefix-cache.md).
 
 ## Minimal Mac desktop app
 

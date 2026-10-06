@@ -1,0 +1,29 @@
+{
+  "contract_sha256": "e8ddbf7a58102b768a2630c1caebc4fb4c46251e27f8f5095fbd7085d55ee09a",
+  "direct_metal_is_diagnostic": true,
+  "files_sha256": {
+    "benchmarks/results/qwen-validation-m3-max-2026-10-02/quality/metal.json": "10dd38bc33bbf82474206f17360fb5460a88a12ba4a16a6efdacc5c0a6dff93b",
+    "benchmarks/results/qwen-validation-m3-max-2026-10-02/quality/native-composed-bytes.json": "bc0dca08826b8ec410aada58d9a84138f934219abf345e5ce7968f7b2f82c549",
+    "benchmarks/results/qwen-validation-m3-max-2026-10-02/quality/reconstruct.json": "23d99d388a41c3565dd567949890b502632c25096d929498b4f9ae60fee46c88"
+  },
+  "gates": {
+    "metal": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    },
+    "reconstruct": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    }
+  },
+  "native_composed_bytes": true,
+  "quality_passed": false
+}

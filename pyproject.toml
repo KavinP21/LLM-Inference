@@ -17,11 +17,17 @@ reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 
 [project.scripts]
 forge-export = "forge_llm.export:main"
+forge-quantize = "forge_llm.quantization:main"
 forge-bench = "forge_llm.benchmark:main"
 forge-bench-reference = "forge_llm.benchmark_reference:main"
 forge-correctness = "forge_llm.correctness:main"
 forge-validate-long-context = "forge_llm.long_context:main"
 forge-profile-attention = "forge_llm.profile_attention:main"
+forge-profile-int8 = "forge_llm.profile_int8:main"
+forge-validate-int8 = "forge_llm.validate_int8:main"
+forge-calibrate-int8 = "forge_llm.calibrate_int8:main"
+forge-calibrate-second-order = "forge_llm.calibrate_second_order:main"
+forge-calibrate-cached = "forge_llm.calibrate_cached:main"
 
 [tool.scikit-build]
 cmake.args = ["-DFORGE_BUILD_PYTHON=ON"]

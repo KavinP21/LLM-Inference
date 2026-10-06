@@ -9,7 +9,10 @@ from .model_file import ModelFile
 
 def _expect_fp16(file: ModelFile, name: str, shape: tuple[int, ...]) -> None:
     tensor = file.tensor_info(name)
-    if tensor.dtype != np.dtype("<f2"):
+    is_projection = name.startswith("model.layers.") and name.endswith("_proj.weight")
+    if tensor.dtype != np.dtype("<f2") and not (
+        is_projection and name in file.quantization and tensor.dtype == np.dtype("i1")
+    ):
         raise ValueError(f"model execution requires FP16 tensor: {name}")
     if tensor.shape != shape:
         raise ValueError(
@@ -18,6 +21,7 @@ def _expect_fp16(file: ModelFile, name: str, shape: tuple[int, ...]) -> None:
 
 
 def validate_qwen2_weights(file: ModelFile) -> None:
+    _validate_quantized_projections(file)
     config = file.config
     if config.model_type != "qwen2":
         raise ValueError("Qwen2 validation requires a Qwen2 model artifact")
@@ -75,6 +79,7 @@ def validate_qwen2_weights(file: ModelFile) -> None:
 
 
 def validate_gemma3_weights(file: ModelFile) -> None:
+    _validate_quantized_projections(file)
     config = file.config
     if config.model_type != "gemma3_text":
         raise ValueError("Gemma 3 validation requires a Gemma 3 text artifact")
@@ -135,6 +140,27 @@ def validate_gemma3_weights(file: ModelFile) -> None:
             prefix + "mlp.down_proj.weight",
             (config.hidden_size, config.intermediate_size),
         )
+
+
+def _validate_quantized_projections(file: ModelFile) -> None:
+    supported = {
+        f"model.layers.{layer}.{name}.weight"
+        for layer in range(file.config.num_hidden_layers)
+        for name in [
+            "self_attn.q_proj",
+            "self_attn.k_proj",
+            "self_attn.v_proj",
+            "self_attn.o_proj",
+            "mlp.gate_proj",
+            "mlp.up_proj",
+            "mlp.down_proj",
+        ]
+    }
+    for name in file.quantization:
+        if name not in supported:
+            raise ValueError(
+                f"only internal projection weights may be quantized: {name}"
+            )
 
 
 def validate_model_weights(file: ModelFile) -> None:

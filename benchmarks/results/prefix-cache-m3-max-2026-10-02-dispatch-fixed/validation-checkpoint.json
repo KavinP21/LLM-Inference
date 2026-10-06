@@ -1,0 +1,24 @@
+{
+  "contract_sha256": "051ef3d3492f97d7fa875e8915e3989a8b9d0721a757d1925fc8da7da7e487b8",
+  "files_sha256": {
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/gemma-32k.json": "bf692dda56da7c8e14f31204cf6b710dab0c56082744b07a00f1d037eb6f0488",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/gemma-chunk127.json": "259b21f552f16524c9ce62b8e0f394ff3790ebb9ac2a8ab9bbf28472e16abac9",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/gemma-chunk512.json": "19686fcf2807b978a389fb8e0f8a4e648ae4f648edcde48e86e7d3e75a7d0981",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/gemma-stress.json": "6114d4d3d805cd8aacabf38eccc1c67fbdb57d698afea3849eb956b206169fc6",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/qwen-32k.json": "44a5942f237c461036cecdcd0eb5b3c654ab403da418d23f0d4d7c294e77a80e",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/qwen-chunk127.json": "f7b07e9fc62abba70b02dcab996004d598adc6b1300e573c6dd226bacb361131",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/qwen-chunk512.json": "bc72a191e7049deb4e0a4be70a3181dd165e3df32ad42300b4df6e12a5148c98",
+    "benchmarks/results/prefix-cache-m3-max-2026-10-02-dispatch-fixed/validation/qwen-stress.json": "3e1b35db807d4ddacb36386ed257b30329d61e808c354a61e5d72ea992d5e378"
+  },
+  "gates": {
+    "gemma-32k": true,
+    "gemma-chunk127": true,
+    "gemma-chunk512": true,
+    "gemma-stress": true,
+    "qwen-32k": true,
+    "qwen-chunk127": true,
+    "qwen-chunk512": true,
+    "qwen-stress": true
+  },
+  "passed": true
+}

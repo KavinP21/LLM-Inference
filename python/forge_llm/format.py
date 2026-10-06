@@ -11,14 +11,26 @@ from pathlib import Path
 import numpy as np
 
 MAGIC = b"FORGELLM"
-VERSION = 2
+VERSION = 3
 ALIGNMENT = 256
 HEADER = struct.Struct("<8sIIQQ32s32s")
 CONFIG_V1 = struct.Struct("<8I2fI")
 CONFIG_V2 = struct.Struct("<13I8fI")
 CONFIG = CONFIG_V2
 TENSOR = struct.Struct("<HBBQQ")
-DTYPES = {np.dtype("<f2"): 1, np.dtype("<f4"): 2, np.dtype("<i4"): 3}
+DTYPES = {np.dtype("<f2"): 1, np.dtype("<f4"): 2, np.dtype("<i4"): 3, np.dtype("i1"): 4}
+QUANTIZATION = struct.Struct("<HBBH")
+
+
+@dataclass(frozen=True)
+class QuantizationSpec:
+    """Version-3 symmetric signed INT8, one FP32 scale per output channel."""
+
+    scale_name: str
+    scheme: int = 1
+    axis: int = 0
+
+
 MODEL_TYPES = {"qwen2": 1, "gemma3_text": 2}
 MODEL_TYPES_BY_ID = {value: key for key, value in MODEL_TYPES.items()}
 ACTIVATIONS = {"silu": 1, "gelu_pytorch_tanh": 2}
@@ -164,9 +176,13 @@ def write_engine(
     config: ModelConfig,
     tensors: Mapping[str, np.ndarray],
     aliases: Mapping[str, str] | None = None,
+    quantization: Mapping[str, QuantizationSpec] | None = None,
 ) -> dict:
     """Write a deterministic, checksummed Forge model container."""
     aliases = dict(aliases or {})
+    quantization = dict(quantization or {})
+    scale_names = {spec.scale_name for spec in quantization.values()}
+    version = 3 if quantization else 2
     for alias, target in aliases.items():
         if alias not in tensors or target not in tensors or alias == target:
             raise ValueError(f"invalid tensor alias {alias!r} -> {target!r}")
@@ -184,7 +200,11 @@ def write_engine(
             continue
         array = np.asarray(tensors[canonical])
         if array.dtype.kind == "f":
-            array = array.astype("<f2", copy=False)
+            array = array.astype(
+                "<f4" if canonical in scale_names else "<f2", copy=False
+            )
+        elif array.dtype == np.int8:
+            array = array.astype("i1", copy=False)
         elif array.dtype == np.int32:
             array = array.astype("<i4", copy=False)
         else:
@@ -245,12 +265,24 @@ def write_engine(
         metadata.write(struct.pack(f"<{array.ndim}I", *array.shape))
         metadata.write(encoded)
 
+    if version == 3:
+        metadata.write(struct.pack("<I", len(quantization)))
+        for name, spec in sorted(quantization.items()):
+            encoded, scale = name.encode("utf-8"), spec.scale_name.encode("utf-8")
+            if not 0 < len(encoded) <= 65535 or not 0 < len(scale) <= 65535:
+                raise ValueError("invalid quantization descriptor name")
+            metadata.write(
+                QUANTIZATION.pack(len(encoded), spec.scheme, spec.axis, len(scale))
+            )
+            metadata.write(encoded)
+            metadata.write(scale)
+
     metadata_bytes = metadata.getvalue()
     data_bytes = data.getvalue()
     data_start = _align(HEADER.size + len(metadata_bytes))
     header = HEADER.pack(
         MAGIC,
-        VERSION,
+        version,
         len(metadata_bytes),
         data_start,
         len(data_bytes),
@@ -266,7 +298,7 @@ def write_engine(
 
     return {
         "path": str(path),
-        "format_version": VERSION,
+        "format_version": version,
         "model_type": config.model_type,
         "tensors": len(entries),
         "bytes": path.stat().st_size,

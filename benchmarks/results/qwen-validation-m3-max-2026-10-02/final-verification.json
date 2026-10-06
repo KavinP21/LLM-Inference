@@ -1,0 +1,55 @@
+{
+  "benchmark_results": 0,
+  "cached_quality_rows": 1600,
+  "captured_source_files_verified": 104,
+  "contract_sha256": "e8ddbf7a58102b768a2630c1caebc4fb4c46251e27f8f5095fbd7085d55ee09a",
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "5387bb7931410a40862e9ca6d6d9d635af37f0d5b3fd8d63e28808f74b09561b"
+  },
+  "evidence_index_sha256": "c5a00950a3455da196a2fec9ca4ff9e1020d6c7a362b8c9dd371bcad30a2f393",
+  "exported_model": {
+    "model_data_sha256": "35cd24b96996b877e25c01b182c87b6ea5a2399d63b997c9b5761ab3d0204619",
+    "model_file_bytes": 896975360,
+    "model_format_version": 3
+  },
+  "final_complete_files_verified": 9,
+  "final_tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 287
+  },
+  "native_composed_byte_rows": 800,
+  "performance_matrix_executed": false,
+  "prior_complete_files_unchanged": 134,
+  "quality_gates": {
+    "metal": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    },
+    "reconstruct": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    }
+  },
+  "quality_passed": false,
+  "readback_passed": true,
+  "registered_files_verified": 10,
+  "resource_stage_executed": false,
+  "resource_stage_passed": false,
+  "schema_version": 1,
+  "scope": "Qwen only, native reconstruction with rowwise projections. Direct Metal quality is diagnostic and cannot certify this execution mode. References are the identical Forge FP16 artifact, not a new Transformers or general-accuracy certification. Gemma remains FP16. No app/default change or automatic promotion.",
+  "state": "rejected_at_held_out_quality",
+  "strict_checkpoint_passed": false,
+  "test_results_sha256": "98b45ca0be13994d3ae2f78456df7a9671151056889ee5e69b7476219f9bd482"
+}

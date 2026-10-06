@@ -10,3 +10,5 @@ models/
 benchmark-results/
 profiles/
 .DS_Store
+
+.publication/

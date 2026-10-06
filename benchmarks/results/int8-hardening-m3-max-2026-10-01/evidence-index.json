@@ -1,0 +1,146 @@
+{
+  "32k_gate": "both families and both modes executed/reclaimed; not semantic quality",
+  "diagnostic_only": [
+    "qwen/diagnostic-matrix/",
+    "qwen/diagnostic-matrix-repeat/",
+    "qwen/checkpoint-diagnostic.json"
+  ],
+  "evidence_sha256": {
+    "gemma-calibration.json": "6aa8dbe62fe0ab9e064ec511d3cbe83a7007579d367e71955720429324e7cade",
+    "gemma/32k-metal.json": "895c55178f92231e82f9ba589bbbce78115dbc8e0015aeb8dd7cf2f4ffdaec35",
+    "gemma/32k-reconstruct.json": "d026bd7ebe40a7c54323386418a4e91d72a3141d02afe1d052503c7fb771154e",
+    "gemma/batch-fp16-baseline.json": "3598c148477cc1cc4547ed3d05fbb64a92602a4a577aa27d4e2f260c50cd0302",
+    "gemma/batch-fp16-diagnostic.json": "2bc31d6142ed22f2f43411934ba2a063794908fc543e8ed410c5927801350298",
+    "gemma/batch-metal.json": "cf2ee77a623800c15e515f262c7e5281ae04afeb36551fb2db1072c66a45fc15",
+    "gemma/batch-mixed-diagnostic.json": "988f328106af29cfd4a003cfac841eabd3c358273f9d36605e9292eb2dab8ec1",
+    "gemma/batch-reconstruct.json": "a2b2e2001f0e5a04987ef65a8a61a56ffd7139590ac350f4a0a7947bc9201673",
+    "gemma/matrix/fp16-p1024-c1.json": "c30e737d8b89ba0e11c89298d9aa574a84aeb77ec9adea29cd7d5737377d0c27",
+    "gemma/matrix/fp16-p1024-c8.json": "ac43c32aadde3a958d513254007c4496cbfc192ea86dbb4e0e4d4e64b6f286de",
+    "gemma/matrix/fp16-p128-c1.json": "3f139f6e49d168cc4445b4ce945fd1990ff549780d86c4cc1b65a0fc5ebb0a8d",
+    "gemma/matrix/fp16-p128-c8.json": "0c72bae7b2f798c8da1a7d7d59820154807d221117701a2a05f7a94a8d86ba95",
+    "gemma/matrix/int8-dequantize-p1024-c1.json": "9e71d2fcce9005ded949d68b6cb59c788edce0d86fcdc0dc6879e6a5091cf079",
+    "gemma/matrix/int8-dequantize-p1024-c8.json": "e857a2145b1192f630a5364f2e48149dec77a533bb06448d0a6a1cfac586307d",
+    "gemma/matrix/int8-dequantize-p128-c1.json": "78f2cef67c2e6da4ffecb9d66be12d261c0ca6a3ccce6a7bf7eb437409bb3ce7",
+    "gemma/matrix/int8-dequantize-p128-c8.json": "f433a6a6a4c9a37aca003d16d04439f5b8255cfe4f7d005b554240584ea23f58",
+    "gemma/matrix/int8-metal-p1024-c1.json": "4eb5a8dae4ea27cefa8251dd309f62b28a0ddcb14e30ae69c0abf968aa245bd6",
+    "gemma/matrix/int8-metal-p1024-c8.json": "97ae38db6990babb72b955ae8d63a3e2824b5b121a4a8e1c8f8f3bd2f4ae8550",
+    "gemma/matrix/int8-metal-p128-c1.json": "dbce4462990d6cffc56328960aaa1ba832f8a2793eaff3e7b37435e5196f3275",
+    "gemma/matrix/int8-metal-p128-c8.json": "e0f719a3f6bb4338ed8935eda55202d1e9f79edca09a39ab403f36b8fbccb3ba",
+    "gemma/matrix/int8-reconstruct-p1024-c1.json": "4b21383f0393397979da266a7ed1f07eb78317a0890cb5ba83c772d247e4842e",
+    "gemma/matrix/int8-reconstruct-p1024-c8.json": "58b8634cb0fc31a927efd3c68feac097345a87c4ec0ab32ed7e5ba31284da392",
+    "gemma/matrix/int8-reconstruct-p128-c1.json": "42bd8938b273435a942c147888c3595cbf864451332845a52e2cd2b9e3649d47",
+    "gemma/matrix/int8-reconstruct-p128-c8.json": "ab1b78f6c4b8629947ec9fc27320df2abbe8822c55cdd9b7aa47e0519ada58b6",
+    "gemma/matrix/workload-p1024-c1.json": "1fdfdd8a1a03770adbf4f6f7039191f0a48de44c732b194ca8a0b13dd382f854",
+    "gemma/matrix/workload-p1024-c8.json": "220579b5f899dd1e23dc55ad2adab0e534bb693c528548d259a2504a2692848b",
+    "gemma/matrix/workload-p128-c1.json": "6020d2e633afa9d623ecc500a0c0f5f432be388d6216d2f13cf4e98b9d6b9a3b",
+    "gemma/matrix/workload-p128-c8.json": "e9a1d7351a5307b1419c00a8de752b9eb3432625a5fb7957cc2b2ece9bb8239d",
+    "gemma/quality-metal.json": "6773e33899bdb1a60c4050795c400483692150522382421b0f6184c1ae70e6fb",
+    "gemma/quality-reconstruct.json": "e851ea9be531afe984b3c396cfe5b051db312ee25ba0c61474ec140cf32a5f08",
+    "qwen-calibration.json": "2b78cd8ef494f6d7e819b5488ed73169f0ac20b8b3b93a4f48b8758d604636ff",
+    "qwen/32k-metal.json": "81aa0bc53a281d38778b5d6f1f0e55e9380fa9ea1a2c46f25633bcda173abe07",
+    "qwen/32k-reconstruct.json": "32873bee048595b1752918191675336c2a1c04c6be877fd07e4d1bdb8f571521",
+    "qwen/batch-metal.json": "f7b8661b4e9cb3a48540183ab2a602bb09313677fba29c8ed6056176edbc1b07",
+    "qwen/batch-reconstruct.json": "c070b67127fb1928e8ac7f64eb163da5a93f7b65b0d6e46577dd3eebb060a075",
+    "qwen/matrix/fp16-p1024-c1.json": "b1135ec92cdef39bcd9c280911ce6709549e62b0075ed526f4588996336c3d31",
+    "qwen/matrix/fp16-p1024-c8.json": "dd17b7cdd6c123e13da9c57bc2ed2076789afe4001e16863ca4aaba0cbe74e84",
+    "qwen/matrix/fp16-p128-c1.json": "7b17bd51a8ea52d543e1c65ba911f32573031b5620e00a6d5baee8ff33d9fb58",
+    "qwen/matrix/fp16-p128-c8.json": "667700ee9426e964e3cbd8b72e53c8e80beff04f2884abc29dcfdfb49d9ab706",
+    "qwen/matrix/int8-dequantize-p1024-c1.json": "7588359499d36a1660dbd580002cc0540c72c82a90ed2380fea5088897d6f236",
+    "qwen/matrix/int8-dequantize-p1024-c8.json": "44e184e9f1b13d3874f443e315fa3ca4ad36189c00f7e2c97ffe2b62908ce0b1",
+    "qwen/matrix/int8-dequantize-p128-c1.json": "d695325c4d9a544e82ada2efc3dbf0bde0fafc38b7f930fa76521728cfb6c96a",
+    "qwen/matrix/int8-dequantize-p128-c8.json": "cecfdce8362fb5cd567bbcd25ff6a80fdc25bf5789514acad95af2ca6cf722de",
+    "qwen/matrix/int8-metal-p1024-c1.json": "52cfdb7f80d351cf163396eb1164b08b443aad4eae0240a12a9b3a453f2803ea",
+    "qwen/matrix/int8-metal-p1024-c8.json": "3107b81011500b0b5004f76d019e32490a724a405eff15f0b5b28b8166097ec4",
+    "qwen/matrix/int8-metal-p128-c1.json": "4b1a5288dc98701006f5098c4899149993ed341d89fe8ffb88d2207284266840",
+    "qwen/matrix/int8-metal-p128-c8.json": "428d0e638d80504ef69ffb20c76f99ab1bfbeb9c05d1bfe08aa24322ab8298ce",
+    "qwen/matrix/int8-reconstruct-p1024-c1.json": "f357447543b2000fcaba790fb14f2f45ee5c01d9aa5857834ebceeb821a924e6",
+    "qwen/matrix/int8-reconstruct-p1024-c8.json": "253926ba450b8ce604e3bcacdb640f6d37fc93da071515da6a709cffceaa67db",
+    "qwen/matrix/int8-reconstruct-p128-c1.json": "e213a9a13a49433467829369a03ea4b2a74619e8a43c7e814d902bf1e9f70f5a",
+    "qwen/matrix/int8-reconstruct-p128-c8.json": "f4e015777404dc5cfef515b5bb2d112f8d77d31010376368a1b76ae3adc2560b",
+    "qwen/matrix/workload-p1024-c1.json": "1fdfdd8a1a03770adbf4f6f7039191f0a48de44c732b194ca8a0b13dd382f854",
+    "qwen/matrix/workload-p1024-c8.json": "220579b5f899dd1e23dc55ad2adab0e534bb693c528548d259a2504a2692848b",
+    "qwen/matrix/workload-p128-c1.json": "6020d2e633afa9d623ecc500a0c0f5f432be388d6216d2f13cf4e98b9d6b9a3b",
+    "qwen/matrix/workload-p128-c8.json": "e9a1d7351a5307b1419c00a8de752b9eb3432625a5fb7957cc2b2ece9bb8239d",
+    "qwen/quality-metal.json": "1a6caf5482a002e608c861d3ca9e4c63101bdd6c98624a7a14091061c75cff39",
+    "qwen/quality-reconstruct.json": "c985bd32f86d5bb4b3c455ebe5b835bb1f47ee21d46d42d8b4151638f4bab480"
+  },
+  "existing_checkpoint_note": "Earlier generated per-family checkpoint files predate batch-gate integration; this index and written report include those newly failed gates.",
+  "final_tests_passed": 98,
+  "implementation_delivered": true,
+  "milestone": "int8_accuracy_hardening",
+  "models": {
+    "gemma": {
+      "artifact": {
+        "model_data_sha256": "c0304dfe852ea62f614c26abc2a0f121baef1231d2a48ee418e34b21532ac386",
+        "model_file_bytes": 1825228544,
+        "model_format_version": 3
+      },
+      "batch_gate": {
+        "cache_reclaimed": true,
+        "exact_cases": 24,
+        "iterations": 80,
+        "passed": false,
+        "total_cases": 25
+      },
+      "quality_gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 22,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999581223090354,
+        "minimum_logit_cosine": 0.9996433864214918,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.992,
+        "total_cases": 25
+      }
+    },
+    "qwen": {
+      "artifact": {
+        "model_data_sha256": "11a0c1e2a23ef9e9d572447be81a6a1f9fbcd9fcd24ac0c6f24b6c14c902fb5b",
+        "model_file_bytes": 896959488,
+        "model_format_version": 3
+      },
+      "batch_gate": {
+        "cache_reclaimed": true,
+        "exact_cases": 25,
+        "iterations": 80,
+        "passed": true,
+        "total_cases": 25
+      },
+      "quality_gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 19,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999302476449174,
+        "minimum_logit_cosine": 0.9998493991588686,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.992,
+        "total_cases": 25
+      }
+    }
+  },
+  "next_priority": "isolate Gemma FP16 batch-shape numerical differences, then frozen INT8 quality; no W4A16 or release tag",
+  "published_matrix_results": 32,
+  "runtime_provenance": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "1a9a5537e76ee22844a519e0afad8500dbc5793e686c56e0bda66d1c89f5dd3a"
+  },
+  "schema_version": 1,
+  "strict_checkpoint_passed": false
+}

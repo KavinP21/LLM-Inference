@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 namespace forge {
 
@@ -16,7 +17,9 @@ void validate_gemma3_weights(const ModelFile& file) {
   const auto expect = [&file](const std::string& name,
                               std::initializer_list<std::uint32_t> shape) {
     const auto& tensor = file.tensor(name);
-    check(tensor.dtype == DType::fp16,
+    const bool quantized = name.starts_with("model.layers.") && name.ends_with("_proj.weight") &&
+                           file.quantization().contains(name);
+    check(tensor.dtype == DType::fp16 || (quantized && tensor.dtype == DType::int8),
           "Gemma 3 execution requires an FP16 tensor: " + name);
     check(tensor.shape == std::vector<std::uint32_t>(shape),
           "unexpected shape for " + name);
@@ -46,8 +49,20 @@ void validate_gemma3_weights(const ModelFile& file) {
 }
 
 void validate_model_weights(const ModelFile& file) {
+  std::unordered_set<std::string> supported;
+  for (std::uint32_t layer = 0; layer < file.config().num_layers; ++layer) {
+    const auto prefix = "model.layers." + std::to_string(layer) + ".";
+    for (const auto* name : {"self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj",
+                             "self_attn.o_proj", "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj"}) {
+      supported.insert(prefix + name + ".weight");
+    }
+  }
+  for (const auto& [name, spec] : file.quantization()) {
+    check(supported.contains(name),
+          "only internal projection weights may be quantized");
+  }
   switch (file.config().model_type) {
-    case ModelType::qwen2: validate_qwen2_weights(file); return;
+    case ModelType::qwen2: validate_qwen2_weights(file, true); return;
     case ModelType::gemma3_text: validate_gemma3_weights(file); return;
   }
   throw Error("no tensor contract for model type");
