@@ -102,7 +102,14 @@ def calibrate(
     stats_algorithm, policy_algorithm = STATS_ALGORITHM, ALGORITHM
     default_config, default_search = DEFAULT_CONFIG, DEFAULT_SEARCH
     validate_quantizer = validate_config
-    if weight_method == "scale-aware":
+    if weight_method == "coordinate-refined":
+        from . import refined
+
+        quantizer = refined.quantize_refined
+        stats_algorithm, policy_algorithm = refined.ALGORITHM, refined.POLICY_ALGORITHM
+        default_config, default_search = refined.DEFAULT_CONFIG, refined.DEFAULT_SEARCH
+        validate_quantizer = refined.validate_config
+    elif weight_method == "scale-aware":
         from . import scale_aware
 
         quantizer = scale_aware.quantize_scale_aware
@@ -367,7 +374,11 @@ def calibrate(
                 (
                     "Block-diagonal covariance and fixed RTN scales, not full GPTQ or AWQ."
                     if weight_method == "fixed-scale"
-                    else "Bounded activation-weighted scale grid and block-diagonal covariance, not full GPTQ or AWQ; reconstruction bounds are not quality guarantees."
+                    else (
+                        "Bounded activation-weighted scale grid and block-diagonal covariance, not full GPTQ or AWQ; reconstruction bounds are not quality guarantees."
+                        if weight_method == "scale-aware"
+                        else "Bounded integer-coordinate descent with fixed fitted scales and block-diagonal covariance; not full GPTQ/AWQ or a language-quality guarantee."
+                    )
                 ),
                 "Bounded shortlists/single-matrix swaps may miss better policies or stop at a local minimum.",
                 "Calibration uses source activations, not sequential quantized-layer activation recollection.",
@@ -390,7 +401,9 @@ def main():
     parser.add_argument("--stats", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--weight-method", choices=["fixed-scale", "scale-aware"], default="fixed-scale"
+        "--weight-method",
+        choices=["fixed-scale", "scale-aware", "coordinate-refined"],
+        default="fixed-scale",
     )
     args = parser.parse_args()
     if args.output.exists():

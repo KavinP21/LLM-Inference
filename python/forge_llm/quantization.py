@@ -75,6 +75,7 @@ def quantize_model(
             "block_second_order_joint_forward_v1",
             "block_second_order_cached_repair_v1",
             "scale_aware_cached_repair_v1",
+            "coordinate_refined_cached_repair_v1",
         }
         if second_order:
             from .second_order import CalibrationStats
@@ -90,11 +91,10 @@ def quantize_model(
             )
             if calibrated.config != policy["quantizer_config"]:
                 raise ValueError("policy and calibration configuration differ")
-            expected_algorithm = (
-                "scale_aware_block_second_order_v1"
-                if policy["algorithm"] == "scale_aware_cached_repair_v1"
-                else "block_second_order_joint_forward_v1"
-            )
+            expected_algorithm = {
+                "scale_aware_cached_repair_v1": "scale_aware_block_second_order_v1",
+                "coordinate_refined_cached_repair_v1": "coordinate_refined_scale_aware_v1",
+            }.get(policy["algorithm"], "block_second_order_joint_forward_v1")
             if calibrated.algorithm != expected_algorithm:
                 raise ValueError("policy and calibration method differ")
         elif calibration_stats is not None:

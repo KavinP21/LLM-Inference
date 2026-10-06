@@ -115,14 +115,18 @@ def validate_policy(
         "block_second_order_joint_forward_v1",
         "block_second_order_cached_repair_v1",
         "scale_aware_cached_repair_v1",
+        "coordinate_refined_cached_repair_v1",
     }:
         raise ValueError("unsupported precision selection algorithm")
     if policy["algorithm"] in {
         "block_second_order_joint_forward_v1",
         "block_second_order_cached_repair_v1",
         "scale_aware_cached_repair_v1",
+        "coordinate_refined_cached_repair_v1",
     }:
-        if policy["algorithm"] == "scale_aware_cached_repair_v1":
+        if policy["algorithm"] == "coordinate_refined_cached_repair_v1":
+            from .refined import validate_config
+        elif policy["algorithm"] == "scale_aware_cached_repair_v1":
             from .scale_aware import validate_config
         else:
             from .second_order import validate_config
@@ -138,6 +142,7 @@ def validate_policy(
         if policy["algorithm"] in {
             "block_second_order_cached_repair_v1",
             "scale_aware_cached_repair_v1",
+            "coordinate_refined_cached_repair_v1",
         }:
             from .cached_policy import validate_search
 
