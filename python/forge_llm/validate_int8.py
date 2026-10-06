@@ -103,6 +103,7 @@ def validate(
     positions: list[int],
     cosine_gate: float = 0.999,
     int8_mode: str = "metal",
+    decode_mode: str = "batched",
     cached_teacher_forcing: bool = False,
 ) -> dict:
     from transformers import AutoTokenizer
@@ -126,6 +127,7 @@ def validate(
         "max_model_length": context_limit,
         "max_num_sequences": 4,
         "kv_cache_bytes": 512 << 20,
+        "decode_mode": decode_mode,
     }
     ownership = ExitStack()
     try:
@@ -336,7 +338,8 @@ def validate(
                 "cosine_gate": cosine_gate,
                 "teacher_forced_positions": positions,
                 "int8_mode": int8_mode,
-                        "teacher_forcing_path": "cached_paged_decode"
+                "decode_mode": decode_mode,
+                "teacher_forcing_path": "cached_paged_decode"
                 if cached_teacher_forcing
                 else "whole_prompt_prefill",
                 "prompts_sha256": hashlib.sha256(
@@ -373,6 +376,9 @@ def main() -> None:
         action="store_true",
         help="observe every generated position on the actual paged decode path",
     )
+    parser.add_argument(
+        "--decode-mode", choices=["batched", "rowwise"], default="batched"
+    )
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite quality evidence: {args.output}")
@@ -384,6 +390,7 @@ def main() -> None:
         args.output_tokens,
         list(range(args.output_tokens)) if args.cached_logits else args.positions,
         int8_mode=args.int8_mode,
+        decode_mode=args.decode_mode,
         cached_teacher_forcing=args.cached_logits,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

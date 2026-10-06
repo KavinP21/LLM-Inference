@@ -21,6 +21,9 @@ def _run(run) -> None:
     parser.add_argument("--warmups", type=int, default=5)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument(
+        "--decode-mode", choices=["batched", "rowwise"], default="batched"
+    )
+    parser.add_argument(
         "--include-reconstruct",
         action="store_true",
         help="also measure one-pass reconstruction plus native GEMM at all row counts",
@@ -84,6 +87,8 @@ def _run(run) -> None:
                 "1024",
                 "--int8-mode",
                 int8_mode,
+                "--decode-mode",
+                args.decode_mode,
                 "--output-length",
                 str(args.output_length),
                 "--warmups",

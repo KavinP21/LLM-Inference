@@ -214,6 +214,7 @@ def benchmark(
     mlx_kernel_mode: str = "full",
     capture_path: Path | None = None,
     int8_mode: str = "auto",
+    decode_mode: str = "batched",
 ) -> dict:
     if output_length <= 0 or repetitions <= 0 or warmups < 0:
         raise ValueError(
@@ -255,6 +256,9 @@ def benchmark(
         engine_options["custom_metal"] = mlx_kernel_mode != "baseline"
         engine_options["metal_paged_attention"] = mlx_kernel_mode == "full"
         engine_options["int8_mode"] = int8_mode
+        engine_options["decode_mode"] = decode_mode
+    elif decode_mode != "batched":
+        raise ValueError("rowwise decode is only supported by the MLX backend")
     engine = create_engine(model_path, backend=backend, **engine_options)
     if stop_on_eos:
         from transformers import AutoTokenizer
@@ -324,6 +328,7 @@ def benchmark(
                 if engine_stats["quantized_matrices"]
                 else f"forge-mlx-fp16-paged-{mlx_kernel_mode}"
             )
+            + ("-rowwise" if decode_mode == "rowwise" else "")
             if getattr(engine, "backend", "cuda") == "mlx"
             else "forge-cuda-fp16-paged"
         ),
@@ -343,7 +348,8 @@ def benchmark(
             "backend": getattr(engine, "backend", "cuda"),
             "mlx_kernel_mode": mlx_kernel_mode,
             "int8_mode": int8_mode,
-                "warmup_output_length": output_length,
+            "decode_mode": decode_mode,
+            "warmup_output_length": output_length,
             "capture_path": str(capture_path) if capture_path is not None else None,
         },
         "environment": {
@@ -417,6 +423,12 @@ def main() -> None:
     parser.add_argument("--max-model-length", type=int, default=2048)
     parser.add_argument("--kv-cache-mib", type=int, default=512)
     parser.add_argument(
+        "--decode-mode",
+        choices=["batched", "rowwise"],
+        default="batched",
+        help="MLX decode projections: batched throughput or single-row reductions",
+    )
+    parser.add_argument(
         "--int8-mode",
         choices=["auto", "dequantize", "metal", "reconstruct"],
         default="auto",
@@ -453,6 +465,7 @@ def main() -> None:
         args.mlx_kernel_mode,
         args.capture,
         args.int8_mode,
+        args.decode_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

@@ -27,6 +27,7 @@ class MlxDecoderModel(Protocol):
     custom_metal: bool
     metal_paged_attention: bool
     int8_mode: str
+    decode_mode: str
 
     @property
     def head_dim(self) -> int: ...
