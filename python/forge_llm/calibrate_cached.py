@@ -102,7 +102,20 @@ def calibrate(
     stats_algorithm, policy_algorithm = STATS_ALGORITHM, ALGORITHM
     default_config, default_search = DEFAULT_CONFIG, DEFAULT_SEARCH
     validate_quantizer = validate_config
-    if weight_method != "fixed-scale":
+    if weight_method == "scale-aware":
+        from . import scale_aware
+
+        quantizer = scale_aware.quantize_scale_aware
+        stats_algorithm, policy_algorithm = (
+            scale_aware.ALGORITHM,
+            scale_aware.POLICY_ALGORITHM,
+        )
+        default_config, default_search = (
+            scale_aware.DEFAULT_CONFIG,
+            scale_aware.DEFAULT_SEARCH,
+        )
+        validate_quantizer = scale_aware.validate_config
+    elif weight_method != "fixed-scale":
         raise ValueError("unsupported cached calibration weight method")
     config = dict(default_config if config is None else config)
     search_config = dict(default_search if search_config is None else search_config)
@@ -377,7 +390,7 @@ def main():
     parser.add_argument("--stats", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--weight-method", choices=["fixed-scale"], default="fixed-scale"
+        "--weight-method", choices=["fixed-scale", "scale-aware"], default="fixed-scale"
     )
     args = parser.parse_args()
     if args.output.exists():

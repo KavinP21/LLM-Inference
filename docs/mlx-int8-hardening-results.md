@@ -24,6 +24,7 @@ records acceptance status and SHA-256 values for 57 calibration/quality/resource
   drivers and releases ownership on process exit. This is measurement hygiene, not distributed
   serving or a claim that unrelated applications are prevented from using the GPU.
 
+See [the numerical and calibration contract](quantization.md) for algorithms and reproduction.
 This heuristic is not [AWQ](https://arxiv.org/abs/2306.00978) activation-aware channel scaling or
 [GPTQ](https://arxiv.org/abs/2210.17323) approximate second-order quantization. It changes only which
 whole matrices keep their original FP16 values; remaining INT8 matrices use the unchanged deterministic

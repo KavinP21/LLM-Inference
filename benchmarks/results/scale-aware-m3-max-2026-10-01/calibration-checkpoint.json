@@ -1,0 +1,46 @@
+{
+  "calibration_stage_passed": false,
+  "contract_sha256": "2dc4213565f63be2a2cceec65e17d6381f21f8c95ff21fe12d2feb3332971c96",
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "94c10909233a85c5b6d03930962e868ac3a3c3b43751393cd5d0fc34d58f8074"
+  },
+  "files_sha256": {
+    "benchmarks/results/scale-aware-m3-max-2026-10-01/calibration/gemma.json": "00ff25b105f27b5d4840c50ec9588b3080704b4e6e3e7b90e82686f98553eab3",
+    "benchmarks/results/scale-aware-m3-max-2026-10-01/calibration/qwen.json": "04b229175644c987afd8263fc09ad82b2576d3a21360bd22c3c9e7b0ef78d5d1",
+    "models/scale-aware/gemma-stats.npz": "6018cb8687dc802ab2439bc9cc22d178777e3f0a74f507bfae5cf59e4f964638",
+    "models/scale-aware/qwen-stats.npz": "44f211afd45c079b1a67f146fa765cc800d18406372c897cba484cfd32399807"
+  },
+  "gates": {
+    "gemma": {
+      "cache_reclaimed": true,
+      "exact_cached_decisions": false,
+      "exact_free_continuations": false,
+      "local_reconstruction_bound": true,
+      "minimum_projection_fraction": true,
+      "numerical": true,
+      "passed": false
+    },
+    "qwen": {
+      "cache_reclaimed": true,
+      "exact_cached_decisions": false,
+      "exact_free_continuations": false,
+      "local_reconstruction_bound": true,
+      "minimum_projection_fraction": true,
+      "numerical": true,
+      "passed": false
+    }
+  },
+  "held_out_inference_executed": false,
+  "official_packed_exports_created": false,
+  "offline_calibration_seconds": {
+    "gemma": 582.3540027085692,
+    "qwen": 239.08532750047743
+  },
+  "performance_matrix_executed": false,
+  "schema_version": 1,
+  "scope": "This stage ends at calibration. Local loss improvement and eligibility are not a complete quality/performance certification.",
+  "state": "rejected_at_calibration",
+  "strict_checkpoint_passed": false
+}
