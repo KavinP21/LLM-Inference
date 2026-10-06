@@ -1,0 +1,323 @@
+{
+  "aggregate": {
+    "e2e_ms": {
+      "p50": 684.5195625,
+      "p95": 710.8538000499999,
+      "p99": 717.07147875
+    },
+    "generated_tokens_per_second": 358.8597373147844,
+    "prompt_tokens_per_second": 1435.4389492591376,
+    "tpot_ms": {
+      "p50": 15.795665983870968,
+      "p95": 19.585128972580645,
+      "p99": 19.68619941935484
+    },
+    "ttft_ms": {
+      "p50": 194.6310205,
+      "p95": 356.10548934999997,
+      "p99": 360.48125643000003
+    }
+  },
+  "configuration": {
+    "backend": "mlx",
+    "capture_path": null,
+    "concurrency": 8,
+    "int8_mode": "metal",
+    "kv_cache_mib": 1024,
+    "max_model_length": 2048,
+    "mlx_kernel_mode": "full",
+    "model_path": "models/qwen2.5-0.5b-int8.engine",
+    "output_length": 32,
+    "prompt_token_lengths": [
+      128,
+      128,
+      128,
+      128,
+      128,
+      128,
+      128,
+      128
+    ],
+    "repetitions": 3,
+    "stop_on_eos": false,
+    "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+    "warmup_output_length": 32,
+    "warmups": 5
+  },
+  "engine_stats": {
+    "attention_tile_size": 1024,
+    "backend": "mlx",
+    "custom_metal": true,
+    "int8_mode": "metal",
+    "kv_cache": {
+      "allocated_blocks": 0,
+      "allocation_failures": 0,
+      "free_blocks": 5461,
+      "internal_fragmentation_tokens": 0,
+      "layout": "paged",
+      "live_tokens": 0,
+      "occupancy": 0.0,
+      "peak_allocated_blocks": 80,
+      "reserved_blocks": 0,
+      "total_blocks": 5461,
+      "unreserved_blocks": 5461
+    },
+    "kv_capacity_bytes": 1073676288,
+    "kv_device_bytes": 0,
+    "kv_materialized_blocks": 0,
+    "kv_peak_device_bytes": 15728640,
+    "kv_peak_materialized_blocks": 80,
+    "metal_paged_attention": true,
+    "model_bytes": 631455488,
+    "model_type": "qwen2",
+    "prefill_chunk_size": 512,
+    "quantization": "symmetric_int8_per_output_channel",
+    "quantization_status": "experimental",
+    "quantized_matrices": 168,
+    "scheduler": {
+      "cancelled": 0,
+      "completed": 64,
+      "rejected": 0,
+      "running": 0,
+      "submitted": 64,
+      "waiting": 0
+    },
+    "weight_storage_bytes": 631455488
+  },
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "native_build": {
+      "architecture": "applegpu_g15s",
+      "backend": "mlx",
+      "device": "Apple M3 Max",
+      "mlx_version": "0.32.2"
+    },
+    "nvcc": null,
+    "nvidia_smi": null,
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.12.10",
+    "runtime_source_sha256": "5a18130df9d25a67d318577d9e66696b070160576e5498019f4c64d4dd93e472"
+  },
+  "gpu_samples": {
+    "gpu_utilization_mean_percent": null,
+    "gpu_utilization_peak_percent": null,
+    "memory_peak_mib": null,
+    "power_mean_watts": null,
+    "power_peak_watts": null,
+    "sample_count": 0
+  },
+  "implementation": "forge-mlx-int8-paged-full-metal",
+  "mlx_memory": {
+    "active_bytes_before_recorded_repetitions": 632094592,
+    "incremental_peak_active_bytes": 822444964,
+    "peak_active_bytes_during_recorded_repetitions": 1454539556
+  },
+  "model": {
+    "model_data_sha256": "b229ceaab153c193a449e01cbbbf000419f34fc30575fee1ce01f28c07620740",
+    "model_file_bytes": 631501824,
+    "model_format_version": 3
+  },
+  "peak_kv_cache": {
+    "allocated_blocks": 80,
+    "internal_fragmentation_tokens": 92,
+    "occupancy": 0.014649331624244644,
+    "reserved_blocks": 71
+  },
+  "peak_kv_cache_bytes": 15728640,
+  "requests": [
+    {
+      "e2e_ms": 651.553959,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 41,
+      "tpot_ms": 19.716299741935483,
+      "ttft_ms": 40.348667
+    },
+    {
+      "e2e_ms": 662.919167,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 42,
+      "tpot_ms": 18.63967741935484,
+      "ttft_ms": 85.089167
+    },
+    {
+      "e2e_ms": 673.624125,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 43,
+      "tpot_ms": 17.542623645161292,
+      "ttft_ms": 129.802792
+    },
+    {
+      "e2e_ms": 683.574958,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 44,
+      "tpot_ms": 16.42353629032258,
+      "ttft_ms": 174.445333
+    },
+    {
+      "e2e_ms": 693.318666,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 45,
+      "tpot_ms": 15.255236548387096,
+      "ttft_ms": 220.406333
+    },
+    {
+      "e2e_ms": 702.7705,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 46,
+      "tpot_ms": 14.073642483870968,
+      "ttft_ms": 266.487583
+    },
+    {
+      "e2e_ms": 710.903875,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 47,
+      "tpot_ms": 12.811224451612903,
+      "ttft_ms": 313.755917
+    },
+    {
+      "e2e_ms": 718.91375,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 48,
+      "tpot_ms": 11.521317193548388,
+      "ttft_ms": 361.752917
+    },
+    {
+      "e2e_ms": 643.382333,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 49,
+      "tpot_ms": 19.58542877419355,
+      "ttft_ms": 36.234041
+    },
+    {
+      "e2e_ms": 655.103042,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 50,
+      "tpot_ms": 18.55057258064516,
+      "ttft_ms": 80.035292
+    },
+    {
+      "e2e_ms": 666.455125,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 51,
+      "tpot_ms": 17.4960994516129,
+      "ttft_ms": 124.076042
+    },
+    {
+      "e2e_ms": 676.27575,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 52,
+      "tpot_ms": 16.360404580645163,
+      "ttft_ms": 169.103208
+    },
+    {
+      "e2e_ms": 685.464167,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 53,
+      "tpot_ms": 15.182176096774192,
+      "ttft_ms": 214.816708
+    },
+    {
+      "e2e_ms": 694.499333,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 54,
+      "tpot_ms": 13.971728483870967,
+      "ttft_ms": 261.37575
+    },
+    {
+      "e2e_ms": 702.453833,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 55,
+      "tpot_ms": 12.707752677419355,
+      "ttft_ms": 308.5135
+    },
+    {
+      "e2e_ms": 710.158625,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 56,
+      "tpot_ms": 11.417247322580646,
+      "ttft_ms": 356.223958
+    },
+    {
+      "e2e_ms": 643.601458,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 57,
+      "tpot_ms": 19.583430096774194,
+      "ttft_ms": 36.515125
+    },
+    {
+      "e2e_ms": 654.876625,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 58,
+      "tpot_ms": 18.51754435483871,
+      "ttft_ms": 80.83275
+    },
+    {
+      "e2e_ms": 665.595291,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 59,
+      "tpot_ms": 17.43287229032258,
+      "ttft_ms": 125.17625
+    },
+    {
+      "e2e_ms": 675.73575,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 60,
+      "tpot_ms": 16.33609541935484,
+      "ttft_ms": 169.316792
+    },
+    {
+      "e2e_ms": 685.582125,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 61,
+      "tpot_ms": 15.183548387096776,
+      "ttft_ms": 214.892125
+    },
+    {
+      "e2e_ms": 694.784583,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 62,
+      "tpot_ms": 13.992069870967741,
+      "ttft_ms": 261.030417
+    },
+    {
+      "e2e_ms": 702.566833,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 63,
+      "tpot_ms": 12.723973129032256,
+      "ttft_ms": 308.123666
+    },
+    {
+      "e2e_ms": 710.570042,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 64,
+      "tpot_ms": 11.455995967741934,
+      "ttft_ms": 355.434167
+    }
+  ],
+  "schema_version": 1
+}
