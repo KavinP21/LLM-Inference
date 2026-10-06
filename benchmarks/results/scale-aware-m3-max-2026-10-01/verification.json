@@ -1,0 +1,53 @@
+{
+  "cached_calibration_rows": 2048,
+  "calibration_checkpoint_sha256": "e316aa5c70a0f6ebac6c2bcecd8e61329d9111983ec0d62ec87ec642ef36031a",
+  "calibration_files_verified": 4,
+  "calibration_stage_passed": false,
+  "captured_source_files_verified": 67,
+  "contract_sha256": "2dc4213565f63be2a2cceec65e17d6381f21f8c95ff21fe12d2feb3332971c96",
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "94c10909233a85c5b6d03930962e868ac3a3c3b43751393cd5d0fc34d58f8074"
+  },
+  "gates": {
+    "gemma": {
+      "cache_reclaimed": true,
+      "exact_cached_decisions": false,
+      "exact_free_continuations": false,
+      "local_reconstruction_bound": true,
+      "minimum_projection_fraction": true,
+      "numerical": true,
+      "passed": false
+    },
+    "qwen": {
+      "cache_reclaimed": true,
+      "exact_cached_decisions": false,
+      "exact_free_continuations": false,
+      "local_reconstruction_bound": true,
+      "minimum_projection_fraction": true,
+      "numerical": true,
+      "passed": false
+    }
+  },
+  "held_out_inference_executed": false,
+  "limitations": "Whole-file hashes and recorded cases validate this calibration stage only. Per-row bound assertions are backed by independent operator tests, not a language-quality guarantee. No held-out/performance/RTX/counter evidence is supplied.",
+  "pre_fit_files_verified": 15,
+  "prior_complete_files_unchanged": 93,
+  "readback_passed": true,
+  "schema_version": 1,
+  "selected_local_objectives": {
+    "gemma": {
+      "changed_scale_rows": 89925,
+      "fixed_scale_objective": 3.0208195364985,
+      "scale_aware_objective": 2.7375832251579215
+    },
+    "qwen": {
+      "changed_scale_rows": 58194,
+      "fixed_scale_objective": 3.3317345792055173,
+      "scale_aware_objective": 2.7669925688435253
+    }
+  },
+  "source_archive_sha256": "d71ca46d01082a9595085df703010828bd9860db7c1352f81be6c76210e39004",
+  "strict_checkpoint_passed": false
+}

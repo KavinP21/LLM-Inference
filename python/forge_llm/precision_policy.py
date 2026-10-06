@@ -114,13 +114,18 @@ def validate_policy(
         "single_projection_logit_ablation_v1",
         "block_second_order_joint_forward_v1",
         "block_second_order_cached_repair_v1",
+        "scale_aware_cached_repair_v1",
     }:
         raise ValueError("unsupported precision selection algorithm")
     if policy["algorithm"] in {
         "block_second_order_joint_forward_v1",
         "block_second_order_cached_repair_v1",
+        "scale_aware_cached_repair_v1",
     }:
-        from .second_order import validate_config
+        if policy["algorithm"] == "scale_aware_cached_repair_v1":
+            from .scale_aware import validate_config
+        else:
+            from .second_order import validate_config
 
         validate_config(policy.get("quantizer_config"))
         checksum = policy.get("calibration_stats_sha256")
@@ -132,7 +137,8 @@ def validate_policy(
             raise ValueError("invalid calibration statistics checksum")
         if policy["algorithm"] in {
             "block_second_order_cached_repair_v1",
-            }:
+            "scale_aware_cached_repair_v1",
+        }:
             from .cached_policy import validate_search
 
             validate_search(policy.get("search_config"))

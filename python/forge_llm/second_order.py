@@ -245,6 +245,7 @@ class CalibrationStats:
                 or metadata.get("algorithm")
                 not in {
                     ALGORITHM,
+                    "scale_aware_block_second_order_v1",
                 }
                 or "quantizer_config" not in metadata
                 or "weight_to_moments" not in metadata
@@ -254,8 +255,17 @@ class CalibrationStats:
                 )
             self.config = metadata["quantizer_config"]
             self.algorithm = metadata["algorithm"]
-            self.method = "block_second_order_v1"
-            validate_config(self.config)
+            self.method = (
+                "block_second_order_v1"
+                if self.algorithm == ALGORITHM
+                else "scale_aware_block_second_order_v1"
+            )
+            if self.algorithm == ALGORITHM:
+                validate_config(self.config)
+            else:
+                from .scale_aware import validate_config as validate_scale_config
+
+                validate_scale_config(self.config)
             mapping = metadata["weight_to_moments"]
             if not isinstance(mapping, dict) or set(mapping) != names:
                 raise ValueError("calibration must cover every supported projection")
@@ -301,6 +311,10 @@ class CalibrationStats:
 
     def quantize(self, name: str, weight: np.ndarray):
         quantizer = quantize_second_order
+        if self.algorithm != ALGORITHM:
+            from .scale_aware import quantize_scale_aware
+
+            quantizer = quantize_scale_aware
         return quantizer(
             weight, self.arrays[self.metadata["weight_to_moments"][name]], self.config
         )
