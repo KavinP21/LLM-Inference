@@ -1,0 +1,42 @@
+{
+  "executed_at_utc": "2026-10-06T18:44:34.922546+00:00",
+  "scope": "Integrated runtime regression and README generation smoke; no new benchmark or historical official-model qualification.",
+  "python": "3.12.10",
+  "mlx": "0.32.2",
+  "source": {
+    "git_commit": "ebb318b5da562af0a0182e9117f35e55c5df26a5",
+    "git_dirty": true,
+    "runtime_source_sha256": "00bf73b87beff9f5935645b6ae7d04ad7feb11f6d2664856d0666cb975bb8011"
+  },
+  "pytest": {
+    "tests": 365,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "pytest_report": "test-results.xml",
+  "import_check": "Publication source loaded directly with editable-install hooks disabled.",
+  "readme_example": {
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "adjustments": [
+      "Use original-checkout model artifact.",
+      "Resolve cached tokenizer without network."
+    ],
+    "generated_tokens": 64,
+    "allocated_pages_after_close": 0,
+    "reserved_pages_after_close": 0,
+    "device_kv_bytes_after_close": 0
+  },
+  "portable_cpp": {
+    "compiler": "Apple Clang",
+    "standard": "C++20",
+    "fresh_compilation": true,
+    "host_output": "all host tests passed",
+    "cmake_build": false
+  },
+  "style": {
+    "ruff": "0.16.8",
+    "lint": "passed",
+    "format": "passed"
+  }
+}

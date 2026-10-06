@@ -1,110 +1,71 @@
 # Implementation status
 
-Last updated: 2026-09-23
+Updated October 6, 2026. The measured device is an Apple M3 Max with MLX 0.32.2.
 
-This is a development snapshot, not a performance release.
+## FP16 runtime
 
-## Validated on Apple M3 Max
+Qwen2 and Gemma 3 text decoders execute through the shared artifact reader,
+model-adapter interface, scheduler, and physical KV-page store. Long prompts use
+chunked prefill; runnable requests share batched decode. Custom Metal kernels have
+selectable MLX fallbacks. Cancellation and completion release request resources.
 
-- CMake/Ninja `host-debug` configuration and build.
-- CTest portable host suite.
-- Twenty-five portable pytest tests plus nineteen Metal-backed tests for model artifacts, export,
-  scheduling, physical paging, numerical parity, chunking, batching, cancellation, and cleanup.
-- Python syntax for exporter, correctness runner, Forge benchmark, Transformers baseline, matrix
-  runner, and result summarizer.
-- Cross-language Python-writer/C++-reader model artifacts, including SHA-256 validation.
-- A complete synthetic Qwen2 tensor contract through `forge-inspect-model`.
-- Shell syntax for WSL environment and Compute Sanitizer scripts.
-- MLX 0.32.2 access to the Apple M3 Max Metal device.
-- Safe Python parsing and checksum validation of the shared `.engine` model format.
-- Backward-compatible artifact version 2 with explicit family, activation, head-width,
-  sliding-window, RoPE, scaling, and soft-cap metadata; existing version-1 Qwen artifacts load
-  unchanged.
-- A backend-independent model contract plus MLX adapter factory for Qwen2 and Gemma 3 text models.
-- Complete Qwen2 FP16 execution in MLX: embedding, RMSNorm, biased Q/K/V, RoPE, GQA causal
-  attention, output projection, SwiGLU MLP, final normalization, LM head, and greedy selection.
-- Physical, lazily materialized 16-token MLX K/V pages with stable block tables and reclamation.
-- Backend-neutral request scheduling, cancellation, worst-case capacity reservation, and metrics.
-- Scheduler-visible 512-token prefill chunks with decode priority.
-- Batched one-token Qwen decode across all runnable requests.
-- MLX fused GQA attention for production shapes and an exact online-softmax tiled reference path.
-- Synthetic full-model and cached-decode parity against an independent NumPy reference.
-- Official `Qwen/Qwen2.5-0.5B-Instruct` export: 291 tensors and data SHA-256
-  `87dde32c2f28ffbcb70016efea4332c4306e3f72c64f9df131def7654bff6c45`.
-- Official-model validation over four fixed prompts: identical first 32 raw-greedy tokens,
-  identical first-token argmax, and custom-Metal-path logit cosine similarity from `0.9999808` to
-  `0.9999977`.
-- A four-request MLX benchmark smoke run with zero leaked KV reservations after completion.
-- Official-model execution at 2K, 4K, 8K, 16K, and 32K context, with exact expected page counts
-  and zero leaked physical pages after every case.
-- A controlled materialized/tiled/fused attention A/B plus a captured Metal GPU trace.
-- Shape-specialized custom Metal residual/RMSNorm, RoPE/page-write, and SwiGLU kernels.
-- A custom online-softmax paged GQA decode kernel driven by per-request block tables.
-- Controlled baseline/fusion/full-kernel end-to-end matrices for 128/1K prompts at concurrency 1/8.
-- Four end-to-end Xcode GPU captures covering the same 128/1K and concurrency 1/8 shapes.
-- A 32,766-token prompt plus two-token generation, including one custom paged-decode iteration,
-  with exact 2,048-page occupancy and complete reclamation.
-- Complete Gemma 3 text execution: scaled embeddings, offset RMSNorm, explicit attention width,
-  Q/K normalization, alternating sliding/global attention, per-layer RoPE bases, tanh-GELU, four
-  layer norms, optional attention/final soft caps, tied LM head, and greedy decode.
-- Official `google/gemma-3-1b-it` export: 341 tensors, 1,999,794,688-byte artifact, and data SHA-256
-  `92d3081b2facfa8a5eb48dcedd89cb8e230b21a00cfeefd4c32f77ca2a9482ee`.
-- Official Gemma first-token logit cosine similarity from `0.9999963` to `0.9999982` over four
-  prompts, exact first-token argmax for every case, and exact 32-token output for three cases. The
-  fourth matches 25 tokens before one documented FP16 near-tie causes a seven-token cascade; this is
-  intentionally not claimed as full greedy parity.
-- Official Gemma 32K execution with 2,048 physical pages, 872,415,232 peak K/V bytes, one custom
-  paged-decode iteration, and complete reclamation.
-- An official-model four-request continuous-batching smoke run with no reserved or materialized K/V
-  blocks remaining. Its one-trial timing is diagnostic, not a publishable benchmark.
+| Check | Result | Report |
+| --- | --- | --- |
+| Qwen2.5-0.5B reference | Four fixed prompts, 32 exact greedy tokens each; first-token cosine ≥ 0.999 | [Foundation](docs/mlx-foundation-results.md) |
+| Gemma 3 1B reference | Four first-token numerical gates pass; one of four continuations diverges after 25 tokens | [Gemma](docs/mlx-gemma3-results.md) |
+| Paging and 32K | Both models process 32,766 prompt tokens and two outputs; full reclamation | [Qwen](docs/mlx-32k-results.md), [Gemma](docs/mlx-gemma3-results.md) |
+| Custom kernels | Independent numerical checks, fallback comparisons, workload-specific measurements | [Metal](docs/mlx-metal-results.md) |
+| Controlled performance | September 23 baseline/full matrix; five warmups and three repetitions | [Measurements](docs/resume-benchmark-results.md) |
+| Rowwise decode | Opt-in projections for same-artifact consistency across batch shapes | [Policy](docs/decode-numerics.md), [results](docs/mlx-batch-numerics-results.md) |
 
-The foundation evidence is in [the first MLX validation report](docs/mlx-foundation-results.md);
-the paged, batched, and initial 32K evidence is in
-[the MLX 32K validation report](docs/mlx-32k-results.md). Custom-kernel correctness, benchmark, 32K
-decode, and trace evidence is in [the MLX Metal optimization report](docs/mlx-metal-results.md).
-Gemma-specific evidence is in [the Gemma 3 validation report](docs/mlx-gemma3-results.md).
+The October 6 local regression passed all **365 Python tests without skips**.
+Portable C++ host tests also passed after a fresh Clang C++20 build. The local suite
+uses synthetic GPU-backed references; it does not rerun every historical
+experiment on the downloaded official models.
+The [QA summary](benchmarks/results/repository-qa-2026-10-06/summary.json) and
+[JUnit report](benchmarks/results/repository-qa-2026-10-06/test-results.xml) record this check.
 
-## MLX custom-kernel checkpoint limitations
+## Prefix caching
 
-- The direct Metal attention kernel consumes block tables over a packed live-page tensor. MLX's
-  immutable arrays still require a per-layer `stack` before the launch; this is not zero-copy paging.
-- Full custom mode is effectively flat versus baseline for a 1K single-request workload because
-  page packing cancels the attention win. The kernel is most beneficial for concurrent decode.
-- One prompt is prefilling at a time. Prefill is chunked around decode iterations, but there is no
-  multi-prompt chunk packing or preemption policy yet.
-- Causal prefill attention remains MLX fused attention over logical page views; the custom paged
-  kernel is decode-only.
-- The 32K gate is execution/resource evidence, not a statistically rigorous latency benchmark.
-- The official Gemma 32-token gate has one numerically unstable greedy decision; the saved report
-  distinguishes this from an architecture or cache mismatch and does not mark the gate fully exact.
-- Quantization, prefix caching, speculative decoding, serving, and distributed routing remain future
-  milestones.
+Opt-in FP16 MLX prefix reuse pins immutable pages independently of active requests,
+uses copy-on-write tails, and reserves private/copy capacity before admission.
+Namespaces, execution identity, and bounded LRU retention constrain reuse.
 
-## Implemented but awaiting RTX validation
+All eight registered Qwen/Gemma parity, concurrency, and 32K resource gates pass.
+The initial run exposed an unsupported fused Qwen short-tail dispatch. A capability
+check and eight Metal regressions cover the fix; fresh validation passed.
+**Timing and final performance qualification remain pending.**
 
-- CUDA compilation for SM 8.6.
-- cuBLASLt row-major FP16 linear layers, bias epilogues, and cached plans.
-- FP16 Qwen2 full-prompt prefill and batched decode execution.
-- Fused RMSNorm/residual, RoPE/paged-cache write, SwiGLU, causal softmax, paged GQA attention,
-  embedding, add, and greedy argmax kernels.
-- pybind11 `Engine` extension.
-- CUDA numerical tests and Compute Sanitizer execution.
-- Qwen2.5-0.5B logit similarity and greedy-token parity.
-- Nsight Systems/Compute profiles and all performance results.
+See the [API](docs/prefix-cache.md), [results](docs/mlx-prefix-cache-results.md),
+and [frozen measurement procedure](docs/prefix-cache-handoff.md).
 
-No CUDA performance number or correctness claim should be published until the second section has
-been run successfully on the RTX 3070 Ti.
+## Quantization experiments
 
-## Next executable checkpoint
+Version-3 artifacts support W8A16, per-channel scales, mixed precision, and direct
+Metal or reconstructed native projections. Calibration methods include
+block-diagonal compensation, cached-decode coverage, scale fitting, and coordinate
+refinement. **Strict held-out quality is rejected.** The latest Qwen candidate
+matches 21 of 25 continuations and changes 6 of 800 cached decisions. Lower local
+loss does not establish exact generation parity. FP16 remains the default.
 
-Implement measured weight-only quantization without weakening either family gate:
+- [Initial INT8](docs/mlx-int8-results.md) and [hardening](docs/mlx-int8-hardening-results.md)
+- [Second-order fitting](docs/mlx-second-order-results.md)
+- [Cached calibration](docs/mlx-cached-calibration-results.md)
+- [Scale fitting](docs/mlx-scale-aware-results.md) and [refinement](docs/mlx-refined-results.md)
+- [Qwen held-out rejection](docs/mlx-qwen-validation-results.md)
 
-1. Add versioned quantized tensor metadata and preserve the existing FP16 artifact reader.
-2. Implement per-output-channel INT8 weight packing and an MLX dequantized-matmul baseline.
-3. Add a fused Metal weight-only INT8 linear path for the shapes that profiler evidence supports.
-4. Compare model bytes, peak memory, TTFT, TPOT, and tokens/s against FP16 for both model families.
-5. Require per-layer/logit comparison plus greedy regression; record any near-tie separately.
-6. Only after INT8 passes, add groupwise W4A16 with the same controlled A/B and correctness gates.
+The [evidence index](benchmarks/results/README.md) links saved runs and source archives.
 
-The CUDA implementation remains preserved for later RTX validation. No CUDA performance or
-correctness claim should be published until the WSL2 runbook succeeds on the RTX 3070 Ti.
+## Remaining limits
+
+- CUDA Qwen execution, cuBLASLt plans, kernels, arenas, and tests are implemented.
+  RTX correctness, Compute Sanitizer, and NVIDIA performance are unverified.
+- Metal attention stacks live layer-pages before launch because MLX arrays are
+  immutable. Page packing limits single-request performance.
+- Prefill processes one request chunk per iteration; no packed multi-prompt prefill.
+- Gemma sliding layers bound attention work but retain pages until completion.
+- A 32K prompt plus two outputs checks execution and reclamation, not long-context
+  semantic quality or sustained decoding latency.
+- Prefix reuse is engine-local. Completed request history still grows; a service
+  needs a bounded lifecycle.
+- Sampling, serving, speculation, W4A16, and distributed execution are unimplemented.
