@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +29,7 @@ class MlxPagedKVStore:
         num_kv_heads: int,
         head_dim: int,
         block_tokens: int = 16,
+        is_shared: Callable[[int], bool] | None = None,
     ) -> None:
         if min(num_layers, num_kv_heads, head_dim, block_tokens) <= 0:
             raise ValueError("invalid paged K/V dimensions")
@@ -47,6 +48,41 @@ class MlxPagedKVStore:
         self.bytes_per_block = num_layers * self.bytes_per_layer_block
         self._blocks: dict[int, _DeviceBlock] = {}
         self.peak_allocated_blocks = 0
+        self._is_shared = is_shared or (lambda _: False)
+
+    def _check_writable(self, physical_ids: Iterable[int]) -> None:
+        if any(self._is_shared(int(p)) for p in physical_ids):
+            raise RuntimeError("shared K/V page requires copy-on-write before mutation")
+
+    def clone_block(self, source: int, target: int) -> None:
+        if source not in self._blocks or target in self._blocks or target < 0:
+            raise ValueError("invalid K/V copy-on-write source or target")
+        original = self._blocks[source]
+        # MLX arrays are immutable: duplicate ownership/masks now, new buffers
+        # only when touched layers are replaced by an append write.
+        self._blocks[target] = _DeviceBlock(
+            list(original.layers), list(original.written_masks)
+        )
+        self.peak_allocated_blocks = max(
+            self.peak_allocated_blocks, self.allocated_blocks
+        )
+
+    def validate_prefix(self, table: tuple[int, ...], tokens: int) -> None:
+        if (
+            tokens <= 0
+            or len(table) != (tokens + self.block_tokens - 1) // self.block_tokens
+        ):
+            raise ValueError("invalid prefix page coverage")
+        for i, physical_id in enumerate(table):
+            block = self._blocks.get(physical_id)
+            count = min(self.block_tokens, tokens - i * self.block_tokens)
+            expected = (1 << count) - 1
+            if (
+                block is None
+                or any(a is None for a in block.layers)
+                or any(m & expected != expected for m in block.written_masks)
+            ):
+                raise RuntimeError("cannot cache incomplete K/V pages")
 
     @property
     def allocated_blocks(self) -> int:
@@ -122,6 +158,12 @@ class MlxPagedKVStore:
 
         touched: list[int] = []
         source_offset = 0
+        self._check_writable(
+            p
+            for p, _, _ in self._write_segments(
+                block_table, start_position, int(key.shape[0])
+            )
+        )
         for physical_id, bit_mask, take in self._write_segments(
             block_table, start_position, int(key.shape[0])
         ):
@@ -154,6 +196,7 @@ class MlxPagedKVStore:
             raise ValueError("invalid paged K/V write")
         segments = self._write_segments(block_table, start_position, token_count)
         physical_ids = tuple(item[0] for item in segments)
+        self._check_writable(physical_ids)
         for physical_id, bit_mask, _ in segments:
             if self._block(physical_id).written_masks[layer] & bit_mask:
                 raise RuntimeError("attempted to overwrite an existing K/V token")
@@ -173,6 +216,7 @@ class MlxPagedKVStore:
     ) -> None:
         if int(pages.shape[0]) != len(physical_ids):
             raise ValueError("updated prefill pages do not match their physical ids")
+        self._check_writable(physical_ids)
         offset = 0
         for index, physical_id in enumerate(physical_ids):
             take = min(
@@ -204,6 +248,7 @@ class MlxPagedKVStore:
         )
         if len(set(physical_ids)) != len(physical_ids):
             raise RuntimeError("live sequences unexpectedly share writable K/V pages")
+        self._check_writable(physical_ids)
         for physical_id, position in zip(physical_ids, positions):
             bit_mask = 1 << (position % self.block_tokens)
             if self._block(physical_id).written_masks[layer] & bit_mask:
@@ -223,6 +268,7 @@ class MlxPagedKVStore:
     ) -> None:
         if int(pages.shape[0]) != len(physical_ids):
             raise ValueError("updated decode pages do not match their physical ids")
+        self._check_writable(physical_ids)
         for index, (physical_id, position) in enumerate(zip(physical_ids, positions)):
             block = self._block(physical_id)
             block.layers[layer] = pages[index]
