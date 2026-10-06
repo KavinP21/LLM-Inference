@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "purpose": "Post-run prose clarification only; no fitting, inference, result replacement, or gate change.",
+  "final_verification_sha256": "b9a96e7ac0ac4b7a5a6cccf4480815c4d2e5686a4a3ecedfc633d03c7c679dc9",
+  "stage_verification_sha256": "5361a0a80f5d73ba327c9d6e0e9b41d6b2faab9636e2e46cb68bd45267c5072c",
+  "registered_audit_script_sha256": "591d134aaf2e206a1ce5d615157f61dd0c4deb10836e8847a52d9a388571d8bf",
+  "clarification": "The frozen final auditor's generic limitations sentence mentions failed exact-token gates. In THIS run both exact-token gates pass for both families. Gemma fails only the numerical cosine gate. The structured stage gates and raw observations are authoritative. Registered source and saved reports are preserved without editing that prose.",
+  "both_families_exact_free_continuations_passed": true,
+  "both_families_exact_cached_decisions_passed": true,
+  "qwen_calibration_passed": true,
+  "gemma_numerical_passed": false,
+  "combined_calibration_passed": false,
+  "strict_checkpoint_passed": false
+}
