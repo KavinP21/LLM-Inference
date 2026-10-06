@@ -4,7 +4,6 @@ import importlib.util
 from pathlib import Path
 
 import numpy as np
-
 from forge_llm.scale_aware import DEFAULT_CONFIG, quantize_scale_aware
 from forge_llm.second_order import block_moments
 

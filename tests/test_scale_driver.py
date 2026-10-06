@@ -8,7 +8,6 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from forge_llm.precision_policy import seal_policy
 from forge_llm.scale_aware import DEFAULT_CONFIG, DEFAULT_SEARCH, POLICY_ALGORITHM
 

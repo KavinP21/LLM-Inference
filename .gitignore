@@ -1,6 +1,9 @@
 build/
 .cache/
+.pytest_cache/
+.ruff_cache/
 .venv/
+dist/
 *.egg-info/
 __pycache__/
 *.py[cod]
@@ -10,3 +13,5 @@ models/
 benchmark-results/
 profiles/
 .DS_Store
+
+.publication/
