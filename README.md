@@ -5,8 +5,6 @@ and a CUDA backend. It implements transformer execution, KV-cache allocation,
 request scheduling, and GPU kernels. PyTorch and Transformers are used for weight
 export and reference checks; neither executes the inference loop.
 
-The working Apple path runs **Qwen2.5-0.5B-Instruct** and **Gemma 3 1B text-only**.
-CUDA is implemented for Qwen and awaits validation on NVIDIA hardware.
 
 ## Runtime
 
