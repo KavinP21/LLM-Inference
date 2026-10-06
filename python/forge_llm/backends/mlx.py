@@ -72,6 +72,7 @@ class MlxQwenModel:
         custom_metal: bool = True,
         metal_paged_attention: bool = True,
         int8_mode: str = "auto",
+        decode_mode: str = "batched",
         _model_file: ModelFile | None = None,
     ) -> None:
         self.mx = _mlx()
@@ -91,6 +92,9 @@ class MlxQwenModel:
                     "int8_mode must be auto, dequantize, metal or reconstruct"
                 )
             self.int8_mode = int8_mode
+            if decode_mode not in {"batched", "rowwise"}:
+                raise ValueError("decode_mode must be batched or rowwise")
+            self.decode_mode = decode_mode
             if not 0 < self.max_model_length <= self.config.max_position_embeddings:
                 raise ValueError(
                     "runtime context limit exceeds the model context limit"
@@ -138,25 +142,57 @@ class MlxQwenModel:
         mx.eval(*aliases.values())
         return result
 
+    def _decode_linear(self, x, weight_name: str, bias_name: str | None = None):
+        if x.ndim != 2:
+            raise ValueError("decode projection inputs must have rank two")
+        return self._linear(
+            x, weight_name, bias_name, rowwise=self.decode_mode == "rowwise"
+        )
+
     def _linear(
         self,
         x,
         weight_name: str,
         bias_name: str | None = None,
+        *,
+        rowwise: bool = False,
     ):
+        """Optional single-row reductions, without splitting attention or prefill.
+
+        A reconstructed matrix is shared by all row GEMVs in this call. This
+        policy changes launch/weight-reuse efficiency, not dtype or tie handling.
+        """
+
+        def multiply(weight):
+            if rowwise and x.shape[0] > 1:
+                return self.mx.concatenate(
+                    [x[i : i + 1] @ weight.T for i in range(x.shape[0])], axis=0
+                )
+            return x @ weight.T
+
         weight = self.weights[weight_name]
         spec = self.file.quantization.get(weight_name)
         if spec is None:
-            output = x @ weight.T
+            output = multiply(weight)
         else:
             scales = self.weights[spec.scale_name]
-            rows = x.size // x.shape[-1]
+            rows = 1 if rowwise else x.size // x.shape[-1]
             if (
                 self.int8 is not None
                 and self.int8_mode != "reconstruct"
                 and rows <= self.int8.max_rows
             ):
-                output = self.int8.linear(x, weight, scales)
+                output = (
+                    self.mx.concatenate(
+                        [
+                            self.int8.linear(x[i : i + 1], weight, scales)
+                            for i in range(x.shape[0])
+                        ],
+                        axis=0,
+                    )
+                    if rowwise and x.shape[0] > 1
+                    else self.int8.linear(x, weight, scales)
+                )
             else:
                 # Ephemeral FP16 reconstruction feeds MLX's optimized prefill
                 # GEMM. It is never cached as a second resident weight copy.
@@ -167,7 +203,7 @@ class MlxQwenModel:
                         self.mx.float16
                     )
                 )
-                output = x @ reconstructed.T
+                output = multiply(reconstructed)
         if bias_name is not None:
             output = output + self.weights[bias_name]
         return output
@@ -649,7 +685,7 @@ class MlxQwenModel:
         position_array = mx.array(positions, dtype=mx.int32)
         key_lengths = [position + 1 for position in positions]
         touched: set[int] = set()
-        linear = self._linear
+        linear = self._decode_linear
         normalized = self._rms_norm(hidden, "model.layers.0.input_layernorm.weight")
 
         for layer in range(self.config.num_hidden_layers):

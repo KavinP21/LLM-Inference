@@ -59,6 +59,7 @@ def validate_contexts(
     prefill_chunk_size: int,
     kv_cache_bytes: int,
     int8_mode: str = "auto",
+    decode_mode: str = "batched",
 ) -> dict[str, object]:
     if output_tokens <= 0:
         raise ValueError("output_tokens must be positive")
@@ -72,6 +73,7 @@ def validate_contexts(
         kv_cache_bytes=kv_cache_bytes,
         prefill_chunk_size=prefill_chunk_size,
         int8_mode=int8_mode,
+        decode_mode=decode_mode,
     )
     mx = engine.model.mx
     observations: list[ContextObservation] = []
@@ -172,7 +174,8 @@ def validate_contexts(
             "kv_cache_bytes": kv_cache_bytes,
             "block_tokens": engine.block_tokens,
             "int8_mode": int8_mode,
-            },
+            "decode_mode": decode_mode,
+        },
         "observations": [asdict(item) for item in observations],
         "all_reclaimed": all(item.blocks_reclaimed for item in observations),
     }
@@ -191,6 +194,11 @@ def main() -> None:
         default=[2048, 4096, 8192, 16384, 32768],
     )
     parser.add_argument("--prefill-chunk-size", type=int, default=512)
+    parser.add_argument(
+        "--decode-mode",
+        choices=["batched", "rowwise"],
+        default="batched",
+    )
     parser.add_argument(
         "--int8-mode",
         choices=["auto", "metal", "reconstruct", "dequantize"],
@@ -213,6 +221,7 @@ def main() -> None:
         prefill_chunk_size=args.prefill_chunk_size,
         kv_cache_bytes=args.kv_cache_mib << 20,
         int8_mode=args.int8_mode,
+        decode_mode=args.decode_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

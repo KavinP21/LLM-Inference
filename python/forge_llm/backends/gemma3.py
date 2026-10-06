@@ -79,10 +79,11 @@ class MlxGemma3Model(MlxQwenModel):
         )
         return result.astype(x.dtype)
 
-    def _final_logits(self, hidden):
+    def _final_logits(self, hidden, *, decode: bool = False):
         mx = self.mx
         normalized = self._rms_norm(hidden, "model.norm.weight")
-        logits = self._linear(normalized, "lm_head.weight").astype(mx.float32)
+        linear = self._decode_linear if decode else self._linear
+        logits = linear(normalized, "lm_head.weight").astype(mx.float32)
         softcap = self.config.final_logit_softcapping
         if softcap > 0.0:
             logits = mx.tanh(logits / softcap) * softcap
@@ -93,14 +94,15 @@ class MlxGemma3Model(MlxQwenModel):
         scale = self.mx.array(self.config.embedding_scale, dtype=hidden.dtype)
         return hidden * scale
 
-    def _qkv(self, normalized, prefix: str, token_count: int):
-        query = self._linear(normalized, prefix + "self_attn.q_proj.weight").reshape(
+    def _qkv(self, normalized, prefix: str, token_count: int, *, decode: bool = False):
+        linear = self._decode_linear if decode else self._linear
+        query = linear(normalized, prefix + "self_attn.q_proj.weight").reshape(
             token_count, self.config.num_attention_heads, self.head_dim
         )
-        key = self._linear(normalized, prefix + "self_attn.k_proj.weight").reshape(
+        key = linear(normalized, prefix + "self_attn.k_proj.weight").reshape(
             token_count, self.config.num_key_value_heads, self.head_dim
         )
-        value = self._linear(normalized, prefix + "self_attn.v_proj.weight").reshape(
+        value = linear(normalized, prefix + "self_attn.v_proj.weight").reshape(
             token_count, self.config.num_key_value_heads, self.head_dim
         )
         query = self._rms_norm(query, prefix + "self_attn.q_norm.weight")
@@ -113,19 +115,19 @@ class MlxGemma3Model(MlxQwenModel):
         *,
         layer: int,
         attention,
+        decode: bool = False,
     ):
         prefix = f"model.layers.{layer}."
-        attention_output = self._linear(attention, prefix + "self_attn.o_proj.weight")
+        linear = self._decode_linear if decode else self._linear
+        attention_output = linear(attention, prefix + "self_attn.o_proj.weight")
         attention_output = self._rms_norm(
             attention_output, prefix + "post_attention_layernorm.weight"
         )
         hidden = hidden + attention_output
         normalized = self._rms_norm(hidden, prefix + "pre_feedforward_layernorm.weight")
-        gate = self._linear(normalized, prefix + "mlp.gate_proj.weight")
-        up = self._linear(normalized, prefix + "mlp.up_proj.weight")
-        mlp_output = self._linear(
-            self._gelu_tanh(gate) * up, prefix + "mlp.down_proj.weight"
-        )
+        gate = linear(normalized, prefix + "mlp.gate_proj.weight")
+        up = linear(normalized, prefix + "mlp.up_proj.weight")
+        mlp_output = linear(self._gelu_tanh(gate) * up, prefix + "mlp.down_proj.weight")
         mlp_output = self._rms_norm(
             mlp_output, prefix + "post_feedforward_layernorm.weight"
         )
@@ -205,7 +207,7 @@ class MlxGemma3Model(MlxQwenModel):
         for layer in range(self.config.num_hidden_layers):
             prefix = f"model.layers.{layer}."
             normalized = self._rms_norm(hidden, prefix + "input_layernorm.weight")
-            query, key, value = self._qkv(normalized, prefix, batch)
+            query, key, value = self._qkv(normalized, prefix, batch, decode=True)
             query, key, written = self._rope_write_decode(
                 query,
                 key,
@@ -220,9 +222,11 @@ class MlxGemma3Model(MlxQwenModel):
             attention = self._paged_decode_attention_batch(
                 query, layer, block_tables, key_lengths, store
             )
-            hidden = self._layer_body(hidden, layer=layer, attention=attention)
+            hidden = self._layer_body(
+                hidden, layer=layer, attention=attention, decode=True
+            )
 
-        logits = self._final_logits(hidden)
+        logits = self._final_logits(hidden, decode=True)
         mx.eval(logits)
         store.materialize(touched)
         return logits

@@ -29,6 +29,7 @@ class MlxEngine:
         custom_metal: bool = True,
         metal_paged_attention: bool = True,
         int8_mode: str = "auto",
+        decode_mode: str = "batched",
     ) -> None:
         if max_num_sequences <= 0:
             raise ValueError("max_num_sequences must be positive")
@@ -36,6 +37,8 @@ class MlxEngine:
             raise ValueError("kv_cache_bytes must be positive")
         if prefill_chunk_size <= 0:
             raise ValueError("prefill_chunk_size must be positive")
+        if decode_mode not in {"batched", "rowwise"}:
+            raise ValueError("decode_mode must be batched or rowwise")
         self.model = create_mlx_model(
             str(model_path),
             max_model_length=max_model_length,
@@ -43,6 +46,7 @@ class MlxEngine:
             custom_metal=custom_metal,
             metal_paged_attention=metal_paged_attention,
             int8_mode=int8_mode,
+            decode_mode=decode_mode,
         )
         self.max_num_sequences = max_num_sequences
         self.max_model_length = self.model.max_model_length
@@ -246,6 +250,7 @@ class MlxEngine:
             if self.model.file.quantization
             else "not_quantized",
             "int8_mode": self.model.int8_mode,
+            "decode_mode": self.model.decode_mode,
             **self._precision_stats,
             "kv_device_bytes": self.kv_store.allocated_bytes,
             "kv_capacity_bytes": self.cache_pool.total_blocks * self.bytes_per_block,
