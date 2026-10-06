@@ -113,10 +113,12 @@ def validate_policy(
     if policy.get("algorithm") not in {
         "single_projection_logit_ablation_v1",
         "block_second_order_joint_forward_v1",
+        "block_second_order_cached_repair_v1",
     }:
         raise ValueError("unsupported precision selection algorithm")
     if policy["algorithm"] in {
         "block_second_order_joint_forward_v1",
+        "block_second_order_cached_repair_v1",
     }:
         from .second_order import validate_config
 
@@ -128,6 +130,12 @@ def validate_policy(
             or any(c not in "0123456789abcdef" for c in checksum)
         ):
             raise ValueError("invalid calibration statistics checksum")
+        if policy["algorithm"] in {
+            "block_second_order_cached_repair_v1",
+            }:
+            from .cached_policy import validate_search
+
+            validate_search(policy.get("search_config"))
     if policy.get("policy_sha256") != seal_policy(policy)["policy_sha256"]:
         raise ValueError("precision policy checksum mismatch")
     if policy.get("source_data_sha256") != source_sha:

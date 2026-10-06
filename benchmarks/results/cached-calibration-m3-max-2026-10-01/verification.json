@@ -1,0 +1,23 @@
+{
+  "audit_script_sha256": "8a661e605fe83e3b230dea7ed29d3a29354ed3c31a778013aa281a1d56827584",
+  "benchmark_results": 32,
+  "cached_quality_rows": 9600,
+  "environment": {
+    "runtime_source_sha256": "057470340b804ce78266f34e44c6ba347ddb0be2fb1d84298df42b4e7bab9a27"
+  },
+  "evidence_index_sha256": "7f0d4cc2d1bce4128a4d46714a5465fc3063e98eb2c3eb1b3b356c293e9ea3bb",
+  "final_tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 184
+  },
+  "frozen_complete_files_verified": 17,
+  "indexed_json_files_verified": 76,
+  "limitations": "Post-freeze audit, not fitting. Checks recorded raw observations and file identities, not missing hardware counters or general model quality. Strict quality failure is retained, not waived.",
+  "native_composed_byte_equal_cached_rows": 3200,
+  "readback_passed": true,
+  "schema_version": 1,
+  "strict_checkpoint_passed": false,
+  "test_results_sha256": "9bc9a10949c8a6e8017f84eb9c74c92908821260fefdb5a4561e6a0aebe2264d"
+}

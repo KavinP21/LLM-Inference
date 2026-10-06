@@ -73,6 +73,7 @@ def quantize_model(
         calibrated = None
         second_order = policy is not None and policy["algorithm"] in {
             "block_second_order_joint_forward_v1",
+            "block_second_order_cached_repair_v1",
         }
         if second_order:
             from .second_order import CalibrationStats
