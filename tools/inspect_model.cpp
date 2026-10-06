@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
               << "head_dim: " << config.head_dim() << '\n'
               << "max_positions: " << config.max_position_embeddings << '\n'
               << "tensors: " << model.tensors().size() << '\n'
+              << "quantized_matrices: " << model.quantization().size() << '\n'
               << "data_sha256: ";
     for (const auto byte : model.data_digest()) {
       std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned>(byte);
