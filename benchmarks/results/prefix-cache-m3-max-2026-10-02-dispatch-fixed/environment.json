@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "operating_system": "macOS",
+  "os_version": "26.5",
+  "os_build": "25F71",
+  "architecture": "arm64",
+  "python": "3.12.10",
+  "packages": {
+    "mlx": "0.32.2",
+    "numpy": "2.5.3",
+    "transformers": "5.17.0",
+    "pytest": "9.1.1"
+  },
+  "runtime_source_sha256": "e46b6d7dfaa230e49d6748925330b0f8b916db305f9c347f0a6cc281da398892",
+  "device_identity_source": "Each matrix report environment.native_build records the actual Metal device and architecture from mlx.device_info().",
+  "compilation_scope": "Python/MLX runtime plus existing MLX-compiled Metal kernels. No fresh CUDA build, Linux run, or NVIDIA driver measurement. Existing host/UBSan binaries were rerun separately.",
+  "measurement_scope": "One serialized cooperating GPU workflow, FP16 rowwise decode, five warmups and three measured trials, two model families, cold/disabled/primed repeated-prefix workloads. Priming outside timing; no hardware utilization/power counters."
+}

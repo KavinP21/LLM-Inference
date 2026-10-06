@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from forge_llm.mlx_engine import MlxEngine
+from forge_llm.backends.mlx import MlxQwenModel
 from forge_llm.runtime import SequenceState
 from test_quantization import tiny_artifact
 
@@ -190,3 +191,28 @@ def test_allocator_failure_after_admission_reclaims_request(tmp_path, monkeypatc
         assert engine.scheduler.request(request).state is SequenceState.CANCELLED
         assert engine.stats()["kv_cache"]["reserved_blocks"] == 0
         assert engine.stats()["kv_device_bytes"] == 0
+
+
+@pytest.mark.parametrize("query_length", [1, 4, 5, 6, 7, 8, 9, 17])
+def test_qwen_gqa_short_tail_dispatch_matches_mlx_default(query_length):
+    from types import SimpleNamespace
+
+    import mlx.core as mx
+
+    model = object.__new__(MlxQwenModel)
+    model.mx = mx
+    model.config = SimpleNamespace(attention_head_dim=64)
+    rng = np.random.default_rng(123)
+    q = mx.array(rng.standard_normal((query_length, 14, 64)).astype(np.float16) * 0.1)
+    k = mx.array(rng.standard_normal((513, 2, 64)).astype(np.float16) * 0.1)
+    v = mx.array(rng.standard_normal((513, 2, 64)).astype(np.float16) * 0.1)
+    actual = model._fast_attention(q, k, v)
+    expected = mx.fast.scaled_dot_product_attention(
+        mx.transpose(q, (1, 0, 2))[None],
+        mx.transpose(k, (1, 0, 2))[None],
+        mx.transpose(v, (1, 0, 2))[None],
+        scale=64**-0.5,
+        mask="causal",
+    )
+    expected = mx.transpose(expected[0], (1, 0, 2)).reshape(query_length, -1)
+    np.testing.assert_array_equal(np.array(actual), np.array(expected))

@@ -81,6 +81,15 @@ reserves each affected active writer's COW capacity; if that cannot fit, inserti
 is skipped instead of overcommitting admitted work. Full shared prefix pages cannot
 be rewritten. The device store independently rejects writes to pinned/shared pages.
 
+Short GQA prefill tails use a capability-aware force-fused guard. In pinned MLX
+0.32.2, vector mode is for at most eight queries and additionally requires query
+length times the GQA factor at most 32; full attention has different head-width
+limits. Unsupported short shapes retain MLX's safe default fallback rather than
+throwing from a forced unavailable kernel. Supported/default production shapes
+keep their old dispatch. See [the pinned upstream selector](https://github.com/ml-explore/mlx/blob/v0.32.2/mlx/backend/metal/scaled_dot_product_attention.cpp#L592).
+The fallback can materialize a small-query score matrix; this is not a new fused
+kernel or a promise that every tail is allocation-free.
+
 COW copies page ownership and written masks. MLX arrays are immutable, so existing
 layer arrays can initially be aliased; append operations replace private arrays.
 Accounting conservatively counts the new logical physical page immediately. There
@@ -148,7 +157,7 @@ PYTHONPATH=python FORGE_INSPECT_MODEL=build/forge-inspect-model-int8 \
   --junitxml=benchmarks/results/prefix-cache-NEW-RUN/test-results.xml
 PYTHONPATH=python .venv/bin/python benchmarks/run_prefix_checkpoint.py \
   --output-dir benchmarks/results/prefix-cache-NEW-RUN --phase final-audit \
-  --expected-tests 356
+  --expected-tests 365
 ```
 
 Run GPU workflows serially under the evidence lease. This lease coordinates our

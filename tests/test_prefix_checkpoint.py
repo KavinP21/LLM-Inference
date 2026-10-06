@@ -348,3 +348,25 @@ def test_exclusive_artifact_saves_never_overwrite(tmp_path, monkeypatch):
     with pytest.raises(FileExistsError):
         module.save(path, {"passed": True})
     assert json.loads(path.read_text()) == {"passed": False}
+
+
+def test_contract_checks_live_archived_test_and_tool_sources(tmp_path, monkeypatch):
+    module = driver(monkeypatch)
+    source = tmp_path / "registered-test.py"
+    source.write_text("original test\n")
+    contract = {
+        "configuration": module.CONFIG,
+        "environment": {"runtime_source_sha256": "runtime"},
+        "files_sha256": {},
+        "prior_files_sha256": {},
+        "source_archive": {"files_sha256": {str(source): module.file_sha256(source)}},
+    }
+    module.save(tmp_path / "contract.json", contract)
+    monkeypatch.setattr(
+        module, "source_provenance", lambda: {"runtime_source_sha256": "runtime"}
+    )
+    monkeypatch.setattr(module, "check_sources", lambda *a: None)
+    assert module.contract(tmp_path) == contract
+    source.write_text("changed test\n")
+    with pytest.raises(ValueError, match="frozen complete file changed"):
+        module.contract(tmp_path)
