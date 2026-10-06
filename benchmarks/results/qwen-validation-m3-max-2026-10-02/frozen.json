@@ -1,0 +1,13 @@
+{
+  "contract_sha256": "e8ddbf7a58102b768a2630c1caebc4fb4c46251e27f8f5095fbd7085d55ee09a",
+  "exported_at_utc": "2026-10-02T18:43:02.598425+00:00",
+  "files_sha256": {
+    "models/refined-qwen-validation/qwen2.5-0.5b-int8-refined.engine": "9679e5bc24a59f23fc9d6d5a177ac56c6ac5a9d4d675c32c552e52544b319806",
+    "models/refined-qwen-validation/qwen2.5-0.5b-int8-refined.engine.json": "a63b09b9e4b1b1805aba5d01f1b939d0c81767aecb8808422b9801a1fb1ae320"
+  },
+  "model_provenance": {
+    "model_data_sha256": "35cd24b96996b877e25c01b182c87b6ea5a2399d63b997c9b5761ab3d0204619",
+    "model_file_bytes": 896975360,
+    "model_format_version": 3
+  }
+}

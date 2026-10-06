@@ -1,0 +1,13 @@
+{
+  "files_sha256": {
+    "contract.json": "e8ddbf7a58102b768a2630c1caebc4fb4c46251e27f8f5095fbd7085d55ee09a",
+    "frozen.json": "3ec31aa7311108f32fa0401ae700de882d1a3debbe2c9b04baa27250c6a5f811",
+    "quality-checkpoint.json": "0876f6d267f43d747eaf305a1d5d75ce0f5b3beba2f80fa8dada6c962310457a",
+    "quality/metal.json": "10dd38bc33bbf82474206f17360fb5460a88a12ba4a16a6efdacc5c0a6dff93b",
+    "quality/native-composed-bytes.json": "bc0dca08826b8ec410aada58d9a84138f934219abf345e5ce7968f7b2f82c549",
+    "quality/reconstruct.json": "23d99d388a41c3565dd567949890b502632c25096d929498b4f9ae60fee46c88",
+    "sources.zip": "5ab2f501f936fc61c8632a8ede72aa9ba8700ad7401ca7203e7648b68728e4f5",
+    "test-results.xml": "98b45ca0be13994d3ae2f78456df7a9671151056889ee5e69b7476219f9bd482",
+    "verification.json": "15a3e34b5acb564b96c3552655af79dba4fa37e2b6e07125f7630c7ec2b47c40"
+  }
+}

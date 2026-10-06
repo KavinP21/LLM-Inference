@@ -1,0 +1,46 @@
+{
+  "benchmark_results": 0,
+  "cached_quality_rows": 1600,
+  "captured_source_files_verified": 104,
+  "contract_sha256": "e8ddbf7a58102b768a2630c1caebc4fb4c46251e27f8f5095fbd7085d55ee09a",
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "5387bb7931410a40862e9ca6d6d9d635af37f0d5b3fd8d63e28808f74b09561b"
+  },
+  "exported_model": {
+    "model_data_sha256": "35cd24b96996b877e25c01b182c87b6ea5a2399d63b997c9b5761ab3d0204619",
+    "model_file_bytes": 896975360,
+    "model_format_version": 3
+  },
+  "native_composed_byte_rows": 800,
+  "performance_matrix_executed": false,
+  "prior_complete_files_unchanged": 134,
+  "quality_gates": {
+    "metal": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    },
+    "reconstruct": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    }
+  },
+  "quality_passed": false,
+  "readback_passed": true,
+  "registered_files_verified": 10,
+  "resource_stage_executed": false,
+  "resource_stage_passed": false,
+  "schema_version": 1,
+  "scope": "Qwen only, native reconstruction with rowwise projections. Direct Metal quality is diagnostic and cannot certify this execution mode. References are the identical Forge FP16 artifact, not a new Transformers or general-accuracy certification. Gemma remains FP16. No app/default change or automatic promotion.",
+  "state": "rejected_at_held_out_quality",
+  "strict_checkpoint_passed": false
+}
