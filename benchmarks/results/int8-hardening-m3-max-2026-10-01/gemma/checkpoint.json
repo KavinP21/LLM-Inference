@@ -1,0 +1,23 @@
+{
+  "benchmark_executed": true,
+  "quality_gates": {
+    "metal": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    },
+    "reconstruct": {
+      "cache_reclaimed": true,
+      "exact_greedy": false,
+      "kernel_exact_greedy": true,
+      "kernel_numerical": true,
+      "numerical": true,
+      "strict_checkpoint_passed": false
+    }
+  },
+  "scope": "one frozen policy and model family; not permission to advance W4A16",
+  "strict_checkpoint_passed": false
+}

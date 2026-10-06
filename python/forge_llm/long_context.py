@@ -11,7 +11,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .benchmark import model_provenance
+from .benchmark import model_provenance, source_provenance
 from .mlx_engine import MlxEngine
 from .runtime import SequenceState
 
@@ -58,6 +58,7 @@ def validate_contexts(
     output_tokens: int,
     prefill_chunk_size: int,
     kv_cache_bytes: int,
+    int8_mode: str = "auto",
 ) -> dict[str, object]:
     if output_tokens <= 0:
         raise ValueError("output_tokens must be positive")
@@ -70,6 +71,7 @@ def validate_contexts(
         max_model_length=maximum,
         kv_cache_bytes=kv_cache_bytes,
         prefill_chunk_size=prefill_chunk_size,
+        int8_mode=int8_mode,
     )
     mx = engine.model.mx
     observations: list[ContextObservation] = []
@@ -161,6 +163,7 @@ def validate_contexts(
             "python": platform.python_version(),
             "native_build": engine.build_info(),
             "git_commit": _git_commit(),
+            **source_provenance(),
         },
         "configuration": {
             "context_lengths": context_lengths,
@@ -168,7 +171,8 @@ def validate_contexts(
             "prefill_chunk_size": prefill_chunk_size,
             "kv_cache_bytes": kv_cache_bytes,
             "block_tokens": engine.block_tokens,
-        },
+            "int8_mode": int8_mode,
+            },
         "observations": [asdict(item) for item in observations],
         "all_reclaimed": all(item.blocks_reclaimed for item in observations),
     }
@@ -188,6 +192,11 @@ def main() -> None:
     )
     parser.add_argument("--prefill-chunk-size", type=int, default=512)
     parser.add_argument(
+        "--int8-mode",
+        choices=["auto", "metal", "reconstruct", "dequantize"],
+        default="auto",
+    )
+    parser.add_argument(
         "--output-tokens",
         type=int,
         default=2,
@@ -195,12 +204,15 @@ def main() -> None:
     )
     parser.add_argument("--kv-cache-mib", type=int, default=512)
     args = parser.parse_args()
+    if args.output.exists():
+        raise FileExistsError(f"refusing to overwrite context evidence: {args.output}")
     result = validate_contexts(
         args.model,
         args.context_lengths,
         output_tokens=args.output_tokens,
         prefill_chunk_size=args.prefill_chunk_size,
         kv_cache_bytes=args.kv_cache_mib << 20,
+        int8_mode=args.int8_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

@@ -1,0 +1,150 @@
+{
+  "aggregate": {
+    "e2e_ms": {
+      "p50": 578.139583,
+      "p95": 581.1003958000001,
+      "p99": 581.3635791600001
+    },
+    "generated_tokens_per_second": 55.273839191425814,
+    "prompt_tokens_per_second": 221.09535676570326,
+    "tpot_ms": {
+      "p50": 16.139150516129035,
+      "p95": 16.139300525806455,
+      "p99": 16.13931386
+    },
+    "ttft_ms": {
+      "p50": 77.82075,
+      "p95": 80.7862131,
+      "p99": 81.04980982
+    }
+  },
+  "configuration": {
+    "backend": "mlx",
+    "capture_path": null,
+    "concurrency": 1,
+    "int8_mode": "metal",
+    "kv_cache_mib": 1024,
+    "max_model_length": 2048,
+    "mlx_kernel_mode": "full",
+    "model_path": "models/gemma-3-1b-it-int8.engine",
+    "output_length": 32,
+    "prompt_token_lengths": [
+      128
+    ],
+    "repetitions": 3,
+    "stop_on_eos": false,
+    "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+    "warmup_output_length": 32,
+    "warmups": 5,
+    "workload_seed": null,
+    "workload_sha256": "6020d2e633afa9d623ecc500a0c0f5f432be388d6216d2f13cf4e98b9d6b9a3b"
+  },
+  "engine_stats": {
+    "attention_tile_size": 1024,
+    "backend": "mlx",
+    "custom_metal": true,
+    "int8_mode": "metal",
+    "kv_cache": {
+      "allocated_blocks": 0,
+      "allocation_failures": 0,
+      "free_blocks": 2520,
+      "internal_fragmentation_tokens": 0,
+      "layout": "paged",
+      "live_tokens": 0,
+      "occupancy": 0.0,
+      "peak_allocated_blocks": 10,
+      "reserved_blocks": 0,
+      "total_blocks": 2520,
+      "unreserved_blocks": 2520
+    },
+    "kv_capacity_bytes": 1073479680,
+    "kv_device_bytes": 0,
+    "kv_materialized_blocks": 0,
+    "kv_peak_device_bytes": 4259840,
+    "kv_peak_materialized_blocks": 10,
+    "metal_paged_attention": true,
+    "model_bytes": 1303847168,
+    "model_type": "gemma3_text",
+    "prefill_chunk_size": 512,
+    "quantization": "symmetric_int8_per_output_channel",
+    "quantization_status": "experimental",
+    "quantized_matrices": 182,
+    "scheduler": {
+      "cancelled": 0,
+      "completed": 8,
+      "rejected": 0,
+      "running": 0,
+      "submitted": 8,
+      "waiting": 0
+    },
+    "weight_storage_bytes": 1303847168
+  },
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "native_build": {
+      "architecture": "applegpu_g15s",
+      "backend": "mlx",
+      "device": "Apple M3 Max",
+      "mlx_version": "0.32.2"
+    },
+    "nvcc": null,
+    "nvidia_smi": null,
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.12.10",
+    "runtime_source_sha256": "52354ec043c409caa45b4e1b6c550e2093bf079444b0a8ea00de2ed912f3d4b5"
+  },
+  "gpu_samples": {
+    "gpu_utilization_mean_percent": null,
+    "gpu_utilization_peak_percent": null,
+    "memory_peak_mib": null,
+    "power_mean_watts": null,
+    "power_peak_watts": null,
+    "sample_count": 0
+  },
+  "implementation": "forge-mlx-int8-paged-full-metal",
+  "mlx_memory": {
+    "active_bytes_before_recorded_repetitions": 1304114432,
+    "incremental_peak_active_bytes": 773186944,
+    "peak_active_bytes_during_recorded_repetitions": 2077301376
+  },
+  "model": {
+    "model_data_sha256": "31d5cea203e94a668483a34668c37666ce07b7aadb64695953fed1fdb01d242f",
+    "model_file_bytes": 1303899648,
+    "model_format_version": 3
+  },
+  "peak_kv_cache": {
+    "allocated_blocks": 10,
+    "internal_fragmentation_tokens": 15,
+    "occupancy": 0.003968253968253968,
+    "reserved_blocks": 1
+  },
+  "peak_kv_cache_bytes": 4259840,
+  "requests": [
+    {
+      "e2e_ms": 581.429375,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 6,
+      "tpot_ms": 16.139150516129035,
+      "ttft_ms": 81.115709
+    },
+    {
+      "e2e_ms": 577.081292,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 7,
+      "tpot_ms": 16.126301064516127,
+      "ttft_ms": 77.165959
+    },
+    {
+      "e2e_ms": 578.139583,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 8,
+      "tpot_ms": 16.13931719354839,
+      "ttft_ms": 77.82075
+    }
+  ],
+  "schema_version": 1
+}

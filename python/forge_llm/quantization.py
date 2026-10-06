@@ -13,6 +13,7 @@ import numpy as np
 from .format import QuantizationSpec, write_engine, write_manifest
 from .model_contract import validate_model_weights
 from .model_file import ModelFile
+from .precision_policy import canonical_sha256, validate_policy
 
 
 def quantize_per_channel(weight: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -43,6 +44,7 @@ def quantize_model(
     output: str | Path,
     *,
     retain_fp16: list[str] | None = None,
+    policy: dict | None = None,
 ) -> dict:
     source, output = Path(source), Path(output)
     if source.resolve() == output.resolve():
@@ -63,6 +65,10 @@ def quantize_model(
             for name in file.tensors
             if name.startswith("model.layers.") and name.endswith("_proj.weight")
         }
+        if policy is not None:
+            if retain_fp16 is not None:
+                raise ValueError("use either a precision policy or explicit retention")
+            retain_fp16 = validate_policy(policy, file.data_sha256, projection_names)
         retained = set(retain_fp16 or [])
         if len(retained) != len(retain_fp16 or []) or not retained <= projection_names:
             raise ValueError("retained FP16 names must be unique supported projections")
@@ -70,6 +76,10 @@ def quantize_model(
         quantized_source_bytes = sum(
             file.tensor_info(n).nbytes for n in projection_names - retained
         )
+        if policy is not None and quantized_source_bytes < 0.25 * projection_bytes:
+            raise ValueError(
+                "calibration policy violates the 25% INT8 projection floor"
+            )
         tensors, aliases, seen, specs = {}, {}, {}, {}
         max_error = 0.0
         for name, info in file.tensors.items():
@@ -127,6 +137,8 @@ def quantize_model(
             quantized_projection_fraction=quantized_source_bytes / projection_bytes,
             fp16_source_projection_bytes=projection_bytes,
             quantized_source_projection_bytes=quantized_source_bytes,
+            precision_policy=policy,
+            precision_policy_sha256=canonical_sha256(policy) if policy else None,
             quantization_method="rtn_v1",
             quality_status="experimental; calibration is not held-out certification",
         )
@@ -140,14 +152,22 @@ def main() -> None:
     )
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--retain-fp16", action="append", help="exact projection name")
+    choice = parser.add_mutually_exclusive_group()
+    choice.add_argument("--retain-fp16", action="append", help="exact projection name")
+    choice.add_argument(
+        "--policy", type=Path, help="source-bound calibration report/policy"
+    )
     args = parser.parse_args()
+    policy = json.loads(args.policy.read_text()) if args.policy else None
+    if policy is not None and "policy" in policy:
+        policy = policy["policy"]
     print(
         json.dumps(
             quantize_model(
                 args.source,
                 args.output,
                 retain_fp16=args.retain_fp16,
+                policy=policy,
             ),
             indent=2,
             sort_keys=True,

@@ -171,3 +171,57 @@ def test_mixed_precision_boundary_batch_outputs_and_cancellation(tmp_path, famil
         assert 0 < batched.stats()["quantized_projection_fraction"] < 1
 
 
+@pytest.mark.parametrize("family", ["qwen2", "gemma3_text"])
+def test_offline_calibration_policy_executes_without_held_out_evaluation(
+    tmp_path, monkeypatch, family
+):
+    from types import SimpleNamespace
+
+    pytest.importorskip("transformers")
+    from forge_llm.calibrate_int8 import calibrate
+
+    source, packed = tmp_path / "source.engine", tmp_path / "mixed.engine"
+    tiny_artifact(source, family)
+    calls = []
+
+    class Tokenizer:
+        def __call__(self, text, **_):
+            calls.append(text)
+            return SimpleNamespace(
+                input_ids={
+                    "calibration one": [2, 3, 5],
+                    "calibration two": [7, 11, 13],
+                    "guard only": [17, 19, 23],
+                }[text]
+            )
+
+    monkeypatch.setattr(
+        "transformers.AutoTokenizer.from_pretrained", lambda *_, **__: Tokenizer()
+    )
+    report = calibrate(
+        source,
+        "offline-stub",
+        ["calibration one", "calibration two"],
+        ["guard only"],
+        output_tokens=4,
+        positions=(0, 1, 3),
+        probe_count=2,
+        fractions=(1, 0.5, 0.25),
+    )
+    assert calls == ["calibration one", "calibration two", "guard only"]
+    assert len(report["ranking"]) == 14
+    assert report["cache_reclaimed"]
+    assert report["policy"]["quantized_projection_fraction"] >= 0.25
+    assert all(
+        case["prompt"] != "guard only"
+        for trial in report["trials"]
+        for case in trial["cases"]
+    )
+    quantize_model(source, packed, policy=report["policy"])
+    with MlxEngine(
+        packed, int8_mode="reconstruct", max_model_length=64, kv_cache_bytes=1 << 20
+    ) as engine:
+        assert (
+            engine.generate([2, 3, 5], 4)
+            == report["trials"][-1]["cases"][0]["candidate_tokens"]
+        )

@@ -1,0 +1,323 @@
+{
+  "aggregate": {
+    "e2e_ms": {
+      "p50": 766.1444795,
+      "p95": 816.2433250500001,
+      "p99": 823.83361375
+    },
+    "generated_tokens_per_second": 320.95341552366625,
+    "prompt_tokens_per_second": 1283.813662094665,
+    "tpot_ms": {
+      "p50": 18.37066869354839,
+      "p95": 21.90089752580645,
+      "p99": 22.72697688419355
+    },
+    "ttft_ms": {
+      "p50": 203.0762085,
+      "p95": 382.38900265,
+      "p99": 387.75394307
+    }
+  },
+  "configuration": {
+    "backend": "mlx",
+    "capture_path": null,
+    "concurrency": 8,
+    "int8_mode": "metal",
+    "kv_cache_mib": 1024,
+    "max_model_length": 2048,
+    "mlx_kernel_mode": "full",
+    "model_path": "models/qwen2.5-0.5b-int8.engine",
+    "output_length": 32,
+    "prompt_token_lengths": [
+      128,
+      128,
+      128,
+      128,
+      128,
+      128,
+      128,
+      128
+    ],
+    "repetitions": 3,
+    "stop_on_eos": false,
+    "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+    "warmup_output_length": 32,
+    "warmups": 5
+  },
+  "engine_stats": {
+    "attention_tile_size": 1024,
+    "backend": "mlx",
+    "custom_metal": true,
+    "int8_mode": "metal",
+    "kv_cache": {
+      "allocated_blocks": 0,
+      "allocation_failures": 0,
+      "free_blocks": 5461,
+      "internal_fragmentation_tokens": 0,
+      "layout": "paged",
+      "live_tokens": 0,
+      "occupancy": 0.0,
+      "peak_allocated_blocks": 80,
+      "reserved_blocks": 0,
+      "total_blocks": 5461,
+      "unreserved_blocks": 5461
+    },
+    "kv_capacity_bytes": 1073676288,
+    "kv_device_bytes": 0,
+    "kv_materialized_blocks": 0,
+    "kv_peak_device_bytes": 15728640,
+    "kv_peak_materialized_blocks": 80,
+    "metal_paged_attention": true,
+    "model_bytes": 631455488,
+    "model_type": "qwen2",
+    "prefill_chunk_size": 512,
+    "quantization": "symmetric_int8_per_output_channel",
+    "quantization_status": "experimental",
+    "quantized_matrices": 168,
+    "scheduler": {
+      "cancelled": 0,
+      "completed": 64,
+      "rejected": 0,
+      "running": 0,
+      "submitted": 64,
+      "waiting": 0
+    },
+    "weight_storage_bytes": 631455488
+  },
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "native_build": {
+      "architecture": "applegpu_g15s",
+      "backend": "mlx",
+      "device": "Apple M3 Max",
+      "mlx_version": "0.32.2"
+    },
+    "nvcc": null,
+    "nvidia_smi": null,
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.12.10",
+    "runtime_source_sha256": "a4d21008d364b70220e9fe3756f956d008ac6568d1c7eb90bc929770a38f4082"
+  },
+  "gpu_samples": {
+    "gpu_utilization_mean_percent": null,
+    "gpu_utilization_peak_percent": null,
+    "memory_peak_mib": null,
+    "power_mean_watts": null,
+    "power_peak_watts": null,
+    "sample_count": 0
+  },
+  "implementation": "forge-mlx-int8-paged-full-metal",
+  "mlx_memory": {
+    "active_bytes_before_recorded_repetitions": 632094592,
+    "incremental_peak_active_bytes": 822444964,
+    "peak_active_bytes_during_recorded_repetitions": 1454539556
+  },
+  "model": {
+    "model_data_sha256": "b229ceaab153c193a449e01cbbbf000419f34fc30575fee1ce01f28c07620740",
+    "model_file_bytes": 631501824,
+    "model_format_version": 3
+  },
+  "peak_kv_cache": {
+    "allocated_blocks": 80,
+    "internal_fragmentation_tokens": 92,
+    "occupancy": 0.014649331624244644,
+    "reserved_blocks": 71
+  },
+  "peak_kv_cache_bytes": 15728640,
+  "requests": [
+    {
+      "e2e_ms": 752.24625,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 41,
+      "tpot_ms": 22.970004032258068,
+      "ttft_ms": 40.176125
+    },
+    {
+      "e2e_ms": 765.652542,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 42,
+      "tpot_ms": 21.913364258064515,
+      "ttft_ms": 86.33825
+    },
+    {
+      "e2e_ms": 777.925333,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 43,
+      "tpot_ms": 20.808077935483873,
+      "ttft_ms": 132.874917
+    },
+    {
+      "e2e_ms": 789.082709,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 44,
+      "tpot_ms": 19.613520161290324,
+      "ttft_ms": 181.063584
+    },
+    {
+      "e2e_ms": 799.343708,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 45,
+      "tpot_ms": 18.34346506451613,
+      "ttft_ms": 230.696291
+    },
+    {
+      "e2e_ms": 809.219917,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 46,
+      "tpot_ms": 17.02077151612903,
+      "ttft_ms": 281.576
+    },
+    {
+      "e2e_ms": 817.48275,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 47,
+      "tpot_ms": 15.586133064516128,
+      "ttft_ms": 334.312625
+    },
+    {
+      "e2e_ms": 825.730625,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 48,
+      "tpot_ms": 14.077637096774195,
+      "ttft_ms": 389.323875
+    },
+    {
+      "e2e_ms": 713.372542,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 49,
+      "tpot_ms": 21.830252709677417,
+      "ttft_ms": 36.634708
+    },
+    {
+      "e2e_ms": 726.099,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 50,
+      "tpot_ms": 20.760788967741938,
+      "ttft_ms": 82.514542
+    },
+    {
+      "e2e_ms": 737.597666,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 51,
+      "tpot_ms": 19.640995967741937,
+      "ttft_ms": 128.726791
+    },
+    {
+      "e2e_ms": 748.049834,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 52,
+      "tpot_ms": 18.452799741935483,
+      "ttft_ms": 176.013042
+    },
+    {
+      "e2e_ms": 757.456958,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 53,
+      "tpot_ms": 17.173165322580644,
+      "ttft_ms": 225.088833
+    },
+    {
+      "e2e_ms": 766.849333,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 54,
+      "tpot_ms": 15.840415322580647,
+      "ttft_ms": 275.796458
+    },
+    {
+      "e2e_ms": 774.745334,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 55,
+      "tpot_ms": 14.409776903225804,
+      "ttft_ms": 328.04225
+    },
+    {
+      "e2e_ms": 783.054375,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 56,
+      "tpot_ms": 12.944629032258067,
+      "ttft_ms": 381.770875
+    },
+    {
+      "e2e_ms": 712.845,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 57,
+      "tpot_ms": 21.816375,
+      "ttft_ms": 36.537375
+    },
+    {
+      "e2e_ms": 725.488375,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 58,
+      "tpot_ms": 20.748536290322583,
+      "ttft_ms": 82.28375
+    },
+    {
+      "e2e_ms": 736.906667,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 59,
+      "tpot_ms": 19.599385741935485,
+      "ttft_ms": 129.325709
+    },
+    {
+      "e2e_ms": 747.456125,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 60,
+      "tpot_ms": 18.397872322580646,
+      "ttft_ms": 177.122083
+    },
+    {
+      "e2e_ms": 756.960709,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 61,
+      "tpot_ms": 17.12433738709677,
+      "ttft_ms": 226.10625
+    },
+    {
+      "e2e_ms": 766.636417,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 62,
+      "tpot_ms": 15.808674741935485,
+      "ttft_ms": 276.5675
+    },
+    {
+      "e2e_ms": 775.057625,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 63,
+      "tpot_ms": 14.394205645161291,
+      "ttft_ms": 328.83725
+    },
+    {
+      "e2e_ms": 783.644792,
+      "output_tokens": 32,
+      "prompt_tokens": 128,
+      "request_id": 64,
+      "tpot_ms": 12.940216387096775,
+      "ttft_ms": 382.498084
+    }
+  ],
+  "schema_version": 1
+}
