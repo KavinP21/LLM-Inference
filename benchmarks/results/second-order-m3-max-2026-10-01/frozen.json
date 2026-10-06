@@ -1,0 +1,62 @@
+{
+  "artifacts": {
+    "gemma": {
+      "calibration_passed": false,
+      "calibration_report": "benchmarks/results/second-order-m3-max-2026-10-01/calibration/gemma-calibration.json",
+      "calibration_report_sha256": "6a5a4bb2ace03ac4567ecbcf9bbf06dc4815794648e3b7a860ea82a9f4037549",
+      "calibration_stats_sha256": "96a5de48ca18020146bb5b2817b0594fd89d53563b273f540157faa1f38b32d8",
+      "model": "models/second-order/gemma-3-1b-it-int8-second-order.engine",
+      "model_provenance": {
+        "model_data_sha256": "ad7397c3750be4c55867428e5dd1f0f8cb0e2238bbf8f9ca35e2e8e643e2f313",
+        "model_file_bytes": 1825228544,
+        "model_format_version": 3
+      },
+      "policy_sha256": "274d4fce277597114806b0f84906d2b98a28d3b297849cb2ff9d4fcc9694fafd",
+      "rtn_control": "models/second-order/gemma-3-1b-it-int8-second-order-rtn-control.engine",
+      "rtn_control_provenance": {
+        "model_data_sha256": "05c6c2e2c2ae721119fc15079e333018a6d9f8244d1bc236b1786adebc5d78bd",
+        "model_file_bytes": 1825228544,
+        "model_format_version": 3
+      },
+      "source": "models/gemma-3-1b-it.engine",
+      "stats": "models/second-order/gemma-stats.npz",
+      "tokenizer": "google/gemma-3-1b-it"
+    },
+    "qwen": {
+      "calibration_passed": false,
+      "calibration_report": "benchmarks/results/second-order-m3-max-2026-10-01/calibration/qwen-calibration.json",
+      "calibration_report_sha256": "3db609acc6a085a32c00dcc2bfcc13b3c381c046d1cb70b2951227a1f911f087",
+      "calibration_stats_sha256": "4adfbb6c00029089be1a54da5e1a085cd1688967cee1962a3b32d3e2ac771e6f",
+      "model": "models/second-order/qwen2.5-0.5b-int8-second-order.engine",
+      "model_provenance": {
+        "model_data_sha256": "ca9a362d8c9289865f999bcc962135c310796a1142d94c881d835352c5f46714",
+        "model_file_bytes": 896176128,
+        "model_format_version": 3
+      },
+      "policy_sha256": "252392e76a2fb5eb0400cfb4cb30429d46f335bfee0b6e4ec7793fdc54cfe8ae",
+      "rtn_control": "models/second-order/qwen2.5-0.5b-int8-second-order-rtn-control.engine",
+      "rtn_control_provenance": {
+        "model_data_sha256": "6d09803933345599c3add6114ceded381a7e42f50e76d1e361c764ea9425a4bb",
+        "model_file_bytes": 896176128,
+        "model_format_version": 3
+      },
+      "source": "models/qwen2.5-0.5b.engine",
+      "stats": "models/second-order/qwen-stats.npz",
+      "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct"
+    }
+  },
+  "contract": "Both policies and stats frozen before any regression; no post-regression tuning; FP16 defaults unchanged.",
+  "corpora_sha256": {
+    "benchmarks/quality-prompts.json": "baef64219fb99c91c6f572df6624a3b87ba63cdc2ed40c0d1fd3def973bd7685",
+    "benchmarks/second-order-calibration-prompts.json": "5dcde582e7742f93c6e46c383d89d6597795ae8143ff09b4fab8c59bffa87fda",
+    "benchmarks/second-order-regression-prompts.json": "59db3b7a2488601e4de71bd2140da70f2e51e885410be3c31d60610d36ef0786"
+  },
+  "driver_sha256": "d1d7b73c73f293c4957396e5866c16488a83056a8c96a562674628046f5b197a",
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "21fa0be0da47cb8b14bef2bd7f799ce3a6ad6e3381a5026fc46f4d016d1bc898"
+  },
+  "frozen_at_utc": "2026-10-01T18:44:21.266496+00:00",
+  "schema_version": 1
+}

@@ -1,0 +1,301 @@
+{
+  "batching": {
+    "gemma-metal": {
+      "cancellation_reclaimed": true,
+      "checkpoint_passed": true,
+      "historical_default_tokens_unchanged": true,
+      "reference_reclaimed": true,
+      "rowwise_cache_reclaimed": true,
+      "rowwise_events_exact": true,
+      "rowwise_exact_logits": true,
+      "rowwise_exact_tokens": true
+    },
+    "gemma-reconstruct": {
+      "cancellation_reclaimed": true,
+      "checkpoint_passed": true,
+      "historical_default_tokens_unchanged": true,
+      "reference_reclaimed": true,
+      "rowwise_cache_reclaimed": true,
+      "rowwise_events_exact": true,
+      "rowwise_exact_logits": true,
+      "rowwise_exact_tokens": true
+    },
+    "qwen-metal": {
+      "cancellation_reclaimed": true,
+      "checkpoint_passed": true,
+      "historical_default_tokens_unchanged": true,
+      "reference_reclaimed": true,
+      "rowwise_cache_reclaimed": true,
+      "rowwise_events_exact": true,
+      "rowwise_exact_logits": true,
+      "rowwise_exact_tokens": true
+    },
+    "qwen-reconstruct": {
+      "cancellation_reclaimed": true,
+      "checkpoint_passed": true,
+      "historical_default_tokens_unchanged": true,
+      "reference_reclaimed": true,
+      "rowwise_cache_reclaimed": true,
+      "rowwise_events_exact": true,
+      "rowwise_exact_logits": true,
+      "rowwise_exact_tokens": true
+    }
+  },
+  "calibration_passed": false,
+  "quality": {
+    "gemma-metal-corpus0": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": false,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 22,
+        "metal_dequantize_exact_cases": 24,
+        "minimum_layer_cosine": 0.9999266639992768,
+        "minimum_logit_cosine": 0.9993046138302664,
+        "minimum_metal_dequantize_logit_cosine": 0.9999968184235711,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.984,
+        "total_cases": 25
+      }
+    },
+    "gemma-metal-corpus1": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": false,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 19,
+        "metal_dequantize_exact_cases": 24,
+        "minimum_layer_cosine": 0.9999266639992768,
+        "minimum_logit_cosine": 0.9998450111845284,
+        "minimum_metal_dequantize_logit_cosine": 0.9999977225678097,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 1.0,
+        "total_cases": 25
+      }
+    },
+    "gemma-reconstruct-corpus0": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 23,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999266645066702,
+        "minimum_logit_cosine": 0.9993046138302664,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.984,
+        "total_cases": 25
+      }
+    },
+    "gemma-reconstruct-corpus1": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 20,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999266645066702,
+        "minimum_logit_cosine": 0.9998450111845284,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 1.0,
+        "total_cases": 25
+      }
+    },
+    "qwen-metal-corpus0": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": false,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 21,
+        "metal_dequantize_exact_cases": 23,
+        "minimum_layer_cosine": 0.9998645603596368,
+        "minimum_logit_cosine": 0.999768958292959,
+        "minimum_metal_dequantize_logit_cosine": 0.9999944207887544,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.976,
+        "total_cases": 25
+      }
+    },
+    "qwen-metal-corpus1": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": false,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 22,
+        "metal_dequantize_exact_cases": 23,
+        "minimum_layer_cosine": 0.9998645603596368,
+        "minimum_logit_cosine": 0.9998917746880941,
+        "minimum_metal_dequantize_logit_cosine": 0.9999971631832028,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 1.0,
+        "total_cases": 25
+      }
+    },
+    "qwen-reconstruct-corpus0": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 19,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9998645603601243,
+        "minimum_logit_cosine": 0.9997869882848015,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.976,
+        "total_cases": 25
+      }
+    },
+    "qwen-reconstruct-corpus1": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 22,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9998645603601243,
+        "minimum_logit_cosine": 0.9998917746880941,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 1.0,
+        "total_cases": 25
+      }
+    }
+  },
+  "resources": {
+    "gemma-metal-32k": true,
+    "gemma-metal-boundary": true,
+    "gemma-reconstruct-32k": true,
+    "gemma-reconstruct-boundary": true,
+    "qwen-metal-32k": true,
+    "qwen-metal-boundary": true,
+    "qwen-reconstruct-32k": true,
+    "qwen-reconstruct-boundary": true
+  },
+  "same_partition_rtn_controls": {
+    "gemma-rtn-corpus0": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 21,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999559679965261,
+        "minimum_logit_cosine": 0.9995999057157012,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.976,
+        "total_cases": 25
+      }
+    },
+    "gemma-rtn-corpus1": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 21,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999559679965261,
+        "minimum_logit_cosine": 0.9998700180673119,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 1.0,
+        "total_cases": 25
+      }
+    },
+    "qwen-rtn-corpus0": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 20,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999524165589152,
+        "minimum_logit_cosine": 0.9997698059659181,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 0.96,
+        "total_cases": 25
+      }
+    },
+    "qwen-rtn-corpus1": {
+      "gates": {
+        "cache_reclaimed": true,
+        "exact_greedy": false,
+        "kernel_exact_greedy": true,
+        "kernel_numerical": true,
+        "numerical": true,
+        "strict_checkpoint_passed": false
+      },
+      "summary": {
+        "exact_greedy_cases": 24,
+        "metal_dequantize_exact_cases": 25,
+        "minimum_layer_cosine": 0.9999524165589152,
+        "minimum_logit_cosine": 0.9998624333331833,
+        "minimum_metal_dequantize_logit_cosine": 0.9999999999999998,
+        "output_tokens_per_case": 32,
+        "teacher_forced_top1_agreement": 1.0,
+        "total_cases": 25
+      }
+    }
+  },
+  "scope": "Two frozen calibrated artifacts; rowwise consistency is separate from quantization quality. RTN control quality is an A/B observation, not an acceptance requirement.",
+  "strict_checkpoint_passed": false
+}
