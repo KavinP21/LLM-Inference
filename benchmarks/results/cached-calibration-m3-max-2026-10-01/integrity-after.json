@@ -1,0 +1,76 @@
+{
+  "files": {
+    "benchmarks/results/cached-calibration-m3-max-2026-10-01/calibration/gemma-calibration.json": {
+      "bytes": 1129591,
+      "sha256": "0ab69b9feb9548eba8d5a2670372e8fdb9d23ef7fbc814df5c665937db681252"
+    },
+    "benchmarks/results/cached-calibration-m3-max-2026-10-01/calibration/qwen-calibration.json": {
+      "bytes": 1120073,
+      "sha256": "f1b39b0bfb08f161afed9dfb15b0e6b5053e20d92538e5dd2a63ab773e19d5e8"
+    },
+    "benchmarks/results/cached-calibration-m3-max-2026-10-01/frozen.json": {
+      "bytes": 6386,
+      "sha256": "d989854c702caa7ca30584f51e9493cf75c7543147c75b0a2744be770c3f8d48"
+    },
+    "models/cached-calibration/gemma-3-1b-it-int8-cached-rtn-control.engine": {
+      "bytes": 1824053760,
+      "sha256": "9983ed79afd6c8418d79515d20c80f8ec682246f3416bb890be4c7fc627a5c80"
+    },
+    "models/cached-calibration/gemma-3-1b-it-int8-cached-rtn-control.engine.json": {
+      "bytes": 8224,
+      "sha256": "64389bcaf09d661e37fdb33a8f79c99359e7805283dfe7ff9d39ef316aba864c"
+    },
+    "models/cached-calibration/gemma-3-1b-it-int8-cached.engine": {
+      "bytes": 1824053760,
+      "sha256": "1416a44ee0e2e27221ff9a22eea5b42dd2311ded66c8f4c0fd0ff2b836548734"
+    },
+    "models/cached-calibration/gemma-3-1b-it-int8-cached.engine.json": {
+      "bytes": 18031,
+      "sha256": "0778597fed83ffab2e04ac25b4713af24d9e86475e617c4a63d6fdab8ef7c9ae"
+    },
+    "models/cached-calibration/gemma-stats.npz": {
+      "bytes": 136355518,
+      "sha256": "6b493353e9fe60d6c4a928b8aa6ca044596532b48c48f958dfb244168beae6f0"
+    },
+    "models/cached-calibration/qwen-stats.npz": {
+      "bytes": 92836534,
+      "sha256": "beed0adc2973e610210aa6bb81dc02b32b490be1ed14d2e37f8dd992f45adf52"
+    },
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached-rtn-control.engine": {
+      "bytes": 896975360,
+      "sha256": "788615f1a2dbe897ccfd74f2533e6143eab0cd0c3a1861177a349fbbb289a96a"
+    },
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached-rtn-control.engine.json": {
+      "bytes": 7674,
+      "sha256": "28c72a869c1c9044e3ab1d17ed9568647a677f3839446aa871e63391374b914a"
+    },
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached.engine": {
+      "bytes": 896975360,
+      "sha256": "2caf6f8f28f291ca9e00486c1db885fab30ea625e2737c567a6deb20dc9b3041"
+    },
+    "models/cached-calibration/qwen2.5-0.5b-int8-cached.engine.json": {
+      "bytes": 16813,
+      "sha256": "3f4800dd6865b583d024f2a3f0a0ac1038a8df27b6e678fa5649dd786c73e4c0"
+    },
+    "models/gemma-3-1b-it.engine": {
+      "bytes": 1999794688,
+      "sha256": "55737a6b2262afec580cc53ce74c716473307e0785db6d908806802c52d293ae"
+    },
+    "models/gemma-3-1b-it.engine.json": {
+      "bytes": 266,
+      "sha256": "e72d85d9fc259e56714d7869729c9963fc205ffcba952505e787cb0e82037dd7"
+    },
+    "models/qwen2.5-0.5b.engine": {
+      "bytes": 988084480,
+      "sha256": "b982ede847f394bb5c4d1e54455eeaa5cb04904150a4db2ecc039c8519efdc18"
+    },
+    "models/qwen2.5-0.5b.engine.json": {
+      "bytes": 239,
+      "sha256": "0c27cb30e055c15006f636143a5a1b60809dad3ca9eae9c69e62285400638920"
+    }
+  },
+  "matches_baseline": true,
+  "runtime_source_sha256": "057470340b804ce78266f34e44c6ba347ddb0be2fb1d84298df42b4e7bab9a27",
+  "schema_version": 1,
+  "scope": "Complete file bytes, including architecture/descriptors; read-only and outside timed inference."
+}

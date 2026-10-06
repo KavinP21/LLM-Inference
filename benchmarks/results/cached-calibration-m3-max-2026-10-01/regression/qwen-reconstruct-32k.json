@@ -1,0 +1,53 @@
+{
+  "all_reclaimed": true,
+  "configuration": {
+    "block_tokens": 16,
+    "context_lengths": [
+      32768
+    ],
+    "decode_mode": "rowwise",
+    "int8_mode": "reconstruct",
+    "kv_cache_bytes": 1073741824,
+    "output_tokens": 2,
+    "prefill_chunk_size": 512
+  },
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "native_build": {
+      "architecture": "applegpu_g15s",
+      "backend": "mlx",
+      "device": "Apple M3 Max",
+      "mlx_version": "0.32.2"
+    },
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.12.10",
+    "runtime_source_sha256": "057470340b804ce78266f34e44c6ba347ddb0be2fb1d84298df42b4e7bab9a27"
+  },
+  "model": {
+    "model_data_sha256": "3534c26f05b966f5142177cb62bc580a984091df19e83dc99430f08302dc4395",
+    "model_file_bytes": 896975360,
+    "model_format_version": 3
+  },
+  "observations": [
+    {
+      "baseline_metal_bytes": 897232768,
+      "blocks_reclaimed": true,
+      "context_tokens": 32768,
+      "decode_iterations": 1,
+      "e2e_ms": 23293.199375,
+      "first_token": 198,
+      "output_tokens": 2,
+      "peak_incremental_metal_bytes": 934430732,
+      "peak_kv_bytes": 402653184,
+      "peak_materialized_blocks": 2048,
+      "peak_metal_bytes": 1831663500,
+      "peak_pool_blocks": 2048,
+      "prefill_iterations": 64,
+      "prompt_tokens": 32766,
+      "ttft_ms": 22316.067667
+    }
+  ],
+  "purpose": "execution-and-resource-integrity; not a throughput benchmark",
+  "schema_version": 1
+}
