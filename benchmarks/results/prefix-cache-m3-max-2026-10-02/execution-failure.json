@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "milestone_passed": false,
+  "execution_complete": false,
+  "timing_executed": false,
+  "contract_sha256": "206f0b82293dba7af0bca436efefb9c42fd178b39a1b3133f381eba5dc0b02d1",
+  "runtime_source_sha256": "e6641dd1586ef86928f299b36027d6e3b1bf9694ec4c2151c1d5e7bbe4a9bac1",
+  "completed_reports": ["gemma-chunk127", "gemma-chunk512", "gemma-stress", "gemma-32k"],
+  "failed_phase": "qwen-chunk127 uncached reference prefill, 513-token synthetic prompt with 5-token final chunk",
+  "exception_type": "ValueError",
+  "exception": "[scaled_dot_product_attention] force_fused=True but no fused kernel is available: the vector attention kernel requires the query length times the GQA factor to be at most 32; got query length 5 and GQA factor 7.",
+  "handling": "Preserve partial validation and captured sources. This is an execution exception, not a completed quality rejection or milestone acceptance. Fix only the unsupported attention dispatch, add regression tests, and register a fresh source-bound run with the same workloads and acceptance gates. Never resume timing or overwrite this directory."
+}
