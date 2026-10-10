@@ -1,0 +1,480 @@
+{
+  "schema": "forge_qwen35_speculative_qualification_v1",
+  "source": {
+    "git_commit": "7239c914d8bf0c99b7318dfd45d0019c96fc0a19",
+    "git_dirty": false,
+    "runtime_source_sha256": "fbefbcf8c17568f2bf1fdc1be61ac136c9c143f421bb471e918fe61bca90c487"
+  },
+  "rows": [
+    {
+      "case": "prefix-0",
+      "passed": true,
+      "accepted": 0,
+      "actual": [
+        16,
+        220,
+        17,
+        220,
+        18,
+        220,
+        19,
+        220,
+        20,
+        220,
+        21,
+        220,
+        22,
+        220,
+        23,
+        220,
+        24,
+        220,
+        16,
+        15,
+        220,
+        16,
+        16,
+        220
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 23,
+        "speculative": {
+          "draft_tokens": 4,
+          "accepted_draft_tokens": 0,
+          "rejected_draft_tokens": 4,
+          "verification_blocks": 1,
+          "target_decode_calls": 23,
+          "rollback_tokens": 4,
+          "draft_seconds": 3.179008490405977e-05,
+          "verification_seconds": 0.3778396660054568,
+          "commit_seconds": 0.005973874998744577,
+          "acceptance_rate": 0.0
+        }
+      }
+    },
+    {
+      "case": "prefix-1",
+      "passed": true,
+      "accepted": 1,
+      "actual": [
+        16,
+        220,
+        17,
+        220,
+        18,
+        220,
+        19,
+        220,
+        20,
+        220,
+        21,
+        220,
+        22,
+        220,
+        23,
+        220,
+        24,
+        220,
+        16,
+        15,
+        220,
+        16,
+        16,
+        220
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 22,
+        "speculative": {
+          "draft_tokens": 4,
+          "accepted_draft_tokens": 1,
+          "rejected_draft_tokens": 3,
+          "verification_blocks": 1,
+          "target_decode_calls": 22,
+          "rollback_tokens": 3,
+          "draft_seconds": 2.9710063245147467e-05,
+          "verification_seconds": 0.024808457994367927,
+          "commit_seconds": 0.0013122500095050782,
+          "acceptance_rate": 0.25
+        }
+      }
+    },
+    {
+      "case": "prefix-2",
+      "passed": true,
+      "accepted": 2,
+      "actual": [
+        16,
+        220,
+        17,
+        220,
+        18,
+        220,
+        19,
+        220,
+        20,
+        220,
+        21,
+        220,
+        22,
+        220,
+        23,
+        220,
+        24,
+        220,
+        16,
+        15,
+        220,
+        16,
+        16,
+        220
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 21,
+        "speculative": {
+          "draft_tokens": 4,
+          "accepted_draft_tokens": 2,
+          "rejected_draft_tokens": 2,
+          "verification_blocks": 1,
+          "target_decode_calls": 21,
+          "rollback_tokens": 2,
+          "draft_seconds": 3.100006142631173e-05,
+          "verification_seconds": 0.02558354099164717,
+          "commit_seconds": 0.0014721250045113266,
+          "acceptance_rate": 0.5
+        }
+      }
+    },
+    {
+      "case": "prefix-3",
+      "passed": true,
+      "accepted": 3,
+      "actual": [
+        16,
+        220,
+        17,
+        220,
+        18,
+        220,
+        19,
+        220,
+        20,
+        220,
+        21,
+        220,
+        22,
+        220,
+        23,
+        220,
+        24,
+        220,
+        16,
+        15,
+        220,
+        16,
+        16,
+        220
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 20,
+        "speculative": {
+          "draft_tokens": 4,
+          "accepted_draft_tokens": 3,
+          "rejected_draft_tokens": 1,
+          "verification_blocks": 1,
+          "target_decode_calls": 20,
+          "rollback_tokens": 1,
+          "draft_seconds": 2.9330956749618053e-05,
+          "verification_seconds": 0.02638224998372607,
+          "commit_seconds": 0.0016349999932572246,
+          "acceptance_rate": 0.75
+        }
+      }
+    },
+    {
+      "case": "prefix-4",
+      "passed": true,
+      "accepted": 4,
+      "actual": [
+        16,
+        220,
+        17,
+        220,
+        18,
+        220,
+        19,
+        220,
+        20,
+        220,
+        21,
+        220,
+        22,
+        220,
+        23,
+        220,
+        24,
+        220,
+        16,
+        15,
+        220,
+        16,
+        16,
+        220
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 19,
+        "speculative": {
+          "draft_tokens": 4,
+          "accepted_draft_tokens": 4,
+          "rejected_draft_tokens": 0,
+          "verification_blocks": 1,
+          "target_decode_calls": 19,
+          "rollback_tokens": 0,
+          "draft_seconds": 2.6625930331647396e-05,
+          "verification_seconds": 0.025449000007938594,
+          "commit_seconds": 0.0010712920047808439,
+          "acceptance_rate": 1.0
+        }
+      }
+    },
+    {
+      "case": "canonical-fallback",
+      "passed": true,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 23,
+        "speculative": {
+          "draft_tokens": 0,
+          "accepted_draft_tokens": 0,
+          "rejected_draft_tokens": 0,
+          "verification_blocks": 0,
+          "target_decode_calls": 23,
+          "rollback_tokens": 0,
+          "draft_seconds": 0.0,
+          "verification_seconds": 0.0,
+          "commit_seconds": 0.0,
+          "acceptance_rate": 0.0
+        }
+      }
+    },
+    {
+      "case": "cancel-and-restart",
+      "passed": true,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 1,
+        "speculative": {
+          "draft_tokens": 0,
+          "accepted_draft_tokens": 0,
+          "rejected_draft_tokens": 0,
+          "verification_blocks": 0,
+          "target_decode_calls": 1,
+          "rollback_tokens": 0,
+          "draft_seconds": 2.462498378008604e-05,
+          "verification_seconds": 0.0,
+          "commit_seconds": 0.0,
+          "acceptance_rate": 0.0
+        }
+      }
+    },
+    {
+      "case": "timing-copy",
+      "passed": true,
+      "speedup": 1.9220152598405535,
+      "seconds": {
+        "False": [
+          0.5862780000024941,
+          0.5861106670054141,
+          0.5872938749962486
+        ],
+        "True": [
+          0.5926760000002105,
+          0.3047278330195695,
+          0.30503295798553154
+        ]
+      },
+      "tokens": 41,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 10,
+        "speculative": {
+          "draft_tokens": 31,
+          "accepted_draft_tokens": 30,
+          "rejected_draft_tokens": 1,
+          "verification_blocks": 8,
+          "target_decode_calls": 10,
+          "rollback_tokens": 1,
+          "draft_seconds": 0.00013662499259226024,
+          "verification_seconds": 0.19808091697632335,
+          "commit_seconds": 0.009447289950912818,
+          "acceptance_rate": 0.967741935483871
+        }
+      }
+    },
+    {
+      "case": "timing-code",
+      "passed": true,
+      "speedup": 0.9952137979212927,
+      "seconds": {
+        "False": [
+          0.45483641600003466,
+          0.45721154200145975,
+          0.45639770801062696
+        ],
+        "True": [
+          0.7370233749970794,
+          0.45859262498561293,
+          0.4555526250042021
+        ]
+      },
+      "tokens": 33,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 32,
+        "speculative": {
+          "draft_tokens": 6,
+          "accepted_draft_tokens": 0,
+          "rejected_draft_tokens": 6,
+          "verification_blocks": 2,
+          "target_decode_calls": 32,
+          "rollback_tokens": 6,
+          "draft_seconds": 0.0008119569101836532,
+          "verification_seconds": 0.04250616597710177,
+          "commit_seconds": 0.0029992490308359265,
+          "acceptance_rate": 0.0
+        }
+      }
+    },
+    {
+      "case": "timing-arithmetic",
+      "passed": true,
+      "speedup": 0.9066649978818954,
+      "seconds": {
+        "False": [
+          0.8242278340039775,
+          0.8312610000139102,
+          0.8249208749912214
+        ],
+        "True": [
+          1.1877584590110928,
+          0.9054461249907035,
+          0.9098408749850933
+        ]
+      },
+      "tokens": 64,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 255983616,
+        "prefill_calls": 2,
+        "decode_calls": 60,
+        "speculative": {
+          "draft_tokens": 31,
+          "accepted_draft_tokens": 3,
+          "rejected_draft_tokens": 28,
+          "verification_blocks": 24,
+          "target_decode_calls": 60,
+          "rollback_tokens": 28,
+          "draft_seconds": 0.0017314580618403852,
+          "verification_seconds": 0.38859125098679215,
+          "commit_seconds": 0.03300000395392999,
+          "acceptance_rate": 0.0967741935483871
+        }
+      }
+    }
+  ],
+  "baseline": [
+    16,
+    220,
+    17,
+    220,
+    18,
+    220,
+    19,
+    220,
+    20,
+    220,
+    21,
+    220,
+    22,
+    220,
+    23,
+    220,
+    24,
+    220,
+    16,
+    15,
+    220,
+    16,
+    16,
+    220
+  ],
+  "identity": {
+    "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+    "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+    "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+    "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f"
+  },
+  "method": "Ordinary engine decode is the canonical baseline, with the same loaded quantized weights and fresh mixed caches per request. All forced rejection positions continue generation after commit. Workload-specific timings use three alternating-order repetitions; no universal numerical parity or task-speed claim."
+}

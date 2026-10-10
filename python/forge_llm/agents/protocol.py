@@ -17,6 +17,7 @@ from typing import Any, Protocol
 class ChatMessage:
     role: str
     content: str
+    media: tuple[dict[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

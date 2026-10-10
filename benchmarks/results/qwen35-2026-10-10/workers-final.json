@@ -1,0 +1,969 @@
+{
+  "schema": "forge_qwen35_worker_qualification_v1",
+  "source": {
+    "git_commit": "35c262b565e370196ecc149963bc1de7f0d56f48",
+    "git_dirty": false,
+    "runtime_source_sha256": "04c78c2c896c5e8dac4ec360ea46ac224bb2d66e43f0581703d167a995ab6bb1"
+  },
+  "driver_sha256": "6b95e6f7fb10f192deb51d4942384482b50169762679ab6af38c12979f302b59",
+  "rows": [
+    {
+      "case": "image-http",
+      "passed": true,
+      "result": {
+        "text": "FORGE 42",
+        "input_tokens": 185,
+        "output_tokens": 6,
+        "finish_reason": "stop",
+        "model": "models/qwen3.5-4b-mlx"
+      }
+    },
+    {
+      "case": "expanded-context-rejection",
+      "passed": true
+    },
+    {
+      "case": "visual-child-task",
+      "passed": true,
+      "elapsed_seconds": 30.54162366699893,
+      "result": {
+        "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+        "status": "completed",
+        "output": "FORGE 42",
+        "agents": [
+          {
+            "agent_id": "root",
+            "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+            "parent_id": null,
+            "task": "Spawn one child to independently read the text in the attached image. Wait for its review, then report only the printed text. The child should simply read and return the text, without spawning.",
+            "role": "Solve the user's task and synthesize evidence from delegated work.",
+            "depth": 0,
+            "status": "completed",
+            "steps": 4,
+            "protocol_errors": 0,
+            "backend_attempts": 1,
+            "dependencies": [],
+            "wait_for": [],
+            "result": "FORGE 42",
+            "error": null,
+            "pending_action": null,
+            "action_phase": null,
+            "tools": [
+              "journal_read",
+              "list_files",
+              "read_file",
+              "save_artifact",
+              "search"
+            ],
+            "completion_rejections": 0,
+            "completion_passed": true
+          },
+          {
+            "agent_id": "agent-0001",
+            "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+            "parent_id": "root",
+            "task": "Read the text from the attached image and return the printed text",
+            "role": "image_reader",
+            "depth": 1,
+            "status": "completed",
+            "steps": 7,
+            "protocol_errors": 0,
+            "backend_attempts": 1,
+            "dependencies": [],
+            "wait_for": [],
+            "result": "FORGE 42",
+            "error": null,
+            "pending_action": null,
+            "action_phase": null,
+            "tools": [
+              "journal_read",
+              "list_files",
+              "read_file",
+              "save_artifact",
+              "search"
+            ],
+            "completion_rejections": 0,
+            "completion_passed": null
+          }
+        ],
+        "usage": {
+          "input_tokens": 23350,
+          "output_tokens": 981,
+          "uncertain_tokens": 0,
+          "reserved_tokens": 0
+        },
+        "error": null,
+        "acceptance_passed": true,
+        "completion_verified": true
+      },
+      "events": [
+        {
+          "id": 1,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "run_created",
+          "payload": {
+            "task": "Spawn one child to independently read the text in the attached image. Wait for its review, then report only the printed text. The child should simply read and return the text, without spawning.",
+            "config": {
+              "max_agents": 2,
+              "max_depth": 1,
+              "max_steps_per_agent": 12,
+              "max_concurrent_generations": 2,
+              "max_output_tokens": 256,
+              "max_total_tokens": 128000,
+              "max_context_tokens": 24000,
+              "max_protocol_errors": 3,
+              "max_backend_retries": 2,
+              "generation_timeout_seconds": 120.0,
+              "tool_timeout_seconds": 30.0,
+              "deadline_seconds": 180,
+              "max_tool_result_chars": 8000,
+              "max_stored_tool_chars": 262144,
+              "lease_seconds": 15.0,
+              "compact_history": true,
+              "max_identical_tool_results": 3,
+              "max_completion_rejections": 3,
+              "completion_timeout_seconds": 30.0
+            }
+          },
+          "created": 1791664473.6727989
+        },
+        {
+          "id": 2,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.root.1",
+            "attempt": 1,
+            "input_tokens": 1666,
+            "output_tokens": 129,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664476.7870378
+        },
+        {
+          "id": 3,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to spawn a child to read the text from the attached image. The child should have read-only access and should simply read and return the text without spawning further children.\n\n<tool_call>\n<function=spawn>\n<parameter=task>\nRead the text from the attached image and return the printed text\n</parameter>\n<parameter=role>\nimage_reader\n</parameter>\n<parameter=dependencies>\n[]\n</parameter>\n<parameter=tools>\n[\"journal_read\", \"list_files\", \"read_file\", \"save_artifact\", \"search\"]\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664476.78721
+        },
+        {
+          "id": 4,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "task": "Read the text from the attached image and return the printed text",
+            "role": "image_reader",
+            "dependencies": [],
+            "tools": [
+              "journal_read",
+              "list_files",
+              "read_file",
+              "save_artifact",
+              "search"
+            ],
+            "action": "spawn"
+          },
+          "created": 1791664476.788026
+        },
+        {
+          "id": 5,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "spawn",
+          "payload": {
+            "agent_id": "agent-0001",
+            "task": "Read the text from the attached image and return the printed text",
+            "role": "image_reader",
+            "dependencies": [],
+            "tools": [
+              "journal_read",
+              "list_files",
+              "read_file",
+              "save_artifact",
+              "search"
+            ]
+          },
+          "created": 1791664476.7885609
+        },
+        {
+          "id": 6,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.1",
+            "attempt": 1,
+            "input_tokens": 1628,
+            "output_tokens": 73,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664480.2440598
+        },
+        {
+          "id": 7,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to read the text from the attached image. The image shows \"FORGE 42\" in black text on a white background. I should use the search function to find this text in the workspace files.\n\n<tool_call>\n<function=search>\n<parameter=query>\nFORGE 42\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664480.244171
+        },
+        {
+          "id": 8,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "tool",
+            "name": "search",
+            "args": {
+              "query": "FORGE 42"
+            }
+          },
+          "created": 1791664480.244503
+        },
+        {
+          "id": 9,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_started",
+          "payload": {
+            "name": "search",
+            "args": {
+              "query": "FORGE 42"
+            },
+            "replay": false
+          },
+          "created": 1791664480.244737
+        },
+        {
+          "id": 10,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_result",
+          "payload": {
+            "name": "search",
+            "args": {
+              "query": "FORGE 42"
+            },
+            "result": "{\"matches\": [], \"truncated\": false}"
+          },
+          "created": 1791664480.245315
+        },
+        {
+          "id": 11,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.root.2",
+            "attempt": 1,
+            "input_tokens": 1728,
+            "output_tokens": 86,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664481.836907
+        },
+        {
+          "id": 12,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to send the image to the spawned agent and wait for its review. Let me send the image content to agent-0001.\n\n<tool_call>\n<function=send>\n<parameter=to>\nagent-0001\n</parameter>\n<parameter=message>\nPlease read the text from the attached image and return the printed text.\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664481.837041
+        },
+        {
+          "id": 13,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "to": "agent-0001",
+            "message": "Please read the text from the attached image and return the printed text.",
+            "action": "send"
+          },
+          "created": 1791664481.837416
+        },
+        {
+          "id": 14,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "send",
+          "payload": {
+            "to": "agent-0001",
+            "message": "Please read the text from the attached image and return the printed text."
+          },
+          "created": 1791664481.837591
+        },
+        {
+          "id": 15,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.2",
+            "attempt": 1,
+            "input_tokens": 1729,
+            "output_tokens": 85,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664484.188441
+        },
+        {
+          "id": 16,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "The search didn't find the text in files, but the image clearly shows \"FORGE 42\". Since I'm assigned as an image_reader and the task is to read text from the attached image, I should simply return the text I can see from the image.\n\n<tool_call>\n<function=finish>\n<parameter=result>\nFORGE 42\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664484.18861
+        },
+        {
+          "id": 17,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "new messages arrived during generation; review them in your next turn before finishing",
+            "consecutive_errors": 1
+          },
+          "created": 1791664484.1891
+        },
+        {
+          "id": 18,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.root.3",
+            "attempt": 1,
+            "input_tokens": 1849,
+            "output_tokens": 59,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664484.809668
+        },
+        {
+          "id": 19,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to wait for the outcome from agent-0001 to see what text it has read from the image.\n\n<tool_call>\n<function=wait>\n<parameter=agents>\n[\"agent-0001\"]\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664484.809804
+        },
+        {
+          "id": 20,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "agents": [
+              "agent-0001"
+            ],
+            "action": "wait"
+          },
+          "created": 1791664484.810285
+        },
+        {
+          "id": 21,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "wait",
+          "payload": {
+            "agents": [
+              "agent-0001"
+            ]
+          },
+          "created": 1791664484.8105001
+        },
+        {
+          "id": 22,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.3",
+            "attempt": 1,
+            "input_tokens": 1899,
+            "output_tokens": 72,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664486.7978728
+        },
+        {
+          "id": 23,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to review the new messages that arrived. Let me check the journal to see what evidence or messages have been received.\n\n<tool_call>\n<function=journal_read>\n<parameter=agent_id>\nagent-0001\n</parameter>\n<parameter=include_control>\nTrue\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664486.798033
+        },
+        {
+          "id": 24,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "tool",
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true
+            }
+          },
+          "created": 1791664486.7984798
+        },
+        {
+          "id": 25,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_started",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true
+            },
+            "replay": false
+          },
+          "created": 1791664486.79879
+        },
+        {
+          "id": 26,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_result",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true
+            },
+            "result": "{\"agent_id\": \"agent-0001\", \"events\": [{\"event_id\": 6, \"kind\": \"generation\", \"payload_excerpt\": \"{\\\"request_id\\\": \\\"6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.1\\\", \\\"attempt\\\": 1, \\\"input_tokens\\\": 1628, \\\"output_tokens\\\": 73, \\\"finish_reason\\\": \\\"stop\\\", \\\"model\\\": \\\"models/qwen3.5-4b-mlx\\\"}\", \"payload_chars\": 179, \"offset\": 0, \"next_offset\": null}, {\"event_id\": 7, \"kind\": \"model_response\", \"payload_excerpt\": \"{\\\"text\\\": \\\"I need to read the text from the attached image. The image shows \\\\\\\"FORGE 42\\\\\\\" in black text on a white background. I should use the search function to find this text in the workspace files.\\\\n\\\\n<tool_call>\\\\n<function=search>\\\\n<parameter=query>\\\\nFORGE 42\\\\n</parameter>\\\\n</function>\\\\n</tool_call>\\\"}\", \"payload_chars\": 305, \"offset\": 0, \"next_offset\": null}, {\"event_id\": 8, \"kind\": \"action_prepared\", \"payload_excerpt\": \"{\\\"action\\\": \\\"tool\\\", \\\"name\\\": \\\"search\\\", \\\"args\\\": {\\\"query\\\": \\\"FORGE 42\\\"}}\", \"payload_chars\": 67, \"offset\": 0, \"next_offset\": null}], \"next_after_event_id\": 8}"
+          },
+          "created": 1791664486.799098
+        },
+        {
+          "id": 27,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.4",
+            "attempt": 1,
+            "input_tokens": 2340,
+            "output_tokens": 109,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664490.122275
+        },
+        {
+          "id": 28,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to check if there are any new messages or evidence that I should review before finishing. Let me look at the journal again with a higher limit to see if there are more events.\n\n<tool_call>\n<function=journal_read>\n<parameter=agent_id>\nagent-0001\n</parameter>\n<parameter=include_control>\nTrue\n</parameter>\n<parameter=limit>\n5\n</parameter>\n<parameter=offset>\n8\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664490.122379
+        },
+        {
+          "id": 29,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "tool",
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 5,
+              "offset": 8
+            }
+          },
+          "created": 1791664490.122734
+        },
+        {
+          "id": 30,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_started",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 5,
+              "offset": 8
+            },
+            "replay": false
+          },
+          "created": 1791664490.123022
+        },
+        {
+          "id": 31,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_result",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 5,
+              "offset": 8
+            },
+            "result": "Tool failed: ValueError: offset requires limit=1; use after_event_id one less than the desired event ID"
+          },
+          "created": 1791664490.123147
+        },
+        {
+          "id": 32,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.5",
+            "attempt": 1,
+            "input_tokens": 2490,
+            "output_tokens": 92,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664493.413821
+        },
+        {
+          "id": 33,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to review the new messages that arrived. Let me check the journal again with the correct parameters.\n\n<tool_call>\n<function=journal_read>\n<parameter=agent_id>\nagent-0001\n</parameter>\n<parameter=include_control>\nTrue\n</parameter>\n<parameter=limit>\n1\n</parameter>\n<parameter=offset>\n7\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664493.413955
+        },
+        {
+          "id": 34,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "tool",
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 1,
+              "offset": 7
+            }
+          },
+          "created": 1791664493.414447
+        },
+        {
+          "id": 35,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_started",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 1,
+              "offset": 7
+            },
+            "replay": false
+          },
+          "created": 1791664493.4147332
+        },
+        {
+          "id": 36,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_result",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 1,
+              "offset": 7
+            },
+            "result": "{\"agent_id\": \"agent-0001\", \"events\": [{\"event_id\": 6, \"kind\": \"generation\", \"payload_excerpt\": \"st_id\\\": \\\"6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.1\\\", \\\"attempt\\\": 1, \\\"input_tokens\\\": 1628, \\\"output_tokens\\\": 73, \\\"finish_reason\\\": \\\"stop\\\", \\\"model\\\": \\\"models/qwen3.5-4b-mlx\\\"}\", \"payload_chars\": 179, \"offset\": 7, \"next_offset\": null}], \"next_after_event_id\": 6}"
+          },
+          "created": 1791664493.414973
+        },
+        {
+          "id": 37,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.6",
+            "attempt": 1,
+            "input_tokens": 2752,
+            "output_tokens": 97,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664497.07548
+        },
+        {
+          "id": 38,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "I need to review the new messages that arrived. Let me check the journal again to see what evidence or messages have been received.\n\n<tool_call>\n<function=journal_read>\n<parameter=agent_id>\nagent-0001\n</parameter>\n<parameter=include_control>\nTrue\n</parameter>\n<parameter=limit>\n5\n</parameter>\n<parameter=offset>\n0\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664497.075628
+        },
+        {
+          "id": 39,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "tool",
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 5,
+              "offset": 0
+            }
+          },
+          "created": 1791664497.076101
+        },
+        {
+          "id": 40,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_started",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 5,
+              "offset": 0
+            },
+            "replay": false
+          },
+          "created": 1791664497.076323
+        },
+        {
+          "id": 41,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "tool_result",
+          "payload": {
+            "name": "journal_read",
+            "args": {
+              "agent_id": "agent-0001",
+              "include_control": true,
+              "limit": 5,
+              "offset": 0
+            },
+            "result": "{\"agent_id\": \"agent-0001\", \"events\": [{\"event_id\": 6, \"kind\": \"generation\", \"payload_excerpt\": \"{\\\"request_id\\\": \\\"6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.1\\\", \\\"attempt\\\": 1, \\\"input_tokens\\\": 1628, \\\"output_tokens\\\": 73, \\\"finish_reason\\\": \\\"stop\\\", \\\"model\\\": \\\"models/qwen3.5-4b-mlx\\\"}\", \"payload_chars\": 179, \"offset\": 0, \"next_offset\": null}, {\"event_id\": 7, \"kind\": \"model_response\", \"payload_excerpt\": \"{\\\"text\\\": \\\"I need to read the text from the attached image. The image shows \\\\\\\"FORGE 42\\\\\\\" in black text on a white background. I should use the search function to find this text in the workspace files.\\\\n\\\\n<tool_call>\\\\n<function=search>\\\\n<parameter=query>\\\\nFORGE 42\\\\n</parameter>\\\\n</function>\\\\n</tool_call>\\\"}\", \"payload_chars\": 305, \"offset\": 0, \"next_offset\": null}, {\"event_id\": 8, \"kind\": \"action_prepared\", \"payload_excerpt\": \"{\\\"action\\\": \\\"tool\\\", \\\"name\\\": \\\"search\\\", \\\"args\\\": {\\\"query\\\": \\\"FORGE 42\\\"}}\", \"payload_chars\": 67, \"offset\": 0, \"next_offset\": null}, {\"event_id\": 9, \"kind\": \"tool_started\", \"payload_excerpt\": \"{\\\"name\\\": \\\"search\\\", \\\"args\\\": {\\\"query\\\": \\\"FORGE 42\\\"}, \\\"replay\\\": false}\", \"payload_chars\": 66, \"offset\": 0, \"next_offset\": null}, {\"event_id\": 10, \"kind\": \"tool_result\", \"payload_excerpt\": \"{\\\"name\\\": \\\"search\\\", \\\"args\\\": {\\\"query\\\": \\\"FORGE 42\\\"}, \\\"result\\\": \\\"{\\\\\\\"matches\\\\\\\": [], \\\\\\\"truncated\\\\\\\": false}\\\"}\", \"payload_chars\": 102, \"offset\": 0, \"next_offset\": null}], \"next_after_event_id\": 10}"
+          },
+          "created": 1791664497.076558
+        },
+        {
+          "id": 42,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.agent-0001.7",
+            "attempt": 1,
+            "input_tokens": 3360,
+            "output_tokens": 117,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664501.620498
+        },
+        {
+          "id": 43,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "model_response",
+          "payload": {
+            "text": "I see the search tool returned no matches, which confirms the text \"FORGE 42\" is not in any workspace files. Since I'm assigned as an image_reader and the task is to read text from the attached image, I should simply return the text I can see from the image.\n\nThe image clearly shows \"FORGE 42\" in black text on a white background. I should finish with this text.\n\n<tool_call>\n<function=finish>\n<parameter=result>\nFORGE 42\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664501.6206138
+        },
+        {
+          "id": 44,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "action_prepared",
+          "payload": {
+            "result": "FORGE 42",
+            "action": "finish"
+          },
+          "created": 1791664501.621047
+        },
+        {
+          "id": 45,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "agent-0001",
+          "kind": "finish",
+          "payload": {
+            "result": "FORGE 42"
+          },
+          "created": 1791664501.6212218
+        },
+        {
+          "id": 46,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "children_settled",
+          "payload": {
+            "agents": [
+              "agent-0001"
+            ]
+          },
+          "created": 1791664501.621624
+        },
+        {
+          "id": 47,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a.root.4",
+            "attempt": 1,
+            "input_tokens": 1909,
+            "output_tokens": 62,
+            "finish_reason": "stop",
+            "model": "models/qwen3.5-4b-mlx"
+          },
+          "created": 1791664504.212686
+        },
+        {
+          "id": 48,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "The child agent has completed its task and returned the text \"FORGE 42\" from the image. I should now finish the task with this result.\n\n<tool_call>\n<function=finish>\n<parameter=result>\nFORGE 42\n</parameter>\n</function>\n</tool_call>"
+          },
+          "created": 1791664504.212826
+        },
+        {
+          "id": 49,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "result": "FORGE 42",
+            "action": "finish"
+          },
+          "created": 1791664504.213218
+        },
+        {
+          "id": 50,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "completion_started",
+          "payload": {
+            "step": 4
+          },
+          "created": 1791664504.213423
+        },
+        {
+          "id": 51,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "completion_checked",
+          "payload": {
+            "passed": true,
+            "feedback": "Requested child review completed; content is graded separately."
+          },
+          "created": 1791664504.213577
+        },
+        {
+          "id": 52,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": "root",
+          "kind": "finish",
+          "payload": {
+            "result": "FORGE 42"
+          },
+          "created": 1791664504.213793
+        },
+        {
+          "id": 53,
+          "run_id": "6ca5cb7ed5f84a1e84c8b2aca59a234a",
+          "agent_id": null,
+          "kind": "run_finished",
+          "payload": {
+            "status": "completed",
+            "error": null
+          },
+          "created": 1791664504.214155
+        }
+      ]
+    },
+    {
+      "case": "durable-child-media",
+      "passed": true,
+      "retained_media": {
+        "root": [
+          "4f6e8af3c7e1a2449fbd881e43521046168a89c55e0ab830a12f0a3023c86787"
+        ],
+        "agent-0001": [
+          "4f6e8af3c7e1a2449fbd881e43521046168a89c55e0ab830a12f0a3023c86787"
+        ]
+      },
+      "blob_count": 1
+    },
+    {
+      "case": "http-cancel-restart",
+      "passed": true,
+      "result": {
+        "text": "40",
+        "input_tokens": 27,
+        "output_tokens": 3,
+        "finish_reason": "stop",
+        "model": "models/qwen3.5-4b-mlx"
+      },
+      "health": {
+        "schema": "forge_worker_v1",
+        "worker_id": "replica-1",
+        "ready": true,
+        "model": "models/qwen3.5-4b-mlx",
+        "tokenizer": "models/qwen3.5-4b-mlx",
+        "backend": "mlx",
+        "max_model_length": 32768,
+        "max_pending": 8,
+        "active": 0,
+        "completed": 9,
+        "capabilities": [
+          "greedy_chat",
+          "cancellation",
+          "replica"
+        ],
+        "native_tool_calls": true,
+        "enable_thinking": false,
+        "supports_media": true,
+        "supports_context_limits": true,
+        "native_call_dialect": "qwen3_coder_xml",
+        "speculative": null,
+        "last_speculative_stats": null,
+        "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+        "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+        "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f",
+        "draft_model_data_sha256": null,
+        "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+        "adapter_implementation_sha256": "5950dc9b6a3cdac04d5df88e8a8c2744049dd1cd12f25b8c708bb7faffae71c1",
+        "runner": "mlx_vlm",
+        "runner_version": "0.7.6",
+        "mlx_version": "0.32.2",
+        "checkpoint_format": "mlx_vlm_safetensors",
+        "weight_storage_bytes": 3034300695,
+        "model_type": "qwen3_5",
+        "kv_layers": 8,
+        "recurrent_layers": 24,
+        "kv_heads": 4,
+        "kv_head_dim": 256,
+        "kv_bytes_per_token": 32768,
+        "recurrent_state_bytes": 50331648,
+        "conv_state_bytes": 1179648,
+        "kv_accounting": "persistent_full_KV_plus_recurrent_and_conv; excludes weights, media, embeddings and transient arrays",
+        "last_runner_stats": {
+          "active_requests": 0,
+          "kv_reserved_bytes": 0,
+          "kv_persistent_bytes": 0,
+          "last_kv_peak_bytes": 59899904,
+          "speculative_reserved_bytes": 0,
+          "last_speculative_history_peak_bytes": 0,
+          "prefill_calls": 2,
+          "decode_calls": 2,
+          "speculative": null
+        },
+        "history_ttl": 600.0,
+        "max_history": 1024,
+        "max_history_bytes": 33554432,
+        "max_timeout": 120.0,
+        "pid": 87321
+      }
+    }
+  ],
+  "method": "Synthetic FORGE 42 image; authenticated local-process workers; actual child execution and reopened durable journal; cancellation/restart. One physical Mac, no multi-host or broad visual-task quality claim.",
+  "media_sha256": "4f6e8af3c7e1a2449fbd881e43521046168a89c55e0ab830a12f0a3023c86787",
+  "startup_seconds": 11.036706790997414,
+  "workers": {
+    "replica-1": {
+      "model": "models/qwen3.5-4b-mlx",
+      "tokenizer": "models/qwen3.5-4b-mlx",
+      "backend": "mlx",
+      "max_model_length": 32768,
+      "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+      "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+      "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f",
+      "draft_model_data_sha256": null,
+      "speculative": null,
+      "native_tool_calls": true,
+      "runner": "mlx_vlm",
+      "runner_version": "0.7.6",
+      "mlx_version": "0.32.2",
+      "checkpoint_format": "mlx_vlm_safetensors",
+      "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+      "enable_thinking": false,
+      "native_call_dialect": "qwen3_coder_xml",
+      "adapter_implementation_sha256": "5950dc9b6a3cdac04d5df88e8a8c2744049dd1cd12f25b8c708bb7faffae71c1"
+    },
+    "replica-2": {
+      "model": "models/qwen3.5-4b-mlx",
+      "tokenizer": "models/qwen3.5-4b-mlx",
+      "backend": "mlx",
+      "max_model_length": 32768,
+      "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+      "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+      "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f",
+      "draft_model_data_sha256": null,
+      "speculative": null,
+      "native_tool_calls": true,
+      "runner": "mlx_vlm",
+      "runner_version": "0.7.6",
+      "mlx_version": "0.32.2",
+      "checkpoint_format": "mlx_vlm_safetensors",
+      "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+      "enable_thinking": false,
+      "native_call_dialect": "qwen3_coder_xml",
+      "adapter_implementation_sha256": "5950dc9b6a3cdac04d5df88e8a8c2744049dd1cd12f25b8c708bb7faffae71c1"
+    }
+  },
+  "source_after": {
+    "git_commit": "35c262b565e370196ecc149963bc1de7f0d56f48",
+    "git_dirty": false,
+    "runtime_source_sha256": "04c78c2c896c5e8dac4ec360ea46ac224bb2d66e43f0581703d167a995ab6bb1"
+  },
+  "source_changed_during_run": false
+}

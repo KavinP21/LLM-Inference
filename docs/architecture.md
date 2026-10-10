@@ -26,6 +26,14 @@ consume the same validated container and expose the same `submit`/`step`/`cancel
 
 ## MLX execution
 
+The default Qwen3.5-4B checkpoint follows a separate full-model adapter through
+MLX-VLM 0.7.6. Its vision tower, multimodal positions, 24 recurrent blocks and
+eight full-attention blocks are upstream execution. Forge owns request admission,
+chunked prefill, cache accounting, cleanup and worker/UI integration. Its
+recurrent state and ordinary KV arrays are not the native physical paged store
+described below. One active sequence runs per replica; bounded task workers provide
+replica concurrency. See the [Qwen3.5 contract](qwen35.md).
+
 The Apple backend implements complete Qwen2 and Gemma 3 text graphs with MLX operations. A
 validated artifact selects a family adapter; the engine, scheduler, and physical K/V owner depend
 only on the adapter protocol. Qwen uses biased projections, standard RMSNorm, SiLU gating, and a
@@ -99,6 +107,12 @@ concatenation and longest-sequence padding. It is not a zero-copy page pool: MLX
 contract requires the layer-page stack, which remains a measured single-request cost.
 
 ## Speculative execution
+
+Qwen3.5's optional controller uses an explicit upstream recurrent cache
+transaction. It records intermediate convolution and FP32 recurrent states,
+commits the accepted prefix together with KV cursors and releases rejected
+histories. Ordinary KV trimming cannot implement this hybrid rollback. It has a
+separate numerical and capacity contract in the [Qwen3.5 guide](qwen35.md).
 
 The [greedy speculative controller](speculative-decoding.md) owns one request and a private paged
 cache. Prompt/history n-grams supply proposals without another model; an optional compatible draft

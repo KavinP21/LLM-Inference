@@ -1,6 +1,6 @@
 # Agent qualification and diagnostic results
 
-The [final frozen-source run](../benchmarks/results/agents-published-2026-10-10/qwen3-final-tasks.json)
+The [frozen-source Qwen3 run](../benchmarks/results/agents-published-2026-10-10/qwen3-final-tasks.json)
 passed all four registered cases on commit `1477c4b`, with a clean checkout and
 unchanged sources throughout execution. Two supervised processes loaded the same
 already cached Qwen3-30B-A3B checkpoint through the explicitly selected MLX-LM
@@ -28,6 +28,32 @@ inference support does not establish autonomous task quality for that checkpoint
 Control correctness and model task quality are separate checks. Scripted models
 exercise concurrency, durable effects, cancellation, recovery, budget limits,
 tool permissions and transport failures. They do not establish reasoning ability.
+
+## Qwen3.5-4B daily driver
+
+The [final frozen-source Qwen3.5 run](../benchmarks/results/qwen35-2026-10-10/agents-final.json)
+passed all four cases on clean source `35c262b`, using two supervised full
+MLX-VLM 0.7.6 replicas. Startup is excluded below.
+
+| Task | Single agent | Delegated | Completed children | Independent result |
+| --- | --- | --- | --- | --- |
+| Python repair | 25.93 s, 8 calls | 56.08 s, 13 calls | 2 | Both pass six independent tests; four additional inputs withheld until grading. |
+| Document analysis | 8.35 s, 2 calls | 51.44 s, 14 calls | 2 | Both return all eight correct typed facts. |
+
+The [initial run](../benchmarks/results/qwen35-2026-10-10/agents-initial.json)
+failed delegated documents. One child failed its scope and valid XML calls with
+surrounding explanation were rejected by the original strict parser. The trained
+XML dialect now explicitly accepts bounded explanatory text around validated
+calls. These are the same two development fixtures: successful retries do not
+establish unseen task generalization or a causal task-quality improvement.
+Delegation remains slower than a single agent. The earlier
+[passing revised run](../benchmarks/results/qwen35-2026-10-10/agents-revised-7239c91.json)
+is retained with its own source identity. A separate actual
+[visual child task](../benchmarks/results/qwen35-2026-10-10/workers-final.json)
+passed image reading, inherited media and reopened durable storage checks.
+
+The [Qwen3.5 guide](qwen35.md) separates this task evidence from inference,
+visual inputs, hybrid speculation, desktop and resource-control checks.
 
 The available physical machine is an Apple M3 Max with 128 GB unified memory.
 Two supervised loopback processes can each load a full model. The earlier

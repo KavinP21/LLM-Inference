@@ -5,6 +5,7 @@ runtime extensions.
 
 | Work | Completion criterion |
 | --- | --- |
+| Qwen3.5 daily-driver qualification | Expand sustained long-context, visual/task diversity and load testing beyond the fixed development fixtures; evaluate speculation at matched outputs before enabling it by default. |
 | Prefix-cache performance | Run the registered 24-report disabled/cold/primed matrix, recompute metrics, repeat regression, and finish the independent audit. Separate insertion and reuse costs. |
 | NVIDIA qualification | Run Qwen on RTX, verify reference logits/tokens, run Compute Sanitizer, and collect a controlled matrix and Nsight traces. |
 | Bounded request lifecycle | Implemented terminal `forget` API and worker cleanup; continue sustained production-load qualification. |
