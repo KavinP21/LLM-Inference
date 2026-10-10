@@ -238,8 +238,12 @@ class WorkerService:
             raise TypeError("messages must be a list")
         messages = []
         for raw in raw_messages:
-            if not isinstance(raw, dict) or set(raw) != {"role", "content"}:
-                raise ValueError("messages require exactly role and content")
+            if (
+                not isinstance(raw, dict)
+                or not {"role", "content"} <= raw.keys()
+                or raw.keys() - {"role", "content", "media"}
+            ):
+                raise ValueError("messages require role/content and optional media")
             messages.append(ChatMessage(**raw))
         request_id = payload.get("request_id")
         max_tokens = payload.get("max_tokens")
@@ -544,7 +548,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model")
     parser.add_argument("--tokenizer")
     parser.add_argument("--backend", choices=("auto", "mlx", "cuda"), default="auto")
-    parser.add_argument("--runner", choices=("forge", "mlx_lm"), default="forge")
+    parser.add_argument(
+        "--runner", choices=("forge", "mlx_lm", "qwen35"), default="forge"
+    )
     parser.add_argument("--max-model-length", type=int, default=2048)
     parser.add_argument("--kv-cache-bytes", type=int, default=256 << 20)
     parser.add_argument("--max-pending", type=int, default=8)
@@ -614,7 +620,16 @@ def main(argv: list[str] | None = None) -> int:
     server: WorkerHTTPServer | None = None
     try:
         service.start()
-        server = WorkerHTTPServer((args.host, args.port), service, token)
+        from .media import MAX_MEDIA_REQUEST_BYTES
+
+        server = WorkerHTTPServer(
+            (args.host, args.port),
+            service,
+            token,
+            max_body_bytes=MAX_MEDIA_REQUEST_BYTES
+            if config.runner == "qwen35"
+            else 1 << 20,
+        )
         if args.tls_cert:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.minimum_version = ssl.TLSVersion.TLSv1_2

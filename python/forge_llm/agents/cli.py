@@ -78,6 +78,7 @@ async def create_pool(config: dict) -> WorkerPool:
                     "connect_timeout",
                     "poll_interval",
                     "allow_insecure_http",
+                    "max_request_bytes",
                 }
                 if (
                     worker.keys() - permitted
@@ -152,6 +153,9 @@ async def worker_identities(pool: WorkerPool) -> dict:
                     "worker lacks the artifact/tokenizer fingerprints required for resumable runs"
                 )
         result[name] = {key: health.get(key) for key in keys}
+        for key in ("processor_signature", "enable_thinking"):
+            if key in health:
+                result[name][key] = health[key]
     return result
 
 
@@ -277,7 +281,15 @@ async def execute(args) -> int:
                 result = await runtime.resume(run_id)
             else:
                 task = Path(args.task_file).read_text() if args.task_file else args.task
-                result = await runtime.run(task, run_id=run_id)
+                import mimetypes
+
+                from .media import media_from_file
+
+                attachments = []
+                for path in getattr(args, "image", []) + getattr(args, "video", []):
+                    mime = mimetypes.guess_type(path)[0]
+                    attachments.append(media_from_file(path, mime=mime))
+                result = await runtime.run(task, run_id=run_id, media=attachments)
             document = asdict(result)
             output = state / f"{run_id}.result.json"
             if not output.exists():
@@ -310,6 +322,8 @@ def main() -> None:
             task = command.add_mutually_exclusive_group(required=True)
             task.add_argument("--task")
             task.add_argument("--task-file")
+            command.add_argument("--image", action="append", default=[])
+            command.add_argument("--video", action="append", default=[])
     for name in ("inspect", "cancel"):
         command = commands.add_parser(name)
         command.add_argument("--run-id", required=True)

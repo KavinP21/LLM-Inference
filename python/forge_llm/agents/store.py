@@ -122,6 +122,16 @@ class AgentStore:
             PRAGMA user_version=1;
         """)
         with self.transaction():
+            self.connection.execute(
+                "CREATE TABLE IF NOT EXISTS media_blobs (sha256 TEXT PRIMARY KEY, mime TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL)"
+            )
+            message_columns = {
+                row[1] for row in self.connection.execute("PRAGMA table_info(messages)")
+            }
+            if "media" not in message_columns:
+                self.connection.execute(
+                    "ALTER TABLE messages ADD COLUMN media TEXT NOT NULL DEFAULT '[]'"
+                )
             columns = {
                 row[1] for row in self.connection.execute("PRAGMA table_info(agents)")
             }
@@ -390,17 +400,70 @@ class AgentStore:
             (*values, run_id, agent_id),
         )
 
-    def add_message(self, run_id: str, agent_id: str, role: str, content: str) -> None:
+    def _store_media(self, media):
+        from .media import validate_media
+
+        references = []
+        for item in validate_media(media):
+            existing = self.connection.execute(
+                "SELECT mime,kind,data FROM media_blobs WHERE sha256=?",
+                (item["sha256"],),
+            ).fetchone()
+            if existing is not None and tuple(existing) != (
+                item["mime"],
+                item["type"],
+                item["data"],
+            ):
+                raise StoreError("media fingerprint has conflicting metadata")
+            self.connection.execute(
+                "INSERT OR IGNORE INTO media_blobs(sha256,mime,kind,data) VALUES(?,?,?,?)",
+                (item["sha256"], item["mime"], item["type"], item["data"]),
+            )
+            references.append({key: item[key] for key in ("type", "mime", "sha256")})
+        return references
+
+    def _load_media(self, references):
+        from .media import validate_media
+
+        media = []
+        for item in references:
+            if "data" in item:
+                media.append(item)
+                continue
+            row = self.connection.execute(
+                "SELECT mime,kind,data FROM media_blobs WHERE sha256=?",
+                (item["sha256"],),
+            ).fetchone()
+            if row is None or (row["mime"], row["kind"]) != (
+                item["mime"],
+                item["type"],
+            ):
+                raise StoreError("journal media blob is missing or inconsistent")
+            media.append(dict(item, data=row["data"]))
+        return validate_media(media)
+
+    def add_message(
+        self, run_id: str, agent_id: str, role: str, content: str, *, media=()
+    ) -> None:
         self.connection.execute(
-            "INSERT INTO messages(run_id,agent_id,role,content,created) VALUES(?,?,?,?,?)",
-            (run_id, agent_id, role, content, time.time()),
+            "INSERT INTO messages(run_id,agent_id,role,content,created,media) VALUES(?,?,?,?,?,?)",
+            (
+                run_id,
+                agent_id,
+                role,
+                content,
+                time.time(),
+                json.dumps(self._store_media(media)),
+            ),
         )
 
     def messages(self, run_id: str, agent_id: str) -> list[ChatMessage]:
         return [
-            ChatMessage(row["role"], row["content"])
+            ChatMessage(
+                row["role"], row["content"], self._load_media(json.loads(row["media"]))
+            )
             for row in self.connection.execute(
-                "SELECT role,content FROM messages WHERE run_id=? AND agent_id=? ORDER BY id",
+                "SELECT role,content,media FROM messages WHERE run_id=? AND agent_id=? ORDER BY id",
                 (run_id, agent_id),
             )
         ]
@@ -414,9 +477,12 @@ class AgentStore:
         ).fetchone()
         if row is None:
             return None
-        return [ChatMessage(**item) for item in json.loads(row["messages"])], row[
-            "history_length"
-        ]
+        return [
+            ChatMessage(
+                item["role"], item["content"], self._load_media(item.get("media", []))
+            )
+            for item in json.loads(row["messages"])
+        ], row["history_length"]
 
     def save_generation_input(
         self,
@@ -432,7 +498,14 @@ class AgentStore:
                 request_id,
                 run_id,
                 json.dumps(
-                    [{"role": item.role, "content": item.content} for item in messages],
+                    [
+                        {
+                            "role": item.role,
+                            "content": item.content,
+                            "media": self._store_media(item.media),
+                        }
+                        for item in messages
+                    ],
                     ensure_ascii=False,
                 ),
                 history_length,

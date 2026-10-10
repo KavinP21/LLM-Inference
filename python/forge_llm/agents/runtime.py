@@ -527,7 +527,10 @@ class AgentRuntime:
             + "\nReply with exactly one action object. Do not copy the menu itself."
         )
 
-    async def run(self, task: str, *, run_id: str | None = None) -> RunResult:
+    async def run(self, task: str, *, run_id: str | None = None, media=()) -> RunResult:
+        from .media import validate_media
+
+        attachments = validate_media(media)
         if not isinstance(task, str) or not task.strip() or len(task) > 12_000:
             raise ValueError(
                 "task must be a nonempty string of at most 12000 characters"
@@ -553,6 +556,13 @@ class AgentRuntime:
             completion_required=self.completion_validator is not None,
             completion_root_only=self.completion_root_only,
         )
+        if attachments:
+            # Keep the original assigned task and its immutable media together.
+            with self.store.transaction():
+                self.store.connection.execute(
+                    "UPDATE messages SET media=? WHERE run_id=? AND agent_id='root' AND role='user'",
+                    (json.dumps(self.store._store_media(attachments)), run_id),
+                )
         return await self._drive(run_id, self.config, recover=False)
 
     async def resume(self, run_id: str) -> RunResult:
@@ -854,7 +864,9 @@ class AgentRuntime:
             # the current legal state share the final user message.
             if len(messages) > 2 and messages[-1].role == "user":
                 return messages[:-1] + [
-                    ChatMessage("user", messages[-1].content + "\n\n" + menu)
+                    ChatMessage(
+                        "user", messages[-1].content + "\n\n" + menu, messages[-1].media
+                    )
                 ]
             return messages + [ChatMessage("user", menu)]
 
@@ -913,7 +925,7 @@ class AgentRuntime:
                     remaining - 32,
                     "\n[TRUNCATED for model context; full evidence in journal_read]",
                 )
-                recent.append(ChatMessage(message.role, excerpt))
+                recent.append(ChatMessage(message.role, excerpt, message.media))
                 break
             else:
                 break
