@@ -48,10 +48,11 @@ Completion steering checks executable coding tests or the requested document
 answer structure and completed children. Document fact values are withheld from
 the model. A format check alone is not factual verification.
 
-The task model is the FP16 reconstruction of an already cached MLX affine-4-bit
-Qwen2.5-7B model. The import does not recover original FP16 weights. Its artifact
-and source fingerprints are recorded in the reports. No model download or
-multi-computer experiment was performed for these trials.
+The earlier Forge-native 7B trials used an FP16 reconstruction of an already
+cached MLX affine-4-bit Qwen2.5-7B model. The import does not recover original
+FP16 weights. The final qualification instead uses the cached Qwen3 checkpoint
+through MLX-LM, as identified above. Artifact and source fingerprints are recorded
+in the reports. No model download or multi-computer experiment was performed.
 
 ## Retained failed development trials
 
@@ -81,7 +82,8 @@ ran commit `f5a1a6e` with no source changes during execution. Coding failed in
 Compilation/acceptance checks prevented invalid edits from becoming a success.
 A child following parent spawning instructions exposed an assignment-scope
 problem. Line-range edits, inspection-first catalogs and stronger child scope
-framing address those concrete failures; a fresh actual-model run is required.
+framing address those concrete failures and were evaluated in the subsequent
+continuations below.
 
 The current grader uses immutable
 copies of visible tests for completion steering and adds four further inputs only
