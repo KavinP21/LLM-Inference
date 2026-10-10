@@ -75,11 +75,29 @@ the slower successful document delegation, are retained in
 The implementation regression passed **854 Python tests without skips** in
 29.57 seconds, including synthetic Metal references and real loopback transport.
 A fresh Clang C++20 host build passed. No CUDA device tests or multi-host
-measurements were run. The final frozen-source task evaluation passed all four
+measurements were run. The frozen-source Qwen3 task qualification passed all four
 single/delegated coding and document cases, with two actual children in each
 delegated run. It uses the explicitly selected upstream MLX-LM runner and two
 small development fixtures; delegation was slower and no general task-quality
 advantage is claimed. See [the task report](docs/agent-results.md).
+
+## Dense Qwen7B support
+
+The optional MLX-LM runner now validates dense Qwen2/Qwen2.5 7B affine-4-bit
+checkpoints and derives their 57,344-byte/token full KV geometry. A two-replica
+16K example uses 1 GiB KV per worker. The desktop chat adds the native reconstructed
+7B profile with a 32K configured context and 2 GiB KV budget, offline tokenizer
+loading and one thread owning model operations.
+
+The latest regression passes **883 tests without skips**. Actual desktop loading,
+model switching, two-turn chat, failed-load status and cleanup pass. Three adapter
+prompts, including an 8,163-token synthetic input, match all 66 direct MLX-LM
+greedy output tokens and reclaim KV on completion/cancellation.
+
+The cached 7B Instruct model passes single-agent document analysis but fails both
+coding modes and delegated factual analysis. Failed edits are rejected and false
+coding completion is prevented. This model has not earned autonomous-task
+qualification. See [Qwen7B usage and evidence](docs/qwen-7b.md).
 
 ## Remaining limits
 

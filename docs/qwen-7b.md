@@ -69,3 +69,51 @@ Tokenizers are loaded offline; missing artifacts/tokenizers produce a load error
 For other native artifacts, use `create_engine` with their matching tokenizer
 and an explicit KV budget. Native speculative decoding remains opt-in under its
 [separate numerical contract](speculative-decoding.md).
+
+## Executed checks and task limits
+
+The [883-test regression](../benchmarks/results/qwen7b-2026-10-10/regression-summary.json)
+passes without skips, including Metal references and authenticated loopback
+transport. An isolated validation interpreter used the installed dependency
+files without editable import hooks; imports were checked against the tested
+checkout. No MLX or MLX-LM upgrade was required.
+
+The [actual desktop check](../benchmarks/results/qwen7b-2026-10-10/native-chat.json)
+loads the default 0.5B model, switches to the native reconstructed 7B profile,
+remembers a name across two turns, retains the failed-load status after Clear
+chat, and closes its model worker. The 32K profile is a configured capacity;
+this chat check uses short prompts and does not establish 32K semantic quality.
+
+The [adapter reference](../benchmarks/results/qwen7b-2026-10-10/adapter-reference.json)
+matches direct pinned MLX-LM greedy generation on all **66 output tokens across
+three prompts**, including an 8,163-token synthetic prompt. Each request uses
+a fresh cache, with the same loaded quantized weights shared sequentially.
+The long case peaks at 484,442,112 persistent KV bytes. Completion and explicit
+cancellation reclaim reservations and cache buffers. This checks the adapter;
+it is not an independent original-FP16-weight or performance comparison.
+
+The [task evaluation](../benchmarks/results/qwen7b-2026-10-10/tasks-final.json)
+ran the existing coding/document fixtures from a clean checkout at `6efd1d4`,
+with unchanged runtime sources and two actual 7B replicas. Startup took 9.57 s,
+excluded from task times:
+
+| Task | Single agent | Delegated | Independent gate |
+| --- | --- | --- | --- |
+| Python repair | 105.97 s, 20 calls | 260.09 s, 41 calls, 2 children | Both fail. Repeated invalid Python is rejected; the step budget ends the run. |
+| Document analysis | 8.87 s, 2 calls | 35.81 s, 9 calls, 2 children | Single passes all eight facts. Delegation incorrectly claims release readiness. |
+
+Coding gates use immutable operator-owned tests and four further inputs withheld
+until final grading. Document completion checks structure/workflow; independent
+grading checks factual values. A completed run or `completion_verified` flag
+does not waive a failed factual gate.
+
+The [first 8K-profile trial](../benchmarks/results/qwen7b-2026-10-10/tasks-initial.json)
+is retained. Its coding catalog exceeded the conservative context budget before
+dispatch; the corrected 16K example and a preflight regression address that
+configuration issue. Its delegated document answer also failed factual grading.
+
+**This cached 7B Instruct checkpoint is supported for inference and chat, but it
+has not passed the autonomous coding or delegated document gates.** Use the
+previously qualified Qwen3 configuration for those agent tasks and require task
+acceptance criteria. Coder/base variants have matching config geometry but were
+not executed here; no general task-quality or CUDA/multi-host claim is made.
