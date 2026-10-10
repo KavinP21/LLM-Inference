@@ -191,9 +191,15 @@ passed their independent gates. Each delegated case executed two completed
 children. Coding took 25.93/56.08 seconds and document analysis 8.35/51.44 seconds;
 startup was excluded. Delegation was slower. The earlier delegated document failure
 is retained alongside the revised run. These are two development fixtures, not
-broad autonomous-task qualification. The final regression passed **1,082 tests
+broad autonomous-task qualification. The latest regression passed **1,085 tests
 without skips**, including Metal and loopback checks; a fresh C++ host build and
 all GitHub workflows passed.
+
+A subsequent public API smoke caught a missing context-manager interface.
+`with create_engine()` now closes completed or interrupted state and preserves
+an original exception if cleanup also fails. Its lifecycle tests and direct
+default-model smoke are recorded separately; this addition leaves inference
+math and the previously qualified worker/UI generation paths unchanged.
 
 The [evidence directory](../benchmarks/results/qwen35-2026-10-10/) records separate
 source identities for core inference, task workflows and speculation. Portable
