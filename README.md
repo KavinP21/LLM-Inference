@@ -45,7 +45,7 @@ contains latency, memory, source identity, and reproduction commands;
 
 | Area | Evidence |
 | --- | --- |
-| Python regression | 365 tests passed on M3 Max, including Metal tests, on October 6, 2026. [QA report](benchmarks/results/repository-qa-2026-10-06/summary.json) |
+| Python regression | 854 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/agents-published-2026-10-10/regression-summary.json) |
 | Qwen reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
 | Gemma reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
 | 32K context | Both models executed a 32,766-token prompt plus two outputs and reclaimed their pages. This checks execution and resource integrity. |
@@ -54,8 +54,11 @@ contains latency, memory, source identity, and reproduction commands;
 | CUDA | On-device correctness and performance are unverified. |
 
 See [implementation status](STATUS.md) for the reports behind these claims.
-The runtime uses greedy decoding. HTTP serving, speculative decoding, 4-bit
-quantization, and distributed execution are outside the implemented scope.
+The runtime uses greedy decoding, with optional MLX speculative verification and
+authenticated model-worker job endpoints. Task agents coordinate local or configured
+remote replicas. Sampling, Forge-native W4A16, streaming/OpenAI-compatible serving
+and tensor/pipeline parallelism remain future work. An explicitly selected MLX-LM
+runner can execute a local upstream 4-bit checkpoint for task agents.
 
 ## Run on Apple Silicon
 

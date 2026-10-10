@@ -226,6 +226,16 @@ class AgentStore:
         )
         return [dict(row, payload=json.loads(row["payload"])) for row in reversed(rows)]
 
+    def recent_tool_results(
+        self, run_id: str, agent_id: str, *, limit: int = 64
+    ) -> list[dict[str, Any]]:
+        """Bounded, newest-first receipts scoped to exactly one durable agent."""
+        rows = self.connection.execute(
+            "SELECT * FROM events WHERE run_id=? AND agent_id=? AND kind='tool_result' ORDER BY id DESC LIMIT ?",
+            (run_id, agent_id, limit),
+        )
+        return [dict(row, payload=json.loads(row["payload"])) for row in rows]
+
     def create_run(
         self,
         run_id: str,
