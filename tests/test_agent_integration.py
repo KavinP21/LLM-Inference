@@ -1235,6 +1235,10 @@ def identity():
         "draft_model_data_sha256": None,
         "speculative": None,
         "native_tool_calls": False,
+        "runner": "forge",
+        "runner_version": "0.1.0",
+        "mlx_version": None,
+        "checkpoint_format": None,
     }
 
 
@@ -1275,6 +1279,10 @@ def test_cli_resume_binds_health_fingerprints_and_closes_pool_on_drift(
         "tokenizer_signature",
         "draft_model_data_sha256",
         "native_tool_calls",
+        "runner",
+        "runner_version",
+        "mlx_version",
+        "checkpoint_format",
     ):
         old = current[field]
         current[field] = True if field == "native_tool_calls" else "d" * 64

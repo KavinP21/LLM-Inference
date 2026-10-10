@@ -69,6 +69,26 @@ copies of visible tests for completion steering and adds four further inputs onl
 after the run. Earlier diagnostic checkers also returned those additional tests'
 failure output to the model; they are not held-out evaluations. These two small
 fixtures were used during development and are not a broad agent benchmark.
+
+The [line/scope 7B continuation](../benchmarks/results/agents-published-2026-10-10/qwen7b-line-scope-tasks.json)
+again failed both coding workflows; document single-agent analysis passed, while
+delegation completed but made an unsupported release claim. The separate
+[short numerical check](../benchmarks/results/agents-published-2026-10-10/7b-numerics.json)
+matched an independent CPU FP16 Transformers SDPA reference at all nine token
+positions. Final-output cosine was 0.99999846/0.99999881 for fallback/custom MLX.
+This checks short prefill against the same reconstructed artifact, not original
+FP16 weights, long cached decoding, or general model reasoning. An invalid
+eager-attention reference produced NaNs and is retained separately.
+
+The [optional-runner candidate](../benchmarks/results/agents-published-2026-10-10/qwen3-optional-runner-candidate.json)
+uses two actual MLX-LM 0.28.3 replicas of an already cached Qwen3-30B-A3B
+affine-4-bit checkpoint, with MLX 0.32.2. Both coding modes passed all six
+independent tests (17.19/73.49 seconds); document single-agent analysis passed
+(8.41 seconds). Delegated document analysis completed in 23.43 seconds but
+incorrectly promoted an excluded measurement. These results establish useful
+coding execution, not a passed document delegation gate. Upstream inference is
+identified explicitly; it is not Forge-native W4A16 qualification.
+
 Two small tasks, even when
 successful, would not establish general coding/research reliability or an
 advantage over one capable agent. Single-GPU replicas can increase contention;

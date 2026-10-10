@@ -129,6 +129,10 @@ async def worker_identities(pool: WorkerPool) -> dict:
         "draft_model_data_sha256",
         "speculative",
         "native_tool_calls",
+        "runner",
+        "runner_version",
+        "mlx_version",
+        "checkpoint_format",
     )
     result = {}
     for name, backend in pool.backends.items():

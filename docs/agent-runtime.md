@@ -12,9 +12,9 @@ parallelism: each worker must fit a complete model on its selected device.
 ## Install and run
 
 ```bash
-pip install -e '.[mlx,agents,test]'
+pip install -e '.[mlx,agents-mlx,test]'
 PYTHONPATH=python .venv/bin/python -m forge_llm.agents.cli \
-  --state-dir .forge run --config examples/agents-local.json --workspace . \
+  --state-dir .forge run --config examples/agents-local-mlx-lm.json --workspace . \
   --task 'Read the runtime architecture and identify the most important resource limitation. Cite the file and explain its effect.'
 ```
 
@@ -24,8 +24,17 @@ model and authenticated loopback endpoint. Each example replica enables bounded
 256 MiB FP16 prefix reuse for repeated task context. They run on the same Mac GPU;
 replicas do not create extra hardware or guarantee lower latency.
 
-The local task configuration selects the reconstructed 7B model and its native
-tool template. Import/export its artifact first. `examples/agents-local-smoke.json`
+The task configuration selects an already local Qwen3-30B-A3B-Instruct-2507
+checkpoint through the optional MLX-LM runner. Set `model` and `tokenizer` to your
+local checkpoint directory, or link it at the configured ignored path:
+
+```bash
+ln -s /path/to/local/qwen3-checkpoint models/qwen3-30b-a3b-mlx
+```
+
+The Forge runner remains the default. `examples/agents-local.json` uses its
+reconstructed 7B artifact; that model failed coding qualification and should be
+treated as a diagnostic configuration. `examples/agents-local-smoke.json`
 uses the smaller 0.5B model for transport smoke tests.
 
 For a coding task, add `--allow-write --allow-tests`. Writes require a version
@@ -61,6 +70,17 @@ Qwen2.5-0.5B task evaluation failed all four single/delegated trials on protocol
 errors. Those failed outputs are retained separately from passing control tests.
 Use the small model for worker smoke tests; judge task quality using an
 appropriately capable model and executable acceptance criteria.
+
+`runner: "mlx_lm"` is an explicit optional inference adapter, pinned to MLX-LM
+0.28.3. It currently accepts the validated local Qwen3 MoE affine-4-bit layout.
+It uses upstream model execution and full K/V caches, with one actor-owned
+request at a time, context/persistent-KV admission, cancellation, and cleanup.
+Health/resume identity includes checkpoint/config hashes and library versions.
+It reports persistent K/V separately from weights and transient arrays.
+Forge kernel, prefix-cache and speculative options are rejected for this runner.
+This adapter's measurements do not qualify Forge's own W4A16 implementation.
+The [upstream API](https://github.com/ml-explore/mlx-lm/blob/v0.28.3/mlx_lm/generate.py)
+is a dependency, not a claim of original model execution.
 
 Forge can also import an already local MLX affine-4-bit Qwen2 checkpoint into
 the existing FP16 artifact format:

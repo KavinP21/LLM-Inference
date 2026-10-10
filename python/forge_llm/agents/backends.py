@@ -25,6 +25,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .protocol import ChatMessage, Generation, ModelBackend
@@ -135,6 +136,7 @@ class WorkerConfig:
     eos_token_ids: list[int] | None = None
     local_files_only: bool = True
     native_tool_calls: bool = False
+    runner: str = "forge"
     # Set only in independently launched processes; never mutate the parent's GPU.
     cuda_visible_devices: str | None = None
 
@@ -143,6 +145,38 @@ class WorkerConfig:
             raise ValueError("model and tokenizer are required")
         if self.backend not in {"auto", "mlx", "cuda"}:
             raise ValueError("backend must be auto, mlx, or cuda")
+        if self.runner not in {"forge", "mlx_lm"}:
+            raise ValueError("runner must be forge or mlx_lm")
+        if self.runner == "mlx_lm":
+            if self.backend == "cuda" or self.cuda_visible_devices is not None:
+                raise ValueError("mlx_lm runner requires the MLX device backend")
+            if not self.local_files_only or self.speculative is not None:
+                raise ValueError(
+                    "mlx_lm runner requires local checkpoints and does not use Forge speculation"
+                )
+            if not isinstance(
+                self.engine_options, dict
+            ) or self.engine_options.keys() - {"prefill_step_size"}:
+                raise ValueError(
+                    "mlx_lm runner accepts only prefill_step_size; Forge kernel, decode, and prefix options are unsupported"
+                )
+            chunk = self.engine_options.get("prefill_step_size", 256)
+            if (
+                type(chunk) is not int
+                or not 1 <= chunk <= 2048
+                or (256 % chunk != 0 and chunk % 256 != 0)
+            ):
+                raise ValueError(
+                    "external prefill_step_size must divide 256 or be a multiple of 256, up to 2048"
+                )
+            if (
+                not Path(self.model).is_dir()
+                or not Path(self.tokenizer).is_dir()
+                or Path(self.model).resolve() != Path(self.tokenizer).resolve()
+            ):
+                raise ValueError(
+                    "mlx_lm model and tokenizer must reference the same existing local checkpoint directory"
+                )
         for name in ("max_model_length", "kv_cache_bytes", "max_pending"):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be a positive integer")
@@ -229,6 +263,11 @@ class LocalForgeBackend:
         self._model_type = ""
         self._completed = 0
         self._last_speculative_stats: dict[str, Any] | None = None
+        self._runner_metadata: dict[str, Any] = {
+            "runner": config.runner,
+            "runner_version": "0.1.0" if config.runner == "forge" else None,
+        }
+        self._last_runner_stats: dict[str, Any] | None = None
         self._artifact_identity: dict[str, str | None] = {
             "model_data_sha256": None,
             "model_config_sha256": None,
@@ -284,6 +323,39 @@ class LocalForgeBackend:
         if self._engine_factory:
             engine = self._engine_factory()
             model_config = getattr(getattr(engine, "model", None), "config", None)
+        elif self.config.runner == "mlx_lm":
+            from .mlx_lm_runner import MlxLmRunner
+
+            engine = MlxLmRunner(
+                self.config.model,
+                max_model_length=self.config.max_model_length,
+                kv_cache_bytes=self.config.kv_cache_bytes,
+                **self.config.engine_options,
+            )
+            model_config = engine.model.config
+            self._artifact_identity.update(engine.checkpoint_identity)
+            vocabulary = tokenizer.get_vocab()
+            if not vocabulary or any(
+                type(token) is not int or not 0 <= token < model_config.vocab_size
+                for token in vocabulary.values()
+            ):
+                engine.close()
+                raise ValueError(
+                    "tokenizer token IDs do not fit the external runner vocabulary"
+                )
+            self._artifact_identity["tokenizer_signature"] = hashlib.sha256(
+                json.dumps(
+                    {
+                        "vocab": vocabulary,
+                        "special_ids": tokenizer.all_special_ids,
+                        "chat_template": tokenizer.chat_template,
+                        "backend": tokenizer.backend_tokenizer.to_str()
+                        if hasattr(tokenizer, "backend_tokenizer")
+                        else None,
+                    },
+                    sort_keys=True,
+                ).encode()
+            ).hexdigest()
         else:
             from forge_llm import create_engine
             from forge_llm.model_file import ModelFile
@@ -384,6 +456,9 @@ class LocalForgeBackend:
             )
         self._tokenizer = tokenizer
         self._engine = engine
+        if self.config.runner == "mlx_lm":
+            self._runner_metadata.update(engine.metadata)
+            self._artifact_identity.update(engine.checkpoint_identity)
         self._actual_backend = (
             "mlx"
             if self.config.speculative is not None
@@ -457,6 +532,8 @@ class LocalForgeBackend:
             "speculative": self.config.speculative,
             "last_speculative_stats": self._last_speculative_stats,
             **self._artifact_identity,
+            **self._runner_metadata,
+            "last_runner_stats": self._last_runner_stats,
         }
 
     def _forget(self, engine_request_id: int) -> None:
@@ -566,6 +643,8 @@ class LocalForgeBackend:
                 finish_reason="stop" if result.finish_reason == "eos" else "length",
                 model=self.config.model,
             )
+        if self.config.runner == "mlx_lm":
+            self._engine.set_request_guard(check)
         engine_request_id = self._engine.submit(token_ids, max_tokens, self._eos)
         output: list[int] = []
         completed = False
@@ -583,7 +662,15 @@ class LocalForgeBackend:
                 if len(output) > max_tokens:
                     raise BackendError("engine exceeded the generation token budget")
             check()
-            text = self._tokenizer.decode(output, skip_special_tokens=True)
+            if self.config.runner == "mlx_lm":
+                # Preserve native function tags even if the external tokenizer
+                # marks them special; remove only the terminal EOS delimiter.
+                decoded_tokens = (
+                    output[:-1] if output and output[-1] in self._eos else output
+                )
+                text = self._tokenizer.decode(decoded_tokens, skip_special_tokens=False)
+            else:
+                text = self._tokenizer.decode(output, skip_special_tokens=True)
             if not isinstance(text, str):
                 raise BackendError("tokenizer did not decode text")
             self._completed += 1
@@ -600,6 +687,8 @@ class LocalForgeBackend:
             if not completed:
                 self._engine.cancel(engine_request_id)
             self._forget(engine_request_id)
+            if self.config.runner == "mlx_lm":
+                self._last_runner_stats = self._engine.stats()
 
     async def generate(
         self, messages: Sequence[ChatMessage], max_tokens: int, request_id: str

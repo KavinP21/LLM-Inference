@@ -36,7 +36,7 @@ jobs:
           tests/test_batch_evidence_audit.py
           tests/test_speculative.py tests/test_request_history.py tests/test_import_mlx.py
           tests/test_agent_runtime.py tests/test_agent_runtime_native.py tests/test_agent_completion.py
-          tests/test_agent_native_batches.py tests/test_agent_native_tools.py
+          tests/test_agent_native_batches.py tests/test_agent_native_tools.py tests/test_agent_mlx_lm_runner.py
           tests/test_agent_workers.py tests/test_agent_integration.py tests/test_agent_tools.py
           tests/test_agent_profiles.py tests/test_agent_evaluation.py
       - run: bash -n tools/verify_wsl_environment.sh tools/run_sanitizer.sh

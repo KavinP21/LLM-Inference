@@ -6,9 +6,9 @@
     "errors": "0",
     "failures": "0",
     "skipped": "0",
-    "tests": "827",
-    "time": "29.084",
-    "timestamp": "2026-10-10T01:29:53.248595-04:00",
+    "tests": "851",
+    "time": "29.441",
+    "timestamp": "2026-10-10T02:09:50.145761-04:00",
     "hostname": "ipsec-10-2-0-204.vpn.gatech.edu"
   },
   "command": "FORGE_INSPECT_MODEL=/private/tmp/forge-publish-inspect-model PYTHONPATH=python python -m pytest -q",
