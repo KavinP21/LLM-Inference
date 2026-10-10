@@ -28,9 +28,11 @@ PYTHONPATH=python .venv/bin/python -m forge_llm.agents.cli \
 ```
 
 The example starts two independently supervised 7B replicas, each with an
-8,192-token context and 512 MiB persistent KV budget. Logical agents share those
+16,384-token context and 1 GiB persistent KV budget. Logical agents share those
 replicas. Add `--allow-write --allow-tests` for coding tasks. Completion checks,
 child scope, recovery and bounded actions are the same as for other task models.
+The coordinator's conservative input reservation is capped at 12,000 tokens,
+leaving room for the coding tool catalog and independent-review instructions.
 
 Persistent full KV costs **57,344 bytes/token** for this model: 448 MiB at 8K,
 896 MiB at 16K and 1.75 GiB at 32K. Buffers round up to 256-token increments.

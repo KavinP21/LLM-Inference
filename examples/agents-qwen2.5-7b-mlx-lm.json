@@ -6,8 +6,8 @@
       "model": "models/qwen2.5-7b-mlx",
       "tokenizer": "models/qwen2.5-7b-mlx",
       "backend": "mlx",
-      "max_model_length": 8192,
-      "kv_cache_bytes": 536870912,
+      "max_model_length": 16384,
+      "kv_cache_bytes": 1073741824,
       "engine_options": {
         "prefill_step_size": 256
       },
@@ -20,8 +20,8 @@
       "model": "models/qwen2.5-7b-mlx",
       "tokenizer": "models/qwen2.5-7b-mlx",
       "backend": "mlx",
-      "max_model_length": 8192,
-      "kv_cache_bytes": 536870912,
+      "max_model_length": 16384,
+      "kv_cache_bytes": 1073741824,
       "engine_options": {
         "prefill_step_size": 256
       },
@@ -36,7 +36,7 @@
     "max_output_tokens": 256,
     "max_steps_per_agent": 20,
     "max_total_tokens": 128000,
-    "max_context_tokens": 8192,
+    "max_context_tokens": 12000,
     "deadline_seconds": 900,
     "tool_timeout_seconds": 75,
     "max_tool_result_chars": 2000

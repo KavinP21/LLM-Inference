@@ -270,7 +270,8 @@ class ForgeChat(tk.Tk):
             return
         self.conversation.clear()
         self._write_output("")
-        self._set_status(self._ready_status(), "#188038")
+        if self.ready:
+            self._set_status(self._ready_status(), "#188038")
 
     def _close(self) -> None:
         if self.closing:
