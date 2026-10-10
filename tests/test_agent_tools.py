@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import json
 import os
+import threading
+import time
 
 import pytest
 from forge_llm.agents.tools import WorkspaceTools
@@ -527,3 +529,334 @@ def test_forget_terminal_scheduler_history_preserves_counters():
     assert pool.stats()["allocated_blocks"] == 0
     with pytest.raises(KeyError):
         scheduler.request(request)
+
+
+def test_edit_lines_replaces_whole_function_preserving_neighbors_and_compilation(
+    tmp_path,
+):
+    path = tmp_path / "module.py"
+    original = "# keep header\ndef mean(values):\n    return sum(values) / (len(values) + 1)\n# keep footer\n"
+    path.write_text(original)
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+
+    async def run():
+        await tools.read_file({"path": "module.py"})
+        report = json.loads(
+            await tools.edit_lines(
+                {
+                    "path": "module.py",
+                    "start_line": 2,
+                    "end_line": 3,
+                    "content": "def mean(values):\n    if not values:\n        raise ValueError('empty')\n    return sum(values) / len(values)",
+                }
+            )
+        )
+        assert report["start_line"] == 2 and report["end_line"] == 3
+        assert report["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+
+    asyncio.run(run())
+    assert (
+        path.read_text()
+        == "# keep header\ndef mean(values):\n    if not values:\n        raise ValueError('empty')\n    return sum(values) / len(values)\n# keep footer\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "original,start,end,replacement,expected",
+    [
+        (b"first\r\nold\r\nlast\r\n", 2, 2, "new", b"first\r\nnew\r\nlast\r\n"),
+        (b"first\r\nold\r\nlast\r\n", 2, 2, "a\nb", b"first\r\na\nb\r\nlast\r\n"),
+        (b"first\nold", 2, 2, "new", b"first\nnew"),
+        (b"first\nold\n", 2, 2, "new", b"first\nnew\n"),
+        (b"first\nold", 2, 2, "new\n", b"first\nnew\n"),
+        (b"first\nold\nlast\n", 2, 2, "", b"first\nlast\n"),
+        (b"one\r\ntwo\nthree", 1, 3, "", b""),
+        (b"first\rold\rlast", 2, 2, "new", b"first\rnew\rlast"),
+    ],
+)
+def test_edit_lines_preserves_unselected_bytes_and_explicit_newlines(
+    tmp_path, original, start, end, replacement, expected
+):
+    path = tmp_path / "notes.txt"
+    path.write_bytes(original)
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+
+    async def run():
+        await tools.read_file({"path": "notes.txt"})
+        await tools.edit_lines(
+            {
+                "path": "notes.txt",
+                "start_line": start,
+                "end_line": end,
+                "content": replacement,
+            }
+        )
+
+    asyncio.run(run())
+    assert path.read_bytes() == expected
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [
+        (0, 1),
+        (1, 0),
+        (2, 1),
+        (True, 1),
+        (1, False),
+        (1.0, 1),
+        (1, "2"),
+        (1, 3),
+        (4, 4),
+        (1, 1_000_001),
+    ],
+)
+def test_edit_lines_rejects_invalid_inclusive_ranges_without_mutation(
+    tmp_path, start, end
+):
+    path = tmp_path / "notes.txt"
+    path.write_text("first\nsecond\n")
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+
+    async def run():
+        await tools.read_file({"path": "notes.txt"})
+        with pytest.raises(ValueError) as error:
+            await tools.edit_lines(
+                {
+                    "path": "notes.txt",
+                    "start_line": start,
+                    "end_line": end,
+                    "content": "x",
+                }
+            )
+        assert error.value.work_started is False
+
+    asyncio.run(run())
+    assert path.read_text() == "first\nsecond\n"
+
+
+def test_edit_lines_requires_existing_text_and_bounds_the_result(tmp_path):
+    (tmp_path / "empty.txt").write_text("")
+    (tmp_path / "binary.txt").write_bytes(b"a\x00b\n")
+    (tmp_path / "invalid.txt").write_bytes(b"\xff\n")
+    path = tmp_path / "notes.txt"
+    path.write_text("first\nsecond\n")
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+
+    async def run():
+        for name in ("empty.txt", "binary.txt", "invalid.txt"):
+            digest = hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+            with pytest.raises(ValueError):
+                await tools.edit_lines(
+                    {
+                        "path": name,
+                        "start_line": 1,
+                        "end_line": 1,
+                        "content": "x",
+                        "expected_sha256": digest,
+                    }
+                )
+        small = WorkspaceTools(
+            tmp_path, tmp_path / "artifacts", allow_write=True, max_file_bytes=16
+        )
+        await small.read_file({"path": "notes.txt"})
+        with pytest.raises(ValueError, match="write limit"):
+            await small.edit_lines(
+                {
+                    "path": "notes.txt",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "content": "x" * 16,
+                }
+            )
+        with pytest.raises(ValueError):
+            await small.edit_lines(
+                {
+                    "path": "notes.txt",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "content": ["wrong"],
+                }
+            )
+        with pytest.raises(ValueError, match="binary"):
+            await small.edit_lines(
+                {"path": "notes.txt", "start_line": 1, "end_line": 1, "content": "\x00"}
+            )
+
+    asyncio.run(run())
+    assert path.read_text() == "first\nsecond\n"
+
+
+def test_edit_lines_refuses_protected_readonly_and_invalid_python_edits(tmp_path):
+    path = tmp_path / "module.py"
+    original = "def value():\n    return 1\n"
+    path.write_text(original)
+    readonly = WorkspaceTools(tmp_path, tmp_path / "artifacts")
+    assert "edit_lines" not in readonly.mapping()
+    with pytest.raises(PermissionError):
+        asyncio.run(
+            readonly.edit_lines(
+                {
+                    "path": "module.py",
+                    "start_line": 1,
+                    "end_line": 2,
+                    "content": "return 2",
+                }
+            )
+        )
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+    assert "edit_lines" in tools.mapping()
+    assert (
+        not {"read_receipt", "expected_sha256"}
+        & tools.tool_descriptions()["edit_lines"]["parameters"]["properties"].keys()
+    )
+
+    async def run():
+        await tools.read_file({"path": "module.py"})
+        with pytest.raises(ValueError, match="outside function"):
+            await tools.edit_lines(
+                {
+                    "path": "module.py",
+                    "start_line": 1,
+                    "end_line": 2,
+                    "content": "return 2",
+                }
+            )
+        assert path.read_text() == original
+        tools.protect_files(["module.py"])
+        with pytest.raises(ValueError, match="operator-protected"):
+            await tools.edit_lines(
+                {
+                    "path": "module.py",
+                    "start_line": 2,
+                    "end_line": 2,
+                    "content": "    return 2",
+                }
+            )
+
+    asyncio.run(run())
+    assert path.read_text() == original
+
+
+def test_edit_lines_read_proofs_are_agent_and_file_scoped_and_cas_remains_stale(
+    tmp_path,
+):
+    from forge_llm.agents.context import tool_actor
+
+    path = tmp_path / "notes.txt"
+    path.write_text("original\n")
+    (tmp_path / "other.txt").write_text("other\n")
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+    args = {"path": "notes.txt", "start_line": 1, "end_line": 1, "content": "edited"}
+
+    async def run():
+        one = tool_actor.set(("run", "one"))
+        read = json.loads(await tools.read_file({"path": "notes.txt"}))
+        tool_actor.reset(one)
+        two = tool_actor.set(("run", "two"))
+        try:
+            await tools.read_file({"path": "other.txt"})
+            with pytest.raises(ValueError, match="no version"):
+                await tools.edit_lines(args)
+            with pytest.raises(ValueError, match="unavailable"):
+                await tools.edit_lines({**args, "read_receipt": read["read_receipt"]})
+            own = json.loads(await tools.read_file({"path": "notes.txt"}))
+            await tools.edit_lines(
+                {
+                    **args,
+                    "read_receipt": own["read_receipt"],
+                    "expected_sha256": own["sha256"],
+                }
+            )
+        finally:
+            tool_actor.reset(two)
+        one = tool_actor.set(("run", "one"))
+        try:
+            with pytest.raises(ValueError, match="version changed"):
+                await tools.edit_lines({**args, "content": "stale"})
+        finally:
+            tool_actor.reset(one)
+
+    asyncio.run(run())
+    assert path.read_text() == "edited\n"
+
+
+def test_edit_lines_rechecks_cas_when_file_changes_after_snapshot_read(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "notes.txt"
+    path.write_text("original\n")
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+    entered, release = threading.Event(), threading.Event()
+    normal = tools._safe_read
+    armed = False
+
+    def snapshot_then_wait(selected):
+        data = normal(selected)
+        if armed and not entered.is_set():
+            entered.set()
+            assert release.wait(timeout=2.0)
+        return data
+
+    monkeypatch.setattr(tools, "_safe_read", snapshot_then_wait)
+
+    async def run():
+        nonlocal armed
+        await tools.read_file({"path": "notes.txt"})
+        armed = True
+        task = asyncio.create_task(
+            tools.edit_lines(
+                {
+                    "path": "notes.txt",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "content": "model edit",
+                }
+            )
+        )
+        try:
+            deadline = time.monotonic() + 2
+            while not entered.is_set():
+                assert time.monotonic() < deadline
+                await asyncio.sleep(0.001)
+            path.write_text("human edit\n")
+            release.set()
+            with pytest.raises(ValueError, match="version changed"):
+                await task
+        finally:
+            release.set()
+
+    asyncio.run(run())
+    assert path.read_text() == "human edit\n"
+
+
+def test_concurrent_line_edits_allow_only_one_write_from_the_same_read_version(
+    tmp_path,
+):
+    path = tmp_path / "notes.txt"
+    path.write_text("keep\noriginal\nkeep too\n")
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts", allow_write=True)
+
+    async def run():
+        await tools.read_file({"path": "notes.txt"})
+        results = await asyncio.gather(
+            *[
+                tools.edit_lines(
+                    {
+                        "path": "notes.txt",
+                        "start_line": 2,
+                        "end_line": 2,
+                        "content": value,
+                    }
+                )
+                for value in ("one", "two")
+            ],
+            return_exceptions=True,
+        )
+        assert len([result for result in results if isinstance(result, str)]) == 1
+        assert (
+            len([result for result in results if isinstance(result, ValueError)]) == 1
+        )
+
+    asyncio.run(run())
+    assert path.read_text() in {"keep\none\nkeep too\n", "keep\ntwo\nkeep too\n"}

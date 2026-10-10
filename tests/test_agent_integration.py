@@ -27,6 +27,7 @@ from forge_llm.agents.backends import (
     WorkerPool,
     WorkerUnavailableError,
 )
+from forge_llm.agents.profiles import CompletionProfile
 from forge_llm.agents.protocol import Generation
 from forge_llm.agents.runtime import AgentRuntime, CompletionCheck, RuntimeConfig
 from forge_llm.agents.store import AgentStore
@@ -396,6 +397,7 @@ def test_native_runtime_catalogs_and_tool_roles_cross_two_http_workers(tmp_path)
                                 "save_artifact",
                                 "write_file",
                                 "replace_text",
+                                "edit_lines",
                                 "run_tests",
                             }
                             & names
@@ -544,6 +546,94 @@ def test_native_batch_spawn_and_completion_checker_correct_real_workspace(tmp_pa
                 previous = len(state.calls)
                 assert (await runtime.resume("batch-checked")).completion_verified
                 assert len(state.calls) == previous and len(checks) == 2
+            finally:
+                await pool.close()
+                store.close()
+
+        asyncio.run(run())
+
+
+def test_native_http_whole_line_edit_passes_protected_independent_tests(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    path = workspace / "value.py"
+    path.write_text("# keep header\ndef answer():\n    return 41\n# keep footer\n")
+    (workspace / "tests").mkdir()
+    test_path = workspace / "tests" / "test_value.py"
+    original_test = (
+        "from value import answer\ndef test_answer():\n    assert answer() == 42\n"
+    )
+    test_path.write_text(original_test)
+    state = ScriptState()
+    replica = NativeScriptedReplica(
+        "line-edit-control",
+        {
+            "root": [
+                native_call("read_file", path="value.py"),
+                native_call(
+                    "edit_lines",
+                    path="value.py",
+                    start_line=2,
+                    end_line=3,
+                    content="def answer():\n    value = 42\n    return value",
+                ),
+                native_call(
+                    "finish",
+                    result="Replaced the whole function and preserved neighboring lines; independent test passes.",
+                ),
+            ],
+        },
+        state,
+    )
+    with serve(replica) as (url, _):
+
+        async def run():
+            remote = RemoteWorkerBackend(url, BEARER, poll_interval=0.002)
+            await remote.health()
+            pool = WorkerPool([remote])
+            tools = WorkspaceTools(
+                workspace, tmp_path / "artifacts", allow_write=True, allow_tests=True
+            )
+            store = AgentStore(tmp_path / "line-edit.sqlite")
+            profile = CompletionProfile(
+                {"tests": ["tests/test_value.py"]}, tools, store
+            )
+            runtime = AgentRuntime(
+                pool,
+                store,
+                tools.mapping(),
+                RuntimeConfig(max_output_tokens=512),
+                tool_descriptions=tools.tool_descriptions(),
+                replay_safe_tools=tools.replay_safe_tools,
+                completion_validator=profile,
+            )
+            try:
+                result = await runtime.run(
+                    "Replace a complete source function and independently check the result.",
+                    run_id="line-edit-wire",
+                )
+                assert result.status == "completed" and result.completion_verified
+                assert result.acceptance_passed is True
+                assert (
+                    path.read_text()
+                    == "# keep header\ndef answer():\n    value = 42\n    return value\n# keep footer\n"
+                )
+                assert test_path.read_text() == original_test
+                assert replica.calls == [
+                    "line-edit-wire.root.1",
+                    "line-edit-wire.root.2",
+                    "line-edit-wire.root.3",
+                ]
+                catalog = replica.catalogs["line-edit-wire.root.2"]
+                line_spec = next(
+                    entry["function"]
+                    for entry in catalog
+                    if entry["function"]["name"] == "edit_lines"
+                )
+                assert (
+                    not {"read_receipt", "expected_sha256"}
+                    & line_spec["parameters"]["properties"].keys()
+                )
             finally:
                 await pool.close()
                 store.close()

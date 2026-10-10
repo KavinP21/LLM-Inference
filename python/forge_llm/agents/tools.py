@@ -73,6 +73,7 @@ class WorkspaceTools:
         "save_artifact": 'Save a new reviewable artifact. Arguments: {"path":"report.md","content":"..."}. Existing files cannot be overwritten.',
         "write_file": 'Replace a COMPLETE file after read_file. Last read version is checked automatically; omit hashes and receipts. Never write partial excerpts. Arguments: {"path":"file","content":"..."}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
         "replace_text": 'Replace one unique substring after read_file. Include leading spaces in code matches and indent EVERY replacement line; whitespace is never added. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","old_text":"exact unique text","new_text":"replacement"}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
+        "edit_lines": 'Preferred for multiline source edits: replace an inclusive whole-line range from read_file. Provide complete replacement lines with exact indentation and no displayed line-number labels. Unselected lines stay unchanged; a missing trailing newline preserves the original range boundary. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","start_line":1,"end_line":3,"content":"complete replacement lines"}.',
         "run_tests": 'Run configured Python pytest on explicit workspace test files. Arguments: {"paths":["tests/test_example.py"]}.',
     }
     replay_safe_tools = frozenset({"list_files", "read_file", "search"})
@@ -140,6 +141,32 @@ class WorkspaceTools:
             "required": ["path", "old_text", "new_text"],
             "additionalProperties": False,
         },
+        "edit_lines": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "start_line": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1_000_000,
+                    "description": "First existing line to replace, inclusive; use read_file line numbers.",
+                },
+                "end_line": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1_000_000,
+                    "description": "Last existing line to replace, inclusive; must be at least start_line.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Complete replacement lines, exactly indented; no displayed line-number labels. Empty text deletes the selected lines.",
+                },
+                "read_receipt": {"type": "string"},
+                "expected_sha256": {"type": "string"},
+            },
+            "required": ["path", "start_line", "end_line", "content"],
+            "additionalProperties": False,
+        },
         "run_tests": {
             "type": "object",
             "properties": {
@@ -159,7 +186,7 @@ class WorkspaceTools:
         result = {}
         for name in self.mapping():
             parameters = copy.deepcopy(self.schemas[name])
-            if name in {"write_file", "replace_text"}:
+            if name in {"write_file", "replace_text", "edit_lines"}:
                 # Native models use the automatically recorded per-agent read
                 # version. Keep explicit version selection in the direct API,
                 # without asking the model to copy opaque hashes or receipts.
@@ -302,7 +329,7 @@ class WorkspaceTools:
     def mapping(self) -> dict:
         names = ["list_files", "read_file", "search", "save_artifact"]
         if self.allow_write:
-            names.extend(["write_file", "replace_text"])
+            names.extend(["write_file", "replace_text", "edit_lines"])
         if self.allow_tests:
             names.append("run_tests")
         return {name: getattr(self, name) for name in names}
@@ -568,6 +595,77 @@ class WorkspaceTools:
 
     async def save_artifact(self, args: dict) -> str:
         return await self._write(args, artifact=True)
+
+    async def edit_lines(self, args: dict) -> str:
+        """Replace an existing inclusive line range without changing its neighbors.
+
+        Content and indentation are never inferred. Caller-provided internal
+        line endings remain exact. If nonempty replacement content omits its
+        final line ending, the selected range's original final ending is kept.
+        Empty content deletes the selected whole lines, including their endings.
+        """
+        _arguments(
+            args,
+            {"path", "start_line", "end_line", "content"},
+            {"expected_sha256", "read_receipt"},
+        )
+        if not self.allow_write:
+            raise PermissionError("workspace writes are disabled")
+        start = _integer(args["start_line"], 1, 1_000_000, "start_line")
+        end = _integer(args["end_line"], 1, 1_000_000, "end_line")
+        if end < start:
+            raise ToolValidationError("end_line must be at least start_line")
+        replacement = args["content"]
+        if (
+            not isinstance(replacement, str)
+            or len(replacement.encode("utf-8")) > self.max_file_bytes
+        ):
+            raise ToolValidationError("content exceeds write limit or is not text")
+        path = self._path(args["path"])
+        self._assert_mutable(path, self.workspace / args["path"])
+        if not path.is_file() or path.stat().st_size > self.max_file_bytes:
+            raise ToolValidationError(
+                "edit requires an existing file within the size limit"
+            )
+        data = await asyncio.to_thread(self._safe_read, path)
+        expected = self._expected_version(path, args)
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise ToolValidationError(
+                "file version changed; read it again before editing"
+            )
+        try:
+            original = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolValidationError("line editing requires UTF-8 text") from exc
+        if "\x00" in original or "\x00" in replacement:
+            raise ToolValidationError("binary files are unavailable")
+        lines = original.splitlines(keepends=True)
+        if end > len(lines):
+            raise ToolValidationError(
+                f"range exceeds the file's {len(lines)} existing lines; read_file again"
+            )
+
+        def ending(text: str) -> str:
+            if text.endswith("\r\n"):
+                return "\r\n"
+            # Match splitlines(), which also recognizes Unicode line endings.
+            return (
+                text[-1]
+                if text and text[-1] in "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+                else ""
+            )
+
+        if replacement and not ending(replacement):
+            replacement += ending(lines[end - 1])
+        changed = "".join(lines[: start - 1]) + replacement + "".join(lines[end:])
+        report = json.loads(
+            await self._write(
+                {"path": args["path"], "content": changed, "expected_sha256": expected},
+                artifact=False,
+            )
+        )
+        report.update(start_line=start, end_line=end)
+        return _json(report)
 
     async def run_tests(self, args: dict) -> str:
         _arguments(args, {"paths"})

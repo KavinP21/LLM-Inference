@@ -1,7 +1,6 @@
 """Long-lived workers may discard terminal histories without losing accounting."""
 
 import pytest
-
 from forge_llm.runtime import IterationScheduler, KVBlockPool
 
 
