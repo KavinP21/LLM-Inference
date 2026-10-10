@@ -1,8 +1,8 @@
 """Optional pinned MLX-LM replica adapter; not Forge kernels or quantization.
 
 The execution surface mirrors Forge's actor-owned submit/step/cancel/forget
-contract. Only local Qwen3-MoE 4-bit checkpoints with validated FP16/BF16 KV
-dimensions are supported. The byte budget covers persistent full KV buffers,
+contract. Local Qwen3-MoE and dense Qwen2/Qwen2.5 7B affine 4-bit checkpoints
+require validated FP16/BF16 KV dimensions. The budget covers full KV buffers,
 not weights, temporary forward-pass arrays, or total process memory.
 """
 
@@ -29,12 +29,85 @@ KV_STEP = 256
 
 
 @dataclass(frozen=True)
+class KVGeometry:
+    layers: int
+    heads: int
+    head_dim: int
+    hidden_size: int
+
+    @property
+    def bytes_per_token(self) -> int:
+        return self.layers * 2 * self.heads * self.head_dim * 2
+
+    @property
+    def scale_shape(self) -> list[int]:
+        return [self.heads * self.head_dim, self.hidden_size // 64]
+
+
+def _geometry(config: dict[str, Any]) -> KVGeometry:
+    family = config.get("model_type")
+    if family == "qwen3_moe":
+        expected = {
+            "num_hidden_layers": 48,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 4,
+            "head_dim": 128,
+            "hidden_size": 2048,
+        }
+    elif family == "qwen2":
+        expected = {
+            "num_hidden_layers": 28,
+            "num_attention_heads": 28,
+            "num_key_value_heads": 4,
+            "hidden_size": 3584,
+        }
+    else:
+        raise ValueError(
+            "mlx_lm runner supports validated Qwen3-MoE or dense Qwen2/Qwen2.5 7B checkpoints"
+        )
+    if any(
+        type(config.get(key)) is not int or config[key] != value
+        for key, value in expected.items()
+    ):
+        raise ValueError("checkpoint does not match a validated Qwen geometry")
+    if family == "qwen2":
+        # The pinned Qwen2 adapter computes this from hidden size / Q heads.
+        head_dim = config["hidden_size"] // config["num_attention_heads"]
+        if "head_dim" in config and (
+            type(config["head_dim"]) is not int or config["head_dim"] != head_dim
+        ):
+            raise ValueError(
+                "dense checkpoint head_dim disagrees with the attention geometry"
+            )
+    else:
+        head_dim = config["head_dim"]
+    enabled = config.get("use_sliding_window", False)
+    if type(enabled) is not bool or enabled:
+        raise ValueError("enabled or malformed sliding-window attention is unsupported")
+    window = config.get("sliding_window")
+    if window is not None:
+        if family != "qwen2" or config.get("use_sliding_window") is not False:
+            raise ValueError(
+                "nonnull sliding_window requires explicitly disabled dense attention metadata"
+            )
+        if type(window) is not int or window <= 0:
+            raise ValueError("invalid disabled sliding_window metadata")
+    return KVGeometry(
+        config["num_hidden_layers"],
+        config["num_key_value_heads"],
+        head_dim,
+        config["hidden_size"],
+    )
+
+
+@dataclass(frozen=True)
 class LocalCheckpoint:
     path: Path
     config: dict[str, Any]
     identity: dict[str, str]
     weight_bytes: int
     signatures: tuple[tuple[Path, int, int, int], ...]
+    geometry: KVGeometry
 
     def unchanged(self) -> bool:
         try:
@@ -65,20 +138,9 @@ def inspect_checkpoint(path: str | Path) -> LocalCheckpoint:
     if len(raw_config) > 1 << 20:
         raise ValueError("checkpoint configuration exceeds 1 MiB")
     config = json.loads(raw_config)
-    expected = {
-        "model_type": "qwen3_moe",
-        "num_hidden_layers": 48,
-        "num_attention_heads": 32,
-        "num_key_value_heads": 4,
-        "head_dim": 128,
-        "hidden_size": 2048,
-    }
-    if not isinstance(config, dict) or any(
-        config.get(k) != v for k, v in expected.items()
-    ):
-        raise ValueError(
-            "mlx_lm runner currently requires validated Qwen3-MoE 48-layer/4-KV-head/128-dimension checkpoints"
-        )
+    if not isinstance(config, dict):
+        raise ValueError("checkpoint configuration must be an object")
+    geometry = _geometry(config)
     for field in ("vocab_size", "max_position_embeddings"):
         if type(config.get(field)) is not int or not 0 < config[field] <= 1_000_000:
             raise ValueError(f"invalid checkpoint {field}")
@@ -87,16 +149,12 @@ def inspect_checkpoint(path: str | Path) -> LocalCheckpoint:
         or not 0 <= config["eos_token_id"] < config["vocab_size"]
     ):
         raise ValueError("invalid checkpoint EOS token")
-    if config.get("sliding_window") is not None or config.get(
-        "use_sliding_window", False
-    ):
-        raise ValueError(
-            "rotating/sliding-window KV is unsupported by this full-context runner"
-        )
     quantization = config.get("quantization", {})
     if (
         not isinstance(quantization, dict)
+        or type(quantization.get("bits")) is not int
         or quantization.get("bits") != 4
+        or type(quantization.get("group_size")) is not int
         or quantization.get("group_size") != 64
         or quantization.get("mode", "affine") != "affine"
     ):
@@ -156,14 +214,17 @@ def inspect_checkpoint(path: str | Path) -> LocalCheckpoint:
         )
     # Establish the actual two-byte K/V projection output path, rather than
     # assuming a torch_dtype label describes the safetensors contents.
-    for layer in range(48):
+    for layer in range(geometry.layers):
         for projection in ("k_proj", "v_proj"):
             name = f"model.layers.{layer}.self_attn.{projection}.scales"
             info = tensors.get(name, {})
-            if info.get("dtype") not in {"BF16", "F16"} or info.get("shape") != [
-                512,
-                32,
-            ]:
+            shape = info.get("shape")
+            if (
+                info.get("dtype") not in {"BF16", "F16"}
+                or not isinstance(shape, list)
+                or any(type(value) is not int for value in shape)
+                or shape != geometry.scale_shape
+            ):
                 raise ValueError(
                     "checkpoint K/V projection dimensions or dtype are unsupported"
                 )
@@ -181,6 +242,7 @@ def inspect_checkpoint(path: str | Path) -> LocalCheckpoint:
         identity,
         sum(p.stat().st_size for p in files),
         tuple(signatures),
+        geometry,
     )
 
 
@@ -231,7 +293,7 @@ def _load_runtime(checkpoint: LocalCheckpoint) -> _Runtime:
 
     def make_cache() -> list[Any]:
         caches = make_prompt_cache(model)
-        if len(caches) != 48 or any(
+        if len(caches) != checkpoint.geometry.layers or any(
             type(cache) is not KVCache or cache.step != KV_STEP for cache in caches
         ):
             raise BackendError("unexpected MLX-LM cache implementation")
@@ -281,7 +343,7 @@ class MlxLmRunner:
             raise ValueError("runtime context exceeds checkpoint context")
         self.max_model_length, self.kv_cache_bytes = max_model_length, kv_cache_bytes
         self.prefill_step_size = prefill_step_size
-        self.bytes_per_token = 48 * 2 * 4 * 128 * 2
+        self.bytes_per_token = self.checkpoint.geometry.bytes_per_token
         self._runtime = _runtime_loader(self.checkpoint)
         self.model = SimpleNamespace(config=SimpleNamespace(**self.checkpoint.config))
         self.checkpoint_identity = self.checkpoint.identity
@@ -292,6 +354,10 @@ class MlxLmRunner:
             "checkpoint_format": "mlx_lm_safetensors",
             "weight_storage_bytes": self.checkpoint.weight_bytes,
             "kv_bytes_per_token": self.bytes_per_token,
+            "model_type": self.checkpoint.config["model_type"],
+            "kv_layers": self.checkpoint.geometry.layers,
+            "kv_heads": self.checkpoint.geometry.heads,
+            "kv_head_dim": self.checkpoint.geometry.head_dim,
             "kv_allocation_step": KV_STEP,
             "kv_accounting": "persistent_full_KV_only; excludes transient arrays and weights",
         }
@@ -310,6 +376,9 @@ class MlxLmRunner:
         self._guard = guard
 
     def _observe_cache(self, *_: Any) -> None:
+        geometry = self.checkpoint.geometry
+        if len(self._cache) != geometry.layers:
+            raise BackendError("MLX-LM K/V layer count changed")
         total = 0
         for cache in self._cache:
             for value in (cache.keys, cache.values):
@@ -318,7 +387,12 @@ class MlxLmRunner:
                 if (
                     value.dtype.size != 2
                     or len(value.shape) != 4
-                    or (value.shape[0], value.shape[1], value.shape[3]) != (1, 4, 128)
+                    or any(
+                        type(dimension) is not int or dimension <= 0
+                        for dimension in value.shape
+                    )
+                    or (value.shape[0], value.shape[1], value.shape[3])
+                    != (1, geometry.heads, geometry.head_dim)
                 ):
                     raise BackendError("MLX-LM K/V dtype or dimensions changed")
                 total += value.nbytes
