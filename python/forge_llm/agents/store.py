@@ -256,6 +256,7 @@ class AgentStore:
         tools: list[str] | None = None,
         completion_required: bool = False,
         completion_root_only: bool = True,
+        media=(),
     ) -> None:
         with self.transaction():
             now = time.time()
@@ -281,7 +282,7 @@ class AgentStore:
                 ),
             )
             self.add_message(run_id, "root", "system", system)
-            self.add_message(run_id, "root", "user", task)
+            self.add_message(run_id, "root", "user", task, media=media)
             if tools is not None:
                 self.update_agent(run_id, "root", tools=tools)
             self.connection.execute(

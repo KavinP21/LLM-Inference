@@ -113,14 +113,18 @@ def test_media_reserves_advertised_context_before_inference(attachment):
 
     class Native:
         supports_native_tools = True
+        supports_context_limits = True
         max_model_length = 32768
         calls = 0
 
-        async def generate_action(self, messages, maximum, request_id, tool_specs):
+        async def generate_action(
+            self, messages, maximum, request_id, tool_specs, *, max_context_tokens
+        ):
             self.calls += 1
             assert messages[1].media == (attachment,)
             reserved = runtime.store.run(request_id.split(".")[0])["reserved_tokens"]
-            assert reserved == self.max_model_length + maximum
+            assert max_context_tokens == runtime.config.max_context_tokens
+            assert reserved == max_context_tokens + maximum
             return Generation(
                 '<tool_call>{"name":"finish","arguments":{"result":"observed"}}</tool_call>',
                 2000,
@@ -133,7 +137,7 @@ def test_media_reserves_advertised_context_before_inference(attachment):
     assert result.status == "completed" and backend.calls == 1
     assert result.usage.input_tokens == 2000 and result.usage.reserved_tokens == 0
     backend = Native()
-    runtime = AgentRuntime(backend, config=RuntimeConfig(max_total_tokens=32000))
+    runtime = AgentRuntime(backend, config=RuntimeConfig(max_total_tokens=24000))
     result = asyncio.run(runtime.run("Read the image", media=[attachment]))
     assert result.status == "failed" and backend.calls == 0
 
@@ -158,6 +162,9 @@ class Engine:
         self.prepared = None
         self.paths = []
         self.forgotten = False
+        self.submitted = 0
+        self.input_tokens = 17
+        self.discarded = 0
 
     def set_request_guard(self, guard):
         self.guard = guard
@@ -171,10 +178,11 @@ class Engine:
                     if part["type"] == "image":
                         self.paths.append(part["image"])
                         assert Path(part["image"]).is_file()
-        return SimpleNamespace(input_tokens=17)
+        return SimpleNamespace(input_tokens=self.input_tokens)
 
     def submit(self, prepared, maximum, eos):
-        assert prepared.input_tokens == 17 and eos == [248044]
+        assert prepared.input_tokens == self.input_tokens and eos == [248044]
+        self.submitted += 1
         return 1
 
     def step(self):
@@ -188,6 +196,11 @@ class Engine:
 
     def stats(self):
         return {"active_requests": 0}
+
+    def discard_prepared(self):
+        self.discarded += 1
+        self.last_prepared = self.prepared
+        self.prepared = None
 
     def close(self):
         pass
@@ -222,5 +235,6 @@ def test_qwen35_actor_uses_full_processor_and_removes_request_media(
 
     asyncio.run(run())
     assert engine.forgotten
-    assert engine.prepared[1]["enable_thinking"] is False
+    assert engine.last_prepared[1]["enable_thinking"] is False
+    assert engine.prepared is None and engine.discarded == 1
     assert all(not Path(path).exists() for path in engine.paths)

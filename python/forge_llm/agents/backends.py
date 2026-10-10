@@ -79,6 +79,35 @@ class WorkerUnavailableError(BackendError):
     retryable = True
 
 
+def validate_context_limit(value: int | None) -> int | None:
+    if value is not None and (type(value) is not int or not 1 <= value <= 1_000_000):
+        raise RequestValidationError(
+            "max_context_tokens must be an integer between 1 and 1000000"
+        )
+    return value
+
+
+def _qwen35_implementation_hash(directory: Path | None = None) -> str:
+    directory = directory or Path(__file__).resolve().parent.parent
+    files = (
+        "qwen35_engine.py",
+        "qwen35_checkpoint.py",
+        "qwen35_state.py",
+        "qwen35_speculative.py",
+        "speculative.py",
+        "agents/backends.py",
+        "agents/worker.py",
+        "agents/media.py",
+        "agents/protocol.py",
+        "agents/native_tools.py",
+    )
+    manifest = {
+        name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        for name in files
+    }
+    return hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+
+
 def validate_request(
     messages: Sequence[ChatMessage],
     max_tokens: int,
@@ -188,9 +217,20 @@ class WorkerConfig:
                 raise ValueError(
                     "qwen35 model and tokenizer must reference the same local directory"
                 )
-            if self.speculative is not None:
+            if self.speculative is not None and (
+                not isinstance(self.speculative, dict)
+                or set(self.speculative)
+                - {"draft_tokens", "verification_mode", "adaptive"}
+                or type(self.speculative.get("draft_tokens", 4)) is not int
+                or not 1 <= self.speculative.get("draft_tokens", 4) <= 8
+                or self.speculative.get("verification_mode", "block")
+                not in {"block", "sequential"}
+                or type(self.speculative.get("adaptive", True)) is not bool
+                or self.engine_options.get("temperature", 0) != 0
+                or self.engine_options.get("presence_penalty", 0) != 0
+            ):
                 raise ValueError(
-                    "configure Qwen3.5 speculation through its engine after qualification"
+                    "Qwen3.5 speculation requires bounded Qwen3.5 options and unmodified greedy sampling"
                 )
         if self.runner == "mlx_lm":
             if self.backend == "cuda" or self.cuda_visible_devices is not None:
@@ -236,7 +276,7 @@ class WorkerConfig:
             "max_num_sequences",
         } & self.engine_options.keys():
             raise ValueError("engine_options cannot override worker resource limits")
-        if self.speculative is not None:
+        if self.speculative is not None and self.runner != "qwen35":
             if not isinstance(self.speculative, dict) or self.backend == "cuda":
                 raise ValueError(
                     "speculative workers currently require an MLX configuration"
@@ -274,6 +314,8 @@ class LocalForgeBackend:
     the actor thread. No caller may concurrently access its non-thread-safe
     engine. Queue time counts against the generation deadline.
     """
+
+    supports_context_limits = True
 
     def __init__(
         self,
@@ -378,6 +420,7 @@ class LocalForgeBackend:
                 self.config.model,
                 max_model_length=self.config.max_model_length,
                 kv_cache_bytes=self.config.kv_cache_bytes,
+                speculative=self.config.speculative,
                 **{
                     (
                         {
@@ -538,6 +581,10 @@ class LocalForgeBackend:
         if self.config.runner in {"mlx_lm", "qwen35"}:
             self._runner_metadata.update(engine.metadata)
             self._artifact_identity.update(engine.checkpoint_identity)
+        if self.config.runner == "qwen35":
+            self._artifact_identity["adapter_implementation_sha256"] = (
+                _qwen35_implementation_hash()
+            )
         self._actual_backend = (
             "mlx"
             if self.config.speculative is not None
@@ -610,6 +657,7 @@ class LocalForgeBackend:
             "native_tool_calls": self.supports_native_tools,
             "enable_thinking": self.config.enable_thinking,
             "supports_media": self.config.runner == "qwen35",
+            "supports_context_limits": self.supports_context_limits,
             "native_call_dialect": self.native_call_dialect,
             "speculative": self.config.speculative,
             "last_speculative_stats": self._last_speculative_stats,
@@ -664,6 +712,7 @@ class LocalForgeBackend:
         cancel: threading.Event,
         deadline: float,
         tool_specs: list[dict[str, Any]] | None = None,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         def check() -> None:
             if cancel.is_set():
@@ -681,7 +730,9 @@ class LocalForgeBackend:
         self._load()
         check()
         if self.config.runner == "qwen35":
-            return self._generate_qwen35(messages, max_tokens, tool_specs, check)
+            return self._generate_qwen35(
+                messages, max_tokens, tool_specs, check, max_context_tokens
+            )
         try:
             template_options = {"tools": tool_specs} if tool_specs is not None else {}
             token_ids = self._tokenizer.apply_chat_template(
@@ -709,9 +760,12 @@ class LocalForgeBackend:
             raise RequestValidationError(
                 "chat template emitted invalid model token IDs"
             )
-        if len(token_ids) + max_tokens > self._context_limit:
+        context_limit = min(
+            self._context_limit, max_context_tokens or self._context_limit
+        )
+        if len(token_ids) + max_tokens > context_limit:
             raise ContextLengthError(
-                f"prompt has {len(token_ids)} tokens; {max_tokens} output tokens exceed the {self._context_limit}-token context"
+                f"prompt has {len(token_ids)} tokens; {max_tokens} output tokens exceed the {context_limit}-token context"
             )
         check()
         if self.config.speculative is not None:
@@ -787,68 +841,88 @@ class LocalForgeBackend:
             if self.config.runner == "mlx_lm":
                 self._last_runner_stats = self._engine.stats()
 
-    def _generate_qwen35(self, messages, max_tokens, tool_specs, check):
+    def _generate_qwen35(
+        self, messages, max_tokens, tool_specs, check, max_context_tokens
+    ):
         from .media import materialize_media
 
         self._engine.set_request_guard(check)
-        with tempfile.TemporaryDirectory(prefix="forge-worker-media-") as temporary:
-            turns = []
-            for index, message in enumerate(messages):
-                content = message.content
-                if message.media:
-                    directory = Path(temporary) / str(index)
-                    directory.mkdir(mode=0o700)
-                    content = [
-                        {"type": "text", "text": message.content},
-                        *materialize_media(message.media, directory),
-                    ]
-                turns.append({"role": message.role, "content": content})
-            prepared = self._engine.prepare_chat(
-                turns, tools=tool_specs, enable_thinking=self.config.enable_thinking
-            )
-            check()
-            if prepared.input_tokens + max_tokens > self._context_limit:
-                raise ContextLengthError(
-                    "expanded media prompt and output exceed the context limit"
+        try:
+            with tempfile.TemporaryDirectory(prefix="forge-worker-media-") as temporary:
+                turns = []
+                for index, message in enumerate(messages):
+                    content = message.content
+                    if message.media:
+                        directory = Path(temporary) / str(index)
+                        directory.mkdir(mode=0o700)
+                        content = [
+                            {"type": "text", "text": message.content},
+                            *materialize_media(message.media, directory),
+                        ]
+                    turns.append({"role": message.role, "content": content})
+                prepared = self._engine.prepare_chat(
+                    turns, tools=tool_specs, enable_thinking=self.config.enable_thinking
                 )
-            request = self._engine.submit(prepared, max_tokens, self._eos)
-            output, completed = [], False
-            try:
-                while not completed:
-                    check()
-                    for event in self._engine.step():
-                        if event.request_id != request:
-                            raise BackendError(
-                                "engine emitted an unowned request token"
-                            )
-                        output.append(int(event.token))
-                        completed = bool(event.finished)
-                    if len(output) > max_tokens:
-                        raise BackendError("Qwen3.5 exceeded its token budget")
                 check()
-                response = self._engine.response_metadata(
-                    output,
-                    enable_thinking=self.config.enable_thinking,
-                    input_tokens=prepared.input_tokens,
+                context_limit = min(
+                    self._context_limit, max_context_tokens or self._context_limit
                 )
-                self._completed += 1
-                return Generation(
-                    response.text,
-                    prepared.input_tokens,
-                    len(output),
-                    "stop" if output and output[-1] in self._eos else "length",
-                    self.config.model,
-                )
+                if prepared.input_tokens + max_tokens > context_limit:
+                    raise ContextLengthError(
+                        "expanded media prompt and output exceed the context limit"
+                    )
+                request = self._engine.submit(prepared, max_tokens, self._eos)
+                output, completed = [], False
+                try:
+                    while not completed:
+                        check()
+                        for event in self._engine.step():
+                            if event.request_id != request:
+                                raise BackendError(
+                                    "engine emitted an unowned request token"
+                                )
+                            output.append(int(event.token))
+                            completed = bool(event.finished)
+                        if len(output) > max_tokens:
+                            raise BackendError("Qwen3.5 exceeded its token budget")
+                    check()
+                    response = self._engine.response_metadata(
+                        output,
+                        enable_thinking=self.config.enable_thinking,
+                        input_tokens=prepared.input_tokens,
+                    )
+                    self._completed += 1
+                    return Generation(
+                        response.text,
+                        prepared.input_tokens,
+                        len(output),
+                        "stop" if output and output[-1] in self._eos else "length",
+                        self.config.model,
+                    )
+                finally:
+                    if not completed:
+                        self._engine.cancel(request)
+                    self._forget(request)
+        finally:
+            try:
+                discard = getattr(self._engine, "discard_prepared", None)
+                if callable(discard):
+                    discard()
             finally:
-                if not completed:
-                    self._engine.cancel(request)
-                self._forget(request)
+                self._engine.set_request_guard(lambda: None)
                 self._last_runner_stats = self._engine.stats()
 
     async def generate(
-        self, messages: Sequence[ChatMessage], max_tokens: int, request_id: str
+        self,
+        messages: Sequence[ChatMessage],
+        max_tokens: int,
+        request_id: str,
+        *,
+        max_context_tokens: int | None = None,
     ) -> Generation:
-        return await self._dispatch(messages, max_tokens, request_id)
+        return await self._dispatch(
+            messages, max_tokens, request_id, max_context_tokens=max_context_tokens
+        )
 
     async def generate_action(
         self,
@@ -856,6 +930,8 @@ class LocalForgeBackend:
         max_tokens: int,
         request_id: str,
         tool_specs: Sequence[dict[str, Any]],
+        *,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         if not self.supports_native_tools:
             raise RequestValidationError(
@@ -864,7 +940,13 @@ class LocalForgeBackend:
         from .native_tools import validate_tool_specs
 
         specs = validate_tool_specs(tool_specs)
-        return await self._dispatch(messages, max_tokens, request_id, specs)
+        return await self._dispatch(
+            messages,
+            max_tokens,
+            request_id,
+            specs,
+            max_context_tokens=max_context_tokens,
+        )
 
     async def _dispatch(
         self,
@@ -872,10 +954,17 @@ class LocalForgeBackend:
         max_tokens: int,
         request_id: str,
         tool_specs: list[dict[str, Any]] | None = None,
+        *,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
         )
+        max_context_tokens = validate_context_limit(max_context_tokens)
+        if max_context_tokens is not None and max_tokens >= max_context_tokens:
+            raise ContextLengthError(
+                "output budget leaves no room in the requested context"
+            )
         cancel = threading.Event()
         with self._lock:
             if self._closed:
@@ -887,7 +976,13 @@ class LocalForgeBackend:
             self._requests[request_id] = cancel
         deadline = time.monotonic() + self.config.request_timeout
         future = self._executor.submit(
-            self._generate, messages, max_tokens, cancel, deadline, tool_specs
+            self._generate,
+            messages,
+            max_tokens,
+            cancel,
+            deadline,
+            tool_specs,
+            max_context_tokens,
         )
 
         # Keep capacity reserved until the actor actually stops. asyncio task
@@ -1022,6 +1117,7 @@ class RemoteWorkerBackend:
         self._closed = False
         self.identity: dict[str, Any] | None = None
         self.supports_native_tools = False
+        self.supports_context_limits = False
 
     def _http(
         self,
@@ -1112,12 +1208,23 @@ class RemoteWorkerBackend:
         if type(native) is not bool:
             raise BackendError("worker returned an invalid native tool capability")
         self.supports_native_tools = native
+        context_limits = result.get("supports_context_limits", False)
+        if type(context_limits) is not bool:
+            raise BackendError("worker returned an invalid context-limit capability")
+        self.supports_context_limits = context_limits
         return result
 
     async def generate(
-        self, messages: Sequence[ChatMessage], max_tokens: int, request_id: str
+        self,
+        messages: Sequence[ChatMessage],
+        max_tokens: int,
+        request_id: str,
+        *,
+        max_context_tokens: int | None = None,
     ) -> Generation:
-        return await self._dispatch(messages, max_tokens, request_id)
+        return await self._dispatch(
+            messages, max_tokens, request_id, max_context_tokens=max_context_tokens
+        )
 
     async def generate_action(
         self,
@@ -1125,6 +1232,8 @@ class RemoteWorkerBackend:
         max_tokens: int,
         request_id: str,
         tool_specs: Sequence[dict[str, Any]],
+        *,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         from .native_tools import validate_tool_specs
 
@@ -1135,7 +1244,13 @@ class RemoteWorkerBackend:
             raise RequestValidationError(
                 "remote worker does not support native tool calls"
             )
-        return await self._dispatch(messages, max_tokens, request_id, specs)
+        return await self._dispatch(
+            messages,
+            max_tokens,
+            request_id,
+            specs,
+            max_context_tokens=max_context_tokens,
+        )
 
     async def _dispatch(
         self,
@@ -1143,12 +1258,22 @@ class RemoteWorkerBackend:
         max_tokens: int,
         request_id: str,
         tool_specs: list[dict[str, Any]] | None = None,
+        *,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
         )
         if self._closed:
             raise WorkerUnavailableError("worker client is closed")
+        max_context_tokens = validate_context_limit(max_context_tokens)
+        if max_context_tokens is not None:
+            if not self.supports_context_limits:
+                await self.health()
+            if not self.supports_context_limits:
+                raise RequestValidationError(
+                    "remote worker does not enforce request context limits"
+                )
         if request_id in self._active:
             raise ValueError("request_id is already active on this worker client")
         if len(self._active) >= self.max_concurrency:
@@ -1164,6 +1289,8 @@ class RemoteWorkerBackend:
         }
         if tool_specs is not None:
             body["tools"] = tool_specs
+        if max_context_tokens is not None:
+            body["max_context_tokens"] = max_context_tokens
         submitted = False
         try:
             # One bounded retry only for a transport failure, with idempotency.
@@ -1354,6 +1481,13 @@ class WorkerPool:
         )
 
     @property
+    def supports_context_limits(self) -> bool:
+        return all(
+            getattr(backend, "supports_context_limits", False) is True
+            for backend in self.backends.values()
+        )
+
+    @property
     def supports_native_tools(self) -> bool:
         return all(
             getattr(backend, "supports_native_tools", False) is True
@@ -1379,8 +1513,15 @@ class WorkerPool:
         request_id: str,
         *,
         worker: str | None = None,
+        max_context_tokens: int | None = None,
     ) -> Generation:
-        return await self._dispatch(messages, max_tokens, request_id, worker=worker)
+        return await self._dispatch(
+            messages,
+            max_tokens,
+            request_id,
+            worker=worker,
+            max_context_tokens=max_context_tokens,
+        )
 
     async def generate_action(
         self,
@@ -1390,6 +1531,7 @@ class WorkerPool:
         tool_specs: Sequence[dict[str, Any]],
         *,
         worker: str | None = None,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         if not self.supports_native_tools:
             raise RequestValidationError(
@@ -1399,7 +1541,12 @@ class WorkerPool:
 
         specs = validate_tool_specs(tool_specs)
         return await self._dispatch(
-            messages, max_tokens, request_id, worker=worker, tool_specs=specs
+            messages,
+            max_tokens,
+            request_id,
+            worker=worker,
+            tool_specs=specs,
+            max_context_tokens=max_context_tokens,
         )
 
     async def _dispatch(
@@ -1410,12 +1557,23 @@ class WorkerPool:
         *,
         worker: str | None = None,
         tool_specs: list[dict[str, Any]] | None = None,
+        max_context_tokens: int | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
         )
         if worker is not None and worker not in self.backends:
             raise ValueError("unknown worker route")
+        max_context_tokens = validate_context_limit(max_context_tokens)
+        if max_context_tokens is not None and not self.supports_context_limits:
+            raise RequestValidationError(
+                "every pool replica must support request context limits"
+            )
+        backend_options = (
+            {}
+            if max_context_tokens is None
+            else {"max_context_tokens": max_context_tokens}
+        )
         selected: str | None = None
         async with self._condition:
             if self._closed:
@@ -1459,10 +1617,14 @@ class WorkerPool:
                         await self._condition.wait()
             if tool_specs is not None:
                 return await self.backends[selected].generate_action(
-                    messages, max_tokens, request_id, tool_specs=tool_specs
+                    messages,
+                    max_tokens,
+                    request_id,
+                    tool_specs=tool_specs,
+                    **backend_options,
                 )
             return await self.backends[selected].generate(
-                messages, max_tokens, request_id
+                messages, max_tokens, request_id, **backend_options
             )
         finally:
             async with self._condition:

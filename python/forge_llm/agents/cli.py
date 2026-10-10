@@ -153,9 +153,32 @@ async def worker_identities(pool: WorkerPool) -> dict:
                     "worker lacks the artifact/tokenizer fingerprints required for resumable runs"
                 )
         result[name] = {key: health.get(key) for key in keys}
-        for key in ("processor_signature", "enable_thinking", "native_call_dialect"):
+        for key in (
+            "processor_signature",
+            "enable_thinking",
+            "native_call_dialect",
+            "adapter_implementation_sha256",
+        ):
             if key in health:
+                if key == "adapter_implementation_sha256" and (
+                    not isinstance(health[key], str)
+                    or len(health[key]) != 64
+                    or any(
+                        character not in "0123456789abcdef" for character in health[key]
+                    )
+                ):
+                    raise ValueError(
+                        "worker returned an invalid adapter implementation fingerprint"
+                    )
                 result[name][key] = health[key]
+        if (
+            health.get("runner") == "mlx_vlm"
+            and health.get("model_type") == "qwen3_5"
+            and "adapter_implementation_sha256" not in health
+        ):
+            raise ValueError(
+                "Qwen3.5 worker lacks the adapter implementation fingerprint required for resumable runs"
+            )
     return result
 
 
