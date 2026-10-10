@@ -15,6 +15,7 @@ import math
 import os
 import secrets
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -28,6 +29,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .media import MAX_MEDIA_REQUEST_BYTES, MAX_TOTAL_MEDIA_BYTES, validate_media
 from .protocol import ChatMessage, Generation, ModelBackend
 
 
@@ -96,6 +98,7 @@ def validate_request(
         raise ValueError("messages must contain 1 to 256 entries")
     result = []
     total = 0
+    media_total = 0
     for message in messages:
         if not isinstance(message, ChatMessage):
             raise TypeError("each message must be a ChatMessage")
@@ -109,7 +112,15 @@ def validate_request(
         if not isinstance(message.content, str):
             raise TypeError("message content must be text")
         total += len(message.content.encode("utf-8"))
-        result.append(message)
+        media = validate_media(message.media)
+        if media and message.role != "user":
+            raise ValueError("media attachments require the user role")
+        media_total += sum(
+            len(item["data"]) * 3 // 4 - item["data"].count("=") for item in media
+        )
+        if media_total > MAX_TOTAL_MEDIA_BYTES:
+            raise ValueError("conversation media exceeds the byte limit")
+        result.append(ChatMessage(message.role, message.content, media))
     if total > 1 << 20:
         raise ValueError("chat messages exceed the 1 MiB limit")
     return tuple(result)
@@ -137,6 +148,7 @@ class WorkerConfig:
     local_files_only: bool = True
     native_tool_calls: bool = False
     runner: str = "forge"
+    enable_thinking: bool = False
     # Set only in independently launched processes; never mutate the parent's GPU.
     cuda_visible_devices: str | None = None
 
@@ -145,8 +157,41 @@ class WorkerConfig:
             raise ValueError("model and tokenizer are required")
         if self.backend not in {"auto", "mlx", "cuda"}:
             raise ValueError("backend must be auto, mlx, or cuda")
-        if self.runner not in {"forge", "mlx_lm"}:
-            raise ValueError("runner must be forge or mlx_lm")
+        if self.runner not in {"forge", "mlx_lm", "qwen35"}:
+            raise ValueError("runner must be forge, mlx_lm or qwen35")
+        if type(self.enable_thinking) is not bool:
+            raise TypeError("enable_thinking must be a boolean")
+        if self.enable_thinking and self.runner != "qwen35":
+            raise ValueError("thinking configuration requires the qwen35 runner")
+        if self.runner == "qwen35":
+            if self.backend == "cuda" or self.cuda_visible_devices is not None:
+                raise ValueError("qwen35 requires Apple MLX execution")
+            if not self.local_files_only:
+                raise ValueError("qwen35 requires an already local checkpoint")
+            if not isinstance(
+                self.engine_options, dict
+            ) or self.engine_options.keys() - {
+                "prefill_step_size",
+                "max_image_pixels",
+                "max_video_frames",
+                "max_video_seconds",
+                "temperature",
+                "top_p",
+                "top_k",
+                "presence_penalty",
+            }:
+                raise ValueError("unsupported qwen35 engine options")
+            if (
+                not Path(self.model).is_dir()
+                or Path(self.model).resolve() != Path(self.tokenizer).resolve()
+            ):
+                raise ValueError(
+                    "qwen35 model and tokenizer must reference the same local directory"
+                )
+            if self.speculative is not None:
+                raise ValueError(
+                    "configure Qwen3.5 speculation through its engine after qualification"
+                )
         if self.runner == "mlx_lm":
             if self.backend == "cuda" or self.cuda_visible_devices is not None:
                 raise ValueError("mlx_lm runner requires the MLX device backend")
@@ -323,6 +368,37 @@ class LocalForgeBackend:
         if self._engine_factory:
             engine = self._engine_factory()
             model_config = getattr(getattr(engine, "model", None), "config", None)
+        elif self.config.runner == "qwen35":
+            from ..qwen35_engine import Qwen35Engine
+
+            engine = Qwen35Engine(
+                self.config.model,
+                max_model_length=self.config.max_model_length,
+                kv_cache_bytes=self.config.kv_cache_bytes,
+                **{
+                    (
+                        {
+                            "prefill_step_size": "prefill_chunk_size",
+                            "max_image_pixels": "image_pixels_limit",
+                        }.get(key, key)
+                    ): value
+                    for key, value in self.config.engine_options.items()
+                },
+            )
+            model_config = getattr(engine, "config", engine.model.config)
+            self._artifact_identity.update(engine.checkpoint_identity)
+            self._artifact_identity["tokenizer_signature"] = (
+                engine.checkpoint_identity.get("tokenizer_signature")
+                or hashlib.sha256(
+                    json.dumps(
+                        {
+                            "vocab": tokenizer.get_vocab(),
+                            "chat_template": tokenizer.chat_template,
+                        },
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()
+            )
         elif self.config.runner == "mlx_lm":
             from .mlx_lm_runner import MlxLmRunner
 
@@ -456,7 +532,7 @@ class LocalForgeBackend:
             )
         self._tokenizer = tokenizer
         self._engine = engine
-        if self.config.runner == "mlx_lm":
+        if self.config.runner in {"mlx_lm", "qwen35"}:
             self._runner_metadata.update(engine.metadata)
             self._artifact_identity.update(engine.checkpoint_identity)
         self._actual_backend = (
@@ -529,6 +605,8 @@ class LocalForgeBackend:
             "completed": self._completed,
             "capabilities": ["greedy_chat", "cancellation", "replica"],
             "native_tool_calls": self.supports_native_tools,
+            "enable_thinking": self.config.enable_thinking,
+            "supports_media": self.config.runner == "qwen35",
             "speculative": self.config.speculative,
             "last_speculative_stats": self._last_speculative_stats,
             **self._artifact_identity,
@@ -541,7 +619,10 @@ class LocalForgeBackend:
 
     def _chat_messages(self, messages: tuple[ChatMessage, ...]) -> list[dict[str, str]]:
         if self._model_type != "gemma3_text":
-            return [asdict(message) for message in messages]
+            return [
+                {"role": message.role, "content": message.content}
+                for message in messages
+            ]
         # Gemma's native template has no system role and requires alternating
         # user/assistant turns. Preserve the coordinator instructions in the
         # first user turn, and combine adjacent evidence messages of one role.
@@ -585,6 +666,12 @@ class LocalForgeBackend:
         check()
         self._load()
         check()
+        if self.config.runner == "qwen35":
+            return self._generate_qwen35(messages, max_tokens, tool_specs, check)
+        if any(message.media for message in messages):
+            raise RequestValidationError(
+                "image/video requests require the qwen35 runner"
+            )
         try:
             template_options = {"tools": tool_specs} if tool_specs is not None else {}
             token_ids = self._tokenizer.apply_chat_template(
@@ -688,6 +775,64 @@ class LocalForgeBackend:
                 self._engine.cancel(engine_request_id)
             self._forget(engine_request_id)
             if self.config.runner == "mlx_lm":
+                self._last_runner_stats = self._engine.stats()
+
+    def _generate_qwen35(self, messages, max_tokens, tool_specs, check):
+        from .media import materialize_media
+
+        self._engine.set_request_guard(check)
+        with tempfile.TemporaryDirectory(prefix="forge-worker-media-") as temporary:
+            turns = []
+            for index, message in enumerate(messages):
+                content = message.content
+                if message.media:
+                    directory = Path(temporary) / str(index)
+                    directory.mkdir(mode=0o700)
+                    content = [
+                        {"type": "text", "text": message.content},
+                        *materialize_media(message.media, directory),
+                    ]
+                turns.append({"role": message.role, "content": content})
+            prepared = self._engine.prepare_chat(
+                turns, tools=tool_specs, enable_thinking=self.config.enable_thinking
+            )
+            check()
+            if prepared.input_tokens + max_tokens > self._context_limit:
+                raise ContextLengthError(
+                    "expanded media prompt and output exceed the context limit"
+                )
+            request = self._engine.submit(prepared, max_tokens, self._eos)
+            output, completed = [], False
+            try:
+                while not completed:
+                    check()
+                    for event in self._engine.step():
+                        if event.request_id != request:
+                            raise BackendError(
+                                "engine emitted an unowned request token"
+                            )
+                        output.append(int(event.token))
+                        completed = bool(event.finished)
+                    if len(output) > max_tokens:
+                        raise BackendError("Qwen3.5 exceeded its token budget")
+                check()
+                response = self._engine.response_metadata(
+                    output,
+                    enable_thinking=self.config.enable_thinking,
+                    input_tokens=prepared.input_tokens,
+                )
+                self._completed += 1
+                return Generation(
+                    response.text,
+                    prepared.input_tokens,
+                    len(output),
+                    "stop" if output and output[-1] in self._eos else "length",
+                    self.config.model,
+                )
+            finally:
+                if not completed:
+                    self._engine.cancel(request)
+                self._forget(request)
                 self._last_runner_stats = self._engine.stats()
 
     async def generate(
@@ -813,6 +958,7 @@ class RemoteWorkerBackend:
         poll_interval: float = 0.05,
         allow_insecure: bool = False,
         max_response_bytes: int = 2 << 20,
+        max_request_bytes: int = 1 << 20,
     ) -> None:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -851,6 +997,14 @@ class RemoteWorkerBackend:
         self.connect_timeout = _positive(connect_timeout, "connect_timeout")
         self.poll_interval = _positive(poll_interval, "poll_interval")
         self.max_response_bytes = max_response_bytes
+        if (
+            type(max_request_bytes) is not int
+            or not 1 <= max_request_bytes <= MAX_MEDIA_REQUEST_BYTES
+        ):
+            raise ValueError(
+                "max_request_bytes exceeds the bounded media transport limit"
+            )
+        self.max_request_bytes = max_request_bytes
         self._opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), _NoRedirect()
         )
@@ -871,8 +1025,8 @@ class RemoteWorkerBackend:
             if body is None
             else json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
         )
-        if payload is not None and len(payload) > 1 << 20:
-            raise ValueError("request body exceeds 1 MiB")
+        if payload is not None and len(payload) > self.max_request_bytes:
+            raise ValueError("request body exceeds the configured worker size limit")
         request = urllib.request.Request(
             self.url + path,
             data=payload,
@@ -1381,6 +1535,9 @@ class LocalProcessBackend(RemoteWorkerBackend):
                 token,
                 max_concurrency=1,
                 request_timeout=config.request_timeout,
+                max_request_bytes=MAX_MEDIA_REQUEST_BYTES
+                if config.runner == "qwen35"
+                else 1 << 20,
             )
             backend.process = process
             backend._stderr_task = stderr_task

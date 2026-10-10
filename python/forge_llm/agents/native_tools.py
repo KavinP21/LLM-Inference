@@ -482,6 +482,103 @@ def _validate_schema(value: Any, schema: dict, location: str = "arguments") -> N
             raise ProtocolError(f"{location} violates exclusiveMaximum")
 
 
+def _xml_argument(raw: str, schema: dict) -> Any:
+    """Decode only schema-advertised types; strings retain their line indentation."""
+    kinds = schema.get("type", "string")
+    kinds = {kinds} if isinstance(kinds, str) else set(kinds)
+    if "type" not in schema:
+        for option in schema.get("anyOf", []) + schema.get("oneOf", []):
+            nested = option.get("type", "string")
+            kinds.update([nested] if isinstance(nested, str) else nested)
+    scalar = raw.strip()
+    if "null" in kinds and scalar in {"null", "None"}:
+        value = None
+    elif "string" in kinds and not (
+        ("object" in kinds and scalar.startswith("{"))
+        or ("array" in kinds and scalar.startswith("["))
+    ):
+        value = raw
+    elif "boolean" in kinds and scalar in {"true", "false", "True", "False"}:
+        value = scalar in {"true", "True"}
+    else:
+        try:
+            value = json.loads(
+                scalar,
+                object_pairs_hook=_unique_object,
+                parse_constant=lambda value: (_ for _ in ()).throw(
+                    ProtocolError(f"invalid JSON constant: {value}")
+                ),
+            )
+        except (ValueError, RecursionError) as exc:
+            raise ProtocolError(f"invalid typed native parameter: {exc}") from exc
+    _validate(value, schema)
+    return value
+
+
+def _native_xml_call(body: str, catalog: Mapping[str, dict]) -> dict:
+    """Parse Qwen3-Coder's bounded tag grammar, without an XML/entity evaluator."""
+    opening = re.match(r"<function=([A-Za-z_][A-Za-z0-9_-]{0,63})>", body)
+    if opening is None or not body.endswith("</function>"):
+        raise ProtocolError("native XML requires one complete function block")
+    name = opening.group(1)
+    if name not in catalog:
+        raise ProtocolError(f"native function is not currently advertised: {name}")
+    schema = catalog[name]
+    properties = schema.get("properties", {})
+    inner = body[opening.end() : -len("</function>")]
+    arguments = {}
+    position = 0
+    while position < len(inner):
+        while position < len(inner) and inner[position] in " \t\r\n":
+            position += 1
+        if position == len(inner):
+            break
+        parameter = re.match(
+            r"<parameter=([A-Za-z_][A-Za-z0-9_-]{0,63})>", inner[position:]
+        )
+        if parameter is None:
+            raise ProtocolError(
+                "native XML requires exact parameter tags without prose"
+            )
+        key = parameter.group(1)
+        if key in arguments:
+            raise ProtocolError(f"duplicate native parameter: {key}")
+        if key not in properties:
+            raise ProtocolError(f"native parameter is not advertised: {key}")
+        start = position + parameter.end()
+        end = inner.find("</parameter>", start)
+        if end < 0:
+            raise ProtocolError("native XML requires a complete parameter block")
+        raw = inner[start:end]
+        if any(
+            marker in raw
+            for marker in (
+                "<parameter=",
+                "<function=",
+                "</function>",
+                "<tool_call>",
+                "</tool_call>",
+                "<!DOCTYPE",
+                "<!ENTITY",
+            )
+        ):
+            raise ProtocolError(
+                "native XML parameter contains ambiguous control markup"
+            )
+        # Remove exactly the template's boundary newlines, not indentation in code.
+        if raw.startswith("\r\n"):
+            raw = raw[2:]
+        elif raw.startswith("\n"):
+            raw = raw[1:]
+        if raw.endswith("\r\n"):
+            raw = raw[:-2]
+        elif raw.endswith("\n"):
+            raw = raw[:-1]
+        arguments[key] = _xml_argument(raw, properties[key])
+        position = end + len("</parameter>")
+    return {"name": name, "arguments": arguments}
+
+
 def parse_native_action(
     text: str, tool_specs: Sequence[dict], *, max_chars: int = 32_768
 ) -> dict[str, Any]:
@@ -495,10 +592,19 @@ def parse_native_action(
         for spec in validate_tool_specs(tool_specs)
     }
     body = text.strip()
+    wrapped = body.startswith("<tool_call>")
     if body.startswith("<tool_call>"):
         if not body.endswith("</tool_call>"):
             raise ProtocolError("native call requires one complete tool_call wrapper")
         body = body[len("<tool_call>") : -len("</tool_call>")].strip()
+    if body.startswith("<function="):
+        if not wrapped:
+            raise ProtocolError(
+                "native XML function requires a complete tool_call wrapper"
+            )
+        body = json.dumps(
+            _native_xml_call(body, catalog), ensure_ascii=False, allow_nan=False
+        )
     try:
         call = json.loads(
             body,
@@ -609,15 +715,24 @@ def parse_native_actions(
         if len(actions) >= max_calls:
             raise ProtocolError(f"native batch exceeds its {max_calls}-call allowance")
         start = skip_whitespace(position + len("<tool_call>"))
-        try:
-            _, end = decoder.raw_decode(body, start)
-        except (ValueError, RecursionError) as exc:
-            raise ProtocolError(f"invalid native batch JSON: {exc}") from exc
+        if body.startswith("<function=", start):
+            closing = body.find("</function>", start)
+            if closing < 0:
+                raise ProtocolError("native XML requires an exact closing function tag")
+            end = closing + len("</function>")
+        else:
+            try:
+                _, end = decoder.raw_decode(body, start)
+            except (ValueError, RecursionError) as exc:
+                raise ProtocolError(f"invalid native batch JSON: {exc}") from exc
         position = skip_whitespace(end)
         if not body.startswith("</tool_call>", position):
             raise ProtocolError("native call requires an exact closing tool_call tag")
         # Retain only decoded JSON, not an extracted prose fragment. Validation
         # of all calls completes before the caller receives the returned list.
-        actions.append(parse_native_action(body[start:end], specs, max_chars=max_chars))
+        payload = body[start:end]
+        if payload.startswith("<function="):
+            payload = "<tool_call>" + payload + "</tool_call>"
+        actions.append(parse_native_action(payload, specs, max_chars=max_chars))
         position = skip_whitespace(position + len("</tool_call>"))
     return actions
