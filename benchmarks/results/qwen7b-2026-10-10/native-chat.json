@@ -46,5 +46,14 @@
   "ready_status": "Ready \u00b7 Apple M3 Max \u00b7 32K context",
   "multi_turn_passed": true,
   "load_error_retained_after_clear": true,
-  "worker_closed": true
+  "worker_closed": true,
+  "ui_source_binding": {
+    "recorded_utc": "2026-10-10T07:41:12.350442+00:00",
+    "commit": "7a84d75a87cf8c9b0c7422a6501bc92c7e904952",
+    "sha256": {
+      "tools/forge_chat.py": "2a12fa109f478d42dd819da7b68194faa695996497fdf1eea1695b85ca3cc9ce",
+      "tools/forge_chat_runtime.py": "f5862873bd0e7aeed61a346e6e5d9d07c9f23ed91ebf6961207bf8dc39802b30"
+    },
+    "method": "Post-run binding to committed UI files verified byte-identical to the qualification commit and known unchanged throughout this operator-controlled check. The recorded dirty checkout contained CI/gitattributes edits; UI/runtime files were unchanged. The dirty flag is retained."
+  }
 }
