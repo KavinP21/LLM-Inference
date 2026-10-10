@@ -1,0 +1,44 @@
+{
+  "workers": [
+    {
+      "type": "process",
+      "name": "replica-1",
+      "model": "models/qwen2.5-7b-mlx",
+      "tokenizer": "models/qwen2.5-7b-mlx",
+      "backend": "mlx",
+      "max_model_length": 8192,
+      "kv_cache_bytes": 536870912,
+      "engine_options": {
+        "prefill_step_size": 256
+      },
+      "native_tool_calls": true,
+      "runner": "mlx_lm"
+    },
+    {
+      "type": "process",
+      "name": "replica-2",
+      "model": "models/qwen2.5-7b-mlx",
+      "tokenizer": "models/qwen2.5-7b-mlx",
+      "backend": "mlx",
+      "max_model_length": 8192,
+      "kv_cache_bytes": 536870912,
+      "engine_options": {
+        "prefill_step_size": 256
+      },
+      "native_tool_calls": true,
+      "runner": "mlx_lm"
+    }
+  ],
+  "runtime": {
+    "max_agents": 6,
+    "max_depth": 2,
+    "max_concurrent_generations": 2,
+    "max_output_tokens": 256,
+    "max_steps_per_agent": 20,
+    "max_total_tokens": 128000,
+    "max_context_tokens": 8192,
+    "deadline_seconds": 900,
+    "tool_timeout_seconds": 75,
+    "max_tool_result_chars": 2000
+  }
+}
