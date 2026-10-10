@@ -141,7 +141,8 @@ ordinary sampling, actual visual child tasks and all nine desktop checks passed.
 Speculation passed repeated rejection, live recurrent cancellation, allocation
 boundaries and image/video token comparisons. Warmed ratios were 1.920×/1.006×/0.919×
 for copying/code/arithmetic; the default remains off. The final full regression
-passed **1,082 Python tests without skips**, plus fresh C++ host checks and GitHub CI.
+passed **1,085 Python tests without skips**, including a follow-up public context-manager
+lifecycle fix, plus fresh C++ host checks and GitHub CI.
 
 See [Qwen3.5 setup, qualification and limits](docs/qwen35.md). No Qwen3.5 CUDA,
 audio, MTP drafter, tensor/pipeline parallelism or full 262K qualification is claimed.

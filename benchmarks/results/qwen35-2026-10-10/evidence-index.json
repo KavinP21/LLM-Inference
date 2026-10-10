@@ -27,5 +27,15 @@
     "Block speculation off by default; code/arithmetic offer no demonstrated speed improvement.",
     "17 direct ordinary-reference continuation tokens plus separately qualified 32K execution.",
     "Upstream MLX-VLM model execution; no Forge-native Qwen3.5 kernels/prefix batching."
-  ]
+  ],
+  "context_manager_followup": {
+    "qualified_commit": "5b3bdadae8f2816d0c766911711caf7a8bd0c981",
+    "runtime_source_sha256": "914c5068ceeb10817568fd4279b6fa0ea731526c768af305c85b2ca046ea3428",
+    "reports_sha256": {
+      "context-manager-regression.json": "da9c57162e5ab3b9b4e0b40e0208cd88f93809f9288f92656bc13cdfd6802c1a",
+      "context-manager-tests.xml": "5304b067672b168a4c05e644e6a4b3199bc8b9db1d1098be5f63c4e1960b59f6",
+      "context-manager-smoke.json": "d3cd322c76618efdc5ba08bd8d43cc03769950d69ad854d3ae886e84e6dd1c36"
+    },
+    "scope": "Adds public context entry/exit only; full1085 regression and actual default-model response40 with model/state cleanup. Earlier model/task/timing reports retain their original source identity."
+  }
 }

@@ -67,6 +67,12 @@ after execution. Subsequent drivers also enforce an after-run source check.
 | [Tasks](agents-final.json) | All four cases pass; 25.93/56.08 seconds coding, 8.35/51.44 documents; two completed children per delegated case. Delegation slower; small development fixtures. |
 | [Final regression](regression-final-summary.json), [JUnit](regression-final-tests.xml) | 1,082 tests, zero skips/failures/errors; Metal, loopback, source-mutation guards and fresh C++ host validation. The earlier 1,080-test checkpoint report is retained separately. |
 
-Later source changes to evidence drivers add provenance checks only; the qualified
-model/worker runtime hash remains the same. No original-FP16, general task quality,
+The model/worker measurements above retain their original source hash. A subsequent
+public context-manager interface fix has its own
+[1,085-test regression](context-manager-regression.json) and
+[JUnit](context-manager-tests.xml), plus an actual
+[default-model context smoke](context-manager-smoke.json) on clean source `5b3bdad`.
+The documented pattern returns `40` for `17+23` and closes model/state ownership.
+The interface addition does not change inference math or worker/UI
+generation. No original-FP16, general task quality,
 262K semantic qualification, NVIDIA or multi-host claim is made.
