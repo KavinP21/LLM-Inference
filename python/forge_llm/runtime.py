@@ -308,6 +308,17 @@ class IterationScheduler:
         except KeyError as exc:
             raise KeyError(f"unknown request id {request_id}") from exc
 
+    def forget(self, request_id: int) -> None:
+        """Drop terminal history after its consumer has collected the output."""
+        request = self.request(request_id)
+        if request.state not in {
+            SequenceState.COMPLETED,
+            SequenceState.CANCELLED,
+            SequenceState.REJECTED,
+        }:
+            raise RuntimeError("cannot forget an active request")
+        del self.requests[int(request_id)]
+
     def stats(self) -> dict[str, int]:
         return {
             **self.totals,

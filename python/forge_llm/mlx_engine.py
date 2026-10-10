@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Iterable
 from dataclasses import asdict
+import hashlib
+import json
 from pathlib import Path
 from typing import Self
 
@@ -337,6 +337,10 @@ class MlxEngine:
         self._prefill_offsets.pop(request_id, None)
         self._prefix_matches.pop(request_id, None)
         self._request_namespaces.pop(request_id, None)
+
+    def forget(self, request_id: int) -> None:
+        """Release completed/cancelled request history in long-lived workers."""
+        self.scheduler.forget(request_id)
 
     def clear_prefix_cache(self, cache_namespace: str | None = None) -> None:
         """Evict cache pins without cancelling or invalidating admitted requests."""

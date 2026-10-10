@@ -85,6 +85,14 @@ void Scheduler::cancel(RequestId id) {
   finish(sequence, SequenceState::cancelled);
 }
 
+void Scheduler::forget(RequestId id) {
+  const auto& item = sequence(id);
+  check(item.state == SequenceState::completed || item.state == SequenceState::cancelled ||
+            item.state == SequenceState::rejected,
+        "cannot forget an active request");
+  sequences_.erase(id);
+}
+
 const Sequence& Scheduler::sequence(RequestId id) const {
   const auto it = sequences_.find(id);
   check(it != sequences_.end(), "unknown request id");

@@ -35,6 +35,7 @@ class Engine {
                                  std::span<const std::int32_t> eos_token_ids);
   [[nodiscard]] std::vector<TokenEvent> step();
   void cancel(RequestId id) { scheduler_.cancel(id); }
+  void forget(RequestId id) { scheduler_.forget(id); }
   [[nodiscard]] std::vector<std::int32_t> generate(
       std::span<const std::int32_t> input_ids, std::uint32_t max_new_tokens,
       std::span<const std::int32_t> eos_token_ids);

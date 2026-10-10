@@ -139,6 +139,20 @@ void test_scheduler_limits_and_reuse() {
                 "unknown sequence lookup throws");
 }
 
+void test_scheduler_forget_terminal_history() {
+  forge::KVBlockPool pool(2048U * 4U, 2, 2, 8);
+  forge::Scheduler scheduler(2, 32, pool);
+  const std::array<std::int32_t, 2> prompt{1, 2};
+  const std::array<std::int32_t, 0> no_eos{};
+  const auto id = scheduler.submit(prompt, 2, no_eos);
+  expect_throws([&] { scheduler.forget(id); }, "cannot forget active request");
+  scheduler.cancel(id);
+  scheduler.forget(id);
+  expect_throws([&] { static_cast<void>(scheduler.sequence(id)); }, "forgotten request is unavailable");
+  expect(scheduler.stats().cancelled == 1, "forget preserves lifetime totals");
+  expect(pool.stats().allocated_blocks == 0, "forget leaves cache reclaimed");
+}
+
 void test_scheduler_fcfs_continuous_admission() {
   forge::KVBlockPool pool(2048U * 16U, 2, 2, 8);
   forge::Scheduler scheduler(3, 64, pool);
@@ -184,6 +198,7 @@ int main(int argc, char** argv) {
   test_scheduler_lifecycle();
   test_scheduler_limits_and_reuse();
   test_scheduler_fcfs_continuous_admission();
+  test_scheduler_forget_terminal_history();
   if (argc == 2) test_model_file(argv[1]);
   if (failures == 0) std::cout << "all host tests passed\n";
   return failures == 0 ? 0 : 1;
