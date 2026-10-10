@@ -50,6 +50,7 @@ PYBIND11_MODULE(_forge, module) {
       }, py::arg("input_ids"), py::arg("max_new_tokens"), py::arg("eos_token_ids"))
       .def("step", &forge::Engine::step, py::call_guard<py::gil_scoped_release>())
       .def("cancel", &forge::Engine::cancel)
+      .def("forget", &forge::Engine::forget)
       .def("stats", [](const forge::Engine& engine) {
         const auto stats = engine.stats();
         py::dict scheduler;
