@@ -338,6 +338,10 @@ class MlxEngine:
         self._prefix_matches.pop(request_id, None)
         self._request_namespaces.pop(request_id, None)
 
+    def forget(self, request_id: int) -> None:
+        """Release completed/cancelled request history in long-lived workers."""
+        self.scheduler.forget(request_id)
+
     def clear_prefix_cache(self, cache_namespace: str | None = None) -> None:
         """Evict cache pins without cancelling or invalidating admitted requests."""
         if self.prefix_cache:

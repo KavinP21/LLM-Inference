@@ -28,3 +28,10 @@ weights and calibration archives under `models/` are excluded from Git.
 The sources recorded by the latest prefix validation are preserved at commit
 `d0a069d`. Later style and CI changes do not constitute a new official-model
 experiment. Register fresh sources and inputs in a new directory for new runs.
+
+## Speculation and task agents, October 2026
+
+- [Speculative Qwen/Gemma reports](speculative-published-2026-10-09/) and [contract](../../docs/speculative-decoding.md): six 64-token workloads, 36 canonical matches, limited numerical/performance scope.
+- [Final agent task report](agents-published-2026-10-10/qwen3-final-tasks.json) and [interpretation](../../docs/agent-results.md): two actual local replicas, all four controlled single/delegated cases pass; delegation is slower.
+- [Regression summary](agents-published-2026-10-10/regression-summary.json) and [JUnit](agents-published-2026-10-10/regression-tests.xml): 854 tests without skips on the local Mac.
+- [7B short numerical reference](agents-published-2026-10-10/7b-numerics.json): same reconstructed artifact, short prefill only. Failed 7B/initial Qwen3 task trials remain in the dated agent directories.

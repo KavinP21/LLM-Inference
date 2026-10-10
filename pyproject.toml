@@ -15,6 +15,8 @@ mlx = ["mlx>=0.32,<0.33; platform_system == 'Darwin' and platform_machine == 'ar
 test = ["pytest>=8"]
 dev = ["ruff>=0.16,<0.17"]
 reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
+agents = ["transformers>=4.50,<6", "safetensors>=0.4"]
+agents-mlx = ["transformers>=4.50,<6", "safetensors>=0.4", "mlx-lm==0.28.3; platform_system == 'Darwin' and platform_machine == 'arm64'"]
 
 [project.scripts]
 forge-export = "forge_llm.export:main"
@@ -29,6 +31,9 @@ forge-validate-int8 = "forge_llm.validate_int8:main"
 forge-calibrate-int8 = "forge_llm.calibrate_int8:main"
 forge-calibrate-second-order = "forge_llm.calibrate_second_order:main"
 forge-calibrate-cached = "forge_llm.calibrate_cached:main"
+forge-agents = "forge_llm.agents.cli:main"
+forge-worker = "forge_llm.agents.worker:main"
+forge-import-mlx = "forge_llm.import_mlx:main"
 
 [tool.scikit-build]
 cmake.args = ["-DFORGE_BUILD_PYTHON=ON"]

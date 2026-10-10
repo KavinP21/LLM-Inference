@@ -1,0 +1,83 @@
+{
+  "schema": "forge_real_replica_smoke_v1",
+  "date": "2026-10-09",
+  "scope": "two independent whole-model processes on one M3 Max, authenticated loopback HTTP; not multi-machine or multi-GPU evidence",
+  "ready_seconds": 8.209112124997773,
+  "parallel_generation_seconds": 0.26282350000110455,
+  "identities": [
+    {
+      "schema": "forge_worker_v1",
+      "worker_id": "real-smoke-replica-a",
+      "ready": true,
+      "model": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen2.5-0.5b.engine",
+      "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+      "backend": "mlx",
+      "max_model_length": 2048,
+      "max_pending": 2,
+      "active": 0,
+      "completed": 0,
+      "capabilities": [
+        "greedy_chat",
+        "cancellation",
+        "replica"
+      ],
+      "speculative": null,
+      "last_speculative_stats": null,
+      "history_ttl": 600.0,
+      "max_history": 1024,
+      "max_timeout": 120.0,
+      "pid": 59021
+    },
+    {
+      "schema": "forge_worker_v1",
+      "worker_id": "real-smoke-replica-b",
+      "ready": true,
+      "model": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen2.5-0.5b.engine",
+      "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+      "backend": "mlx",
+      "max_model_length": 2048,
+      "max_pending": 2,
+      "active": 0,
+      "completed": 0,
+      "capabilities": [
+        "greedy_chat",
+        "cancellation",
+        "replica"
+      ],
+      "speculative": null,
+      "last_speculative_stats": null,
+      "history_ttl": 600.0,
+      "max_history": 1024,
+      "max_timeout": 120.0,
+      "pid": 59022
+    }
+  ],
+  "outputs": [
+    {
+      "text": "19",
+      "input_tokens": 44,
+      "output_tokens": 3,
+      "finish_reason": "stop",
+      "model": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen2.5-0.5b.engine"
+    },
+    {
+      "text": "48",
+      "input_tokens": 43,
+      "output_tokens": 3,
+      "finish_reason": "stop",
+      "model": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen2.5-0.5b.engine"
+    }
+  ],
+  "cancellation_observed": true,
+  "recovery_output": {
+    "text": "4",
+    "input_tokens": 43,
+    "output_tokens": 2,
+    "finish_reason": "stop",
+    "model": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen2.5-0.5b.engine"
+  },
+  "owned_processes_exited": [
+    true,
+    true
+  ]
+}

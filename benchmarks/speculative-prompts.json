@@ -1,0 +1,5 @@
+[
+  "Copy the following sentence exactly eight times, one copy per line, without commentary: The copper robot carries a blue lantern across the silent bridge.",
+  "Write Python code defining eight small functions named add_one through add_eight. Each takes x and returns x plus its corresponding number. Return only the code.",
+  "A train travels 60 kilometers in 45 minutes. Explain how to calculate its average speed in kilometers per hour and give the answer."
+]
