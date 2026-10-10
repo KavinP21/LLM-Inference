@@ -35,3 +35,4 @@ experiment. Register fresh sources and inputs in a new directory for new runs.
 - [Final agent task report](agents-published-2026-10-10/qwen3-final-tasks.json) and [interpretation](../../docs/agent-results.md): two actual local replicas, all four controlled single/delegated cases pass; delegation is slower.
 - [Regression summary](agents-published-2026-10-10/regression-summary.json) and [JUnit](agents-published-2026-10-10/regression-tests.xml): 854 tests without skips on the local Mac.
 - [7B short numerical reference](agents-published-2026-10-10/7b-numerics.json): same reconstructed artifact, short prefill only. Failed 7B/initial Qwen3 task trials remain in the dated agent directories.
+- [Dense Qwen7B support](qwen7b-2026-10-10/) and [qualification](../../docs/qwen-7b.md): 883-test regression, actual native desktop chat, 66 adapter-reference token matches including an 8K input, and retained failed autonomous task gates.
