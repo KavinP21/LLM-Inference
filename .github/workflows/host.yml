@@ -41,7 +41,9 @@ jobs:
           tests/test_agent_profiles.py tests/test_agent_evaluation.py tests/test_agent_handoff.py
           tests/test_chat_runtime.py
           tests/test_qwen35_engine.py tests/test_qwen35_speculative.py
+          tests/test_qwen35_qualification_driver.py
           tests/test_agent_native_xml.py tests/test_agent_qwen35.py
+          tests/test_agent_context_media.py
       - run: bash -n tools/verify_wsl_environment.sh tools/run_sanitizer.sh
 
   sanitized-host:

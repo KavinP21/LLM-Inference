@@ -9,6 +9,7 @@ import json
 import math
 import struct
 import sys
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -522,6 +523,152 @@ def test_media_bounds_urls_decode_and_expanded_context(tmp_path):
     fake.prompt_length = 16
     with pytest.raises(ValueError, match="expanded"):
         model.prepare_chat([{"role": "user", "content": "q"}])
+
+
+def test_chat_context_clamp_uses_expanded_media_length_and_keeps_api_strict(tmp_path):
+    from PIL import Image
+
+    image = tmp_path / "context-image.png"
+    Image.new("RGB", (8, 8), "red").save(image)
+    fake = Fake(prompt_length=15, outputs=(42,))
+    model, _ = engine(fake, max_model_length=16)
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this."},
+                {"type": "image", "image": str(image)},
+            ],
+        }
+    ]
+    with pytest.raises(ValueError, match="context"):
+        model.generate_chat(messages, 32768)
+    assert not fake.calls and model._prepared is None
+    reply = model.generate_chat(messages, 32768, clamp_to_context=True)
+    assert reply.input_tokens == 15 and reply.output_tokens == 1
+    assert reply.truncated and reply.finish_reason == "length"
+    assert model.stats()["active_requests"] == 0
+    assert (
+        model.stats()["kv_reserved_bytes"] == model.stats()["kv_persistent_bytes"] == 0
+    )
+    assert fake.preparations[-1][1] == [str(image)]
+    model.close()
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, "2"])
+def test_chat_clamp_does_not_repair_invalid_generation_limits(limit):
+    model, fake = engine(max_model_length=16)
+    with pytest.raises(ValueError, match="generation limit"):
+        model.generate_chat(
+            [{"role": "user", "content": "q"}], limit, clamp_to_context=True
+        )
+    assert not fake.calls and model._prepared is None
+    assert model.stats()["active_requests"] == 0
+    model.close()
+
+
+def test_clamped_chat_still_rejects_a_prompt_that_fills_the_context():
+    model, fake = engine(Fake(prompt_length=16), max_model_length=16)
+    with pytest.raises(ValueError, match="expanded"):
+        model.generate_chat(
+            [{"role": "user", "content": "q"}], 4, clamp_to_context=True
+        )
+    assert not fake.calls and model._prepared is None
+    model.close()
+
+
+def test_discard_prepared_releases_context_rejected_payload_and_allows_reuse():
+    model, fake = engine(Fake(prompt_length=15), max_model_length=16)
+    prepared = model.prepare_chat([{"role": "user", "content": "q"}])
+    array = weakref.ref(prepared.inputs["input_ids"])
+    with pytest.raises(ValueError, match="context"):
+        model.submit(prepared, 2)
+    assert model._prepared is prepared and array() is not None
+    before = fake.syncs, fake.resets, fake.clears
+    model.discard_prepared()
+    assert model._prepared is None and prepared.inputs == {} and array() is None
+    assert (fake.syncs, fake.resets, fake.clears) == tuple(
+        value + 1 for value in before
+    )
+    assert fake.model.language_model._position_ids is None
+    model._guard()
+    with pytest.raises(ValueError, match="belong"):
+        model.submit(prepared, 1)
+    fake.prompt_length = 7
+    assert (
+        model.generate_chat([{"role": "user", "content": "retry"}], 2).text == "answer"
+    )
+    model.close()
+
+
+def test_discard_and_chat_preserve_an_active_or_unforgotten_request():
+    model, fake = engine()
+    prepared = model.prepare_chat([{"role": "user", "content": "q"}])
+    request = model.submit(prepared, 4)
+    guard = model._guard
+    syncs = fake.syncs
+    with pytest.raises(RuntimeError, match="finish and forget"):
+        model.discard_prepared()
+    with pytest.raises(RuntimeError, match="finish and forget"):
+        model.generate_chat([{"role": "user", "content": "other"}], 2)
+    assert model._active == request and prepared.inputs and model._guard is guard
+    assert fake.syncs == syncs
+    model.cancel(request)
+    assert prepared.inputs == {}
+    with pytest.raises(RuntimeError, match="finish and forget"):
+        model.discard_prepared()
+    model.forget(request)
+    with ThreadPoolExecutor(1) as pool:
+        with pytest.raises(RuntimeError, match="actor"):
+            pool.submit(model.discard_prepared).result()
+    model.discard_prepared()
+    model.close()
+
+
+def test_chat_admission_error_survives_cleanup_failure_with_payload_released():
+    model, fake = engine(Fake(prompt_length=15), max_model_length=16)
+
+    def failed_sync():
+        raise RuntimeError("injected cleanup failure")
+
+    model._runtime.synchronize = failed_sync
+    with pytest.raises(ValueError, match="context") as error:
+        model.generate_chat([{"role": "user", "content": "q"}], 2)
+    assert any("cleanup failure" in note for note in error.value.__notes__)
+    assert model._prepared is None and model._active is None
+    assert fake.clears > 0 and fake.model.language_model._position_ids is None
+    model._runtime.synchronize = fake.synchronize
+    model.close()
+
+
+def test_custom_eos_is_per_request_and_does_not_replace_default_stops():
+    model, fake = engine(Fake(outputs=(0, 248046)))
+    assert model.generate([1, 2], 4, eos_token_ids=[0]) == [0]
+    assert model._default_eos == frozenset({248044, 248046})
+    assert model.generate([1, 2], 4) == [0, 248046]
+    assert model._eos == model._default_eos
+    assert model.stats()["active_requests"] == model.stats()["kv_persistent_bytes"] == 0
+    model.close()
+
+
+def test_forward_failure_invalidates_prepared_arrays_but_keeps_diagnostic_token_ids():
+    model, fake = engine()
+    prepared = model.prepare_chat([{"role": "user", "content": "q"}])
+    expected_ids = prepared.input_ids
+    fake.failure = RuntimeError("injected forward failure")
+    with pytest.raises(RuntimeError, match="injected forward failure"):
+        model.generate(prepared, 4)
+    assert prepared.inputs == {} and prepared.input_ids == expected_ids
+    assert prepared.input_tokens == len(expected_ids)
+    assert model._prepared is None and model._active is None
+    assert (
+        model.stats()["kv_reserved_bytes"] == model.stats()["kv_persistent_bytes"] == 0
+    )
+    fake.failure = None
+    assert (
+        model.generate_chat([{"role": "user", "content": "retry"}], 2).text == "answer"
+    )
+    model.close()
 
 
 def test_incomplete_thinking_never_becomes_final_or_tool_action():

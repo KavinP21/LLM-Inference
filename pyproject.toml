@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "forge-llm"
 version = "0.1.0"
-description = "A focused CUDA and MLX/Metal inference runtime for Qwen2 and Gemma 3"
+description = "CUDA and MLX/Metal inference with Qwen3.5 multimodal execution and task agents"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26"]
 

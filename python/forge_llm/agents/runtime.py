@@ -555,14 +555,8 @@ class AgentRuntime:
             tools=sorted({*self.tools, "journal_read"}),
             completion_required=self.completion_validator is not None,
             completion_root_only=self.completion_root_only,
+            media=attachments,
         )
-        if attachments:
-            # Keep the original assigned task and its immutable media together.
-            with self.store.transaction():
-                self.store.connection.execute(
-                    "UPDATE messages SET media=? WHERE run_id=? AND agent_id='root' AND role='user'",
-                    (json.dumps(self.store._store_media(attachments)), run_id),
-                )
         return await self._drive(run_id, self.config, recover=False)
 
     async def resume(self, run_id: str) -> RunResult:
@@ -1395,6 +1389,7 @@ class AgentRuntime:
             )
             return
         reservation_input_bound = input_bound
+        backend_options = {}
         if any(message.media for message in messages):
             model_limit = getattr(self.backend, "max_model_length", None)
             if type(model_limit) is not int or model_limit <= 0:
@@ -1404,9 +1399,20 @@ class AgentRuntime:
                     "multimodal backend must advertise a bounded model context",
                 )
                 return
+            if getattr(self.backend, "supports_context_limits", False) is True:
+                backend_options["max_context_tokens"] = config.max_context_tokens
+            elif model_limit > config.max_context_tokens:
+                self._fail(
+                    run_id,
+                    agent_id,
+                    "multimodal backend must enforce the runtime's smaller request context limit",
+                )
+                return
             # Processor expansion is checked by the worker before inference.
             # Reserve its full context until measured usage refunds the excess.
-            reservation_input_bound = max(input_bound, model_limit)
+            reservation_input_bound = max(
+                input_bound, min(model_limit, config.max_context_tokens)
+            )
         async with self._semaphore, self._run_semaphores[run_id]:
             while True:
                 self._assert_lease(run_id)
@@ -1435,10 +1441,14 @@ class AgentRuntime:
                             config.max_output_tokens,
                             request_id,
                             tool_specs=tool_specs,
+                            **backend_options,
                         )
                         if tool_specs is not None
                         else self.backend.generate(
-                            messages, config.max_output_tokens, request_id
+                            messages,
+                            config.max_output_tokens,
+                            request_id,
+                            **backend_options,
                         )
                     )
                     generation = await asyncio.wait_for(
@@ -1466,6 +1476,12 @@ class AgentRuntime:
                         )
                     if generation.output_tokens > config.max_output_tokens:
                         raise ValueError("backend exceeded max_output_tokens")
+                    if (
+                        backend_options
+                        and generation.input_tokens + config.max_output_tokens
+                        > config.max_context_tokens
+                    ):
+                        raise ValueError("backend exceeded the requested context limit")
                     # Zero/missing counts use conservative estimates, rather
                     # than allowing a backend to defeat the token budget.
                     input_tokens = generation.input_tokens or reservation_input_bound

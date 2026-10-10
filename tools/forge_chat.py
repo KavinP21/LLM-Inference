@@ -30,6 +30,7 @@ class ForgeChat(tk.Tk):
         self.conversation: list[dict] = []
         self.attachments: list[dict] = []
         self.last_reasoning = ""
+        self.submitted_prompt: str | None = None
         self.context_limit = 0
         self.device_name = "Metal"
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -194,6 +195,7 @@ class ForgeChat(tk.Tk):
         self.conversation.clear()
         self.attachments.clear()
         self.last_reasoning = ""
+        self.submitted_prompt = None
         self.worker.media_store.clear()
         self.thinking.set(False)
         self.max_tokens.set("2048" if profile.supports_thinking else "512")
@@ -297,7 +299,8 @@ class ForgeChat(tk.Tk):
     def _generate(self) -> None:
         if self.busy or self.loading or self.closing or not self.ready:
             return
-        prompt = self.prompt.get("1.0", "end").strip()
+        raw_prompt = self.prompt.get("1.0", "end-1c")
+        prompt = raw_prompt.strip()
         if not prompt and not self.attachments:
             messagebox.showinfo("Forge LLM", "Enter a prompt first.")
             return
@@ -313,6 +316,7 @@ class ForgeChat(tk.Tk):
             return
 
         self.busy = True
+        self.submitted_prompt = raw_prompt
         self._set_controls()
         self._set_status("Generating…", "#8a5a00")
         content = prompt or "Describe the attached media."
@@ -341,6 +345,7 @@ class ForgeChat(tk.Tk):
                     user_message, response = value  # type: ignore[misc]
                     self.last_reasoning = response.reasoning
                     if response.finish_reason == "cancelled":
+                        self.submitted_prompt = None
                         self.busy = False
                         self._set_controls()
                         self._set_status(f"Stopped · {self._ready_status()}", "#8a5a00")
@@ -349,10 +354,12 @@ class ForgeChat(tk.Tk):
                         self.conversation, user_message, response
                     )
                     if accepted:
-                        self.prompt.delete("1.0", "end")
+                        if self.prompt.get("1.0", "end-1c") == self.submitted_prompt:
+                            self.prompt.delete("1.0", "end")
                         self.attachments.clear()
                         self._update_attachments()
                     self._render_conversation()
+                    self.submitted_prompt = None
                     self.busy = False
                     self._set_controls()
                     if not response.thinking_complete:
@@ -372,6 +379,7 @@ class ForgeChat(tk.Tk):
                     else:
                         self._set_status(self._ready_status(), "#188038")
                 elif kind == "error":
+                    self.submitted_prompt = None
                     self.loading = False
                     self.busy = False
                     self.load_button.configure(
@@ -432,6 +440,7 @@ class ForgeChat(tk.Tk):
         self.conversation.clear()
         self.attachments.clear()
         self.last_reasoning = ""
+        self.submitted_prompt = None
         self.worker.media_store.clear()
         self._update_attachments()
         self._set_controls()

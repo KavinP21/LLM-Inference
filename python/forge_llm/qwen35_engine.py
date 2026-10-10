@@ -12,6 +12,7 @@ import hashlib
 import math
 import platform
 import stat
+import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -437,7 +438,8 @@ class Qwen35Engine:
         )
         self.config = SimpleNamespace(**text_config)
         self.checkpoint_identity = self.checkpoint.identity
-        self._eos = frozenset({text_config["eos_token_id"], 248046})
+        self._default_eos = frozenset({text_config["eos_token_id"], 248046})
+        self._eos = self._default_eos
         self._next_id, self._active, self._terminal = 1, None, None
         self._cache, self._output, self._history = [], [], []
         self._prepared = None
@@ -479,6 +481,26 @@ class Qwen35Engine:
         if not callable(guard):
             raise TypeError("request guard must be callable")
         self._guard = guard
+
+    def discard_prepared(self) -> None:
+        """Invalidate an unused prepared payload and release its owned arrays."""
+        self._check_owner()
+        if self._active is not None or self._terminal is not None:
+            raise RuntimeError(
+                "finish and forget the request before discarding preparation"
+            )
+        selected = self._prepared
+        try:
+            self._runtime.synchronize()
+        finally:
+            self._prepared = None
+            if selected is not None:
+                selected.inputs.clear()
+            try:
+                self._runtime.reset_positions()
+            finally:
+                self._guard = lambda: None
+                self._runtime.clear_cache()
 
     def _media(self, path: Any, kind: str) -> tuple[str, str, tuple[int, int, int]]:
         if not isinstance(path, (str, Path)) or "://" in str(path):
@@ -892,7 +914,7 @@ class Qwen35Engine:
             raise ValueError(
                 "prompt plus output exceeds Qwen3.5 persistent-state budget"
             )
-        eos = list(eos_token_ids) if eos_token_ids else list(self._eos)
+        eos = list(eos_token_ids) if eos_token_ids else list(self._default_eos)
         if any(type(t) is not int or not 0 <= t < self.config.vocab_size for t in eos):
             raise ValueError("invalid Qwen3.5 EOS token IDs")
         self._eos = frozenset(eos)
@@ -1033,6 +1055,8 @@ class Qwen35Engine:
                         if hasattr(cache, "_speculation"):
                             cache._speculation = None
                 self._cache.clear()
+                if self._prepared is not None:
+                    self._prepared.inputs.clear()
                 self._speculator = self._prepared = self._pending = None
                 self._active, self._terminal = None, request_id
                 self._current_bytes = self._reservation = self._extra_reserved = 0
@@ -1112,14 +1136,23 @@ class Qwen35Engine:
         tools=None,
         images=(),
         videos=(),
+        clamp_to_context: bool = False,
     ) -> ChatResult:
+        """Generate chat; an explicit UI option caps output after media expansion."""
         self._check_owner()
+        if type(clamp_to_context) is not bool:
+            raise TypeError("clamp_to_context must be a boolean")
+        if self._active is not None or self._terminal is not None:
+            raise RuntimeError(
+                "finish and forget the previous request before generating chat"
+            )
 
         def guard():
             if cancelled is not None and cancelled():
                 raise InterruptedError("Qwen3.5 generation cancelled")
 
         self.set_request_guard(guard)
+        prepared = None
         try:
             prepared = self.prepare_chat(
                 messages,
@@ -1128,6 +1161,12 @@ class Qwen35Engine:
                 images=images,
                 videos=videos,
             )
+            if clamp_to_context:
+                if type(max_new_tokens) is not int or max_new_tokens <= 0:
+                    raise ValueError("invalid Qwen3.5 generation limit")
+                max_new_tokens = min(
+                    max_new_tokens, self.max_model_length - prepared.input_tokens
+                )
             output = self.generate(prepared, max_new_tokens, cancelled=cancelled)
             return self.response_metadata(
                 output,
@@ -1135,8 +1174,21 @@ class Qwen35Engine:
                 input_tokens=prepared.input_tokens,
             )
         finally:
-            self._guard = lambda: None
-            self._prepared = None
+            if self._active is None and self._terminal is None:
+                # An admission exception's traceback may still reference this
+                # payload, so invalidate its arrays before clearing allocator caches.
+                if prepared is not None and self._prepared is None:
+                    self._prepared = prepared
+                prepared = None
+                original = sys.exception()
+                try:
+                    self.discard_prepared()
+                except BaseException as cleanup:
+                    if original is None:
+                        raise
+                    original.add_note(
+                        f"Prepared Qwen3.5 cleanup also failed: {cleanup}"
+                    )
 
     def stats(self) -> dict[str, Any]:
         return {

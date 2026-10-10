@@ -11,6 +11,25 @@ parallelism: each worker must fit a complete model on its selected device.
 
 ## Install and run
 
+The daily-driver configuration is now the full Qwen3.5-4B model:
+
+```bash
+pip install -e '.[mlx,qwen35,agents,test]'
+python -m forge_llm.prepare_qwen35
+forge-agents --state-dir .forge run --config examples/agents-qwen35.json \
+  --workspace . --task 'Review the architecture and explain its resource limits.'
+```
+
+Add `--image FILE` or `--video FILE` for visual tasks. Media bytes are bounded and
+hashed, stored once in the private journal and inherited by children. Workers
+check processor-expanded context before inference; resume also binds processor
+and adapter identity. Qwen3.5 uses its trained XML function-call dialect and one
+active request per replica. The [guide](qwen35.md) covers context, state budgets,
+thinking, sampling and optional greedy speculation. Both Qwen3 and Qwen3.5 passed
+the four recorded small task cases; these do not establish broad reliability.
+
+The earlier Qwen3 configuration remains available:
+
 ```bash
 pip install -e '.[mlx,agents-mlx,test]'
 PYTHONPATH=python .venv/bin/python -m forge_llm.agents.cli \
@@ -36,8 +55,7 @@ ln -s /path/to/local/qwen3-checkpoint models/qwen3-30b-a3b-mlx
 For dense Qwen2.5-7B, use `examples/agents-qwen2.5-7b-mlx-lm.json` with a local
 checkpoint linked at `models/qwen2.5-7b-mlx`. This profile uses two 16K workers
 and 1 GiB persistent KV per worker. The [7B guide](qwen-7b.md) separates passing
-inference/chat checks from failed autonomous task gates. Qwen3 remains the
-configuration that passed all four recorded task cases.
+inference/chat checks from failed autonomous task gates.
 
 The Forge runner remains the default. `examples/agents-local.json` uses its
 reconstructed 7B artifact; that model failed coding qualification and should be

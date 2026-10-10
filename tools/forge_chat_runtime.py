@@ -301,6 +301,7 @@ class ChatWorker:
                     max_new_tokens=max_tokens,
                     enable_thinking=enable_thinking,
                     cancelled=self._cancelled,
+                    clamp_to_context=True,
                 )
             except InterruptedError:
                 if not self._cancelled():

@@ -305,10 +305,17 @@ def test_vlm_owner_receives_full_visual_history_thinking_and_stop(chat, tmp_path
 
     class VlmEngine(FakeEngine):
         def generate_chat(
-            self, messages, max_new_tokens, *, enable_thinking, cancelled
+            self,
+            messages,
+            max_new_tokens,
+            *,
+            enable_thinking,
+            cancelled,
+            clamp_to_context=False,
         ):
             self.record("generate_chat")
             self.seen = (messages, max_new_tokens, enable_thinking)
+            self.clamp_to_context = clamp_to_context
             started.set()
             assert release.wait(2)
             if cancelled():
@@ -344,6 +351,7 @@ def test_vlm_owner_receives_full_visual_history_thinking_and_stop(chat, tmp_path
         kind, (_, reply) = events.get(timeout=2)
         assert kind == "response" and reply.finish_reason == "cancelled"
         assert engines[0].seen == (messages, 2048, True)
+        assert engines[0].clamp_to_context is True
         worker.generate(messages, 32)
         assert events.get(timeout=2)[1][1].text == "visual answer"
         assert not engines[0].closed
@@ -395,12 +403,16 @@ def headless_ui(chat, monkeypatch):
     class Widget:
         def __init__(self):
             self.options = {}
+            self.text = ""
 
         def configure(self, **kwargs):
             self.options.update(kwargs)
 
         def delete(self, *_args):
-            pass
+            self.text = ""
+
+        def get(self, *_args):
+            return self.text
 
     ui = SimpleNamespace(
         ready=True,
@@ -411,6 +423,7 @@ def headless_ui(chat, monkeypatch):
         conversation=[],
         attachments=[],
         last_reasoning="",
+        submitted_prompt=None,
         events=queue.Queue(),
         context_limit=32768,
         device_name="Fake Metal",
@@ -496,3 +509,30 @@ def test_stopped_generation_does_not_append_partial_reply(chat, headless_ui):
     assert ui.conversation == []
     assert ui.status.startswith("Stopped")
     assert not ui.busy
+
+
+@pytest.mark.parametrize(
+    "current,expected",
+    [
+        ("First question.", ""),
+        (
+            "Next question drafted while waiting.",
+            "Next question drafted while waiting.",
+        ),
+    ],
+)
+def test_completed_reply_only_clears_the_unchanged_submitted_prompt(
+    chat, headless_ui, current, expected
+):
+    module, ui = headless_ui
+    ui.submitted_prompt = "First question."
+    ui.prompt.text = current
+    original = {"role": "user", "content": "First question."}
+    ui.events.put(("response", (original, chat.ChatReply("First answer."))))
+    module.ForgeChat._drain_events(ui)
+    assert ui.prompt.text == expected
+    assert ui.conversation == [
+        original,
+        {"role": "assistant", "content": "First answer."},
+    ]
+    assert ui.submitted_prompt is None

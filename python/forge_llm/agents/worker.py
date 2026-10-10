@@ -38,6 +38,7 @@ from .backends import (
     WorkerConfig,
     WorkerUnavailableError,
     is_loopback,
+    validate_context_limit,
     validate_request,
 )
 from .protocol import ChatMessage, Generation, ModelBackend
@@ -167,16 +168,23 @@ class WorkerService:
         request_id: str,
         timeout: float,
         tool_specs: list[dict[str, Any]] | None = None,
+        max_context_tokens: int | None = None,
     ) -> Generation:
+        options = (
+            {}
+            if max_context_tokens is None
+            else {"max_context_tokens": max_context_tokens}
+        )
         if tool_specs is not None:
             return await asyncio.wait_for(
                 self.backend.generate_action(
-                    messages, max_tokens, request_id, tool_specs=tool_specs
+                    messages, max_tokens, request_id, tool_specs=tool_specs, **options
                 ),
                 timeout=timeout,
             )
         return await asyncio.wait_for(
-            self.backend.generate(messages, max_tokens, request_id), timeout=timeout
+            self.backend.generate(messages, max_tokens, request_id, **options),
+            timeout=timeout,
         )
 
     def _done(self, job: _Job, future: Future[Any]) -> None:
@@ -222,6 +230,9 @@ class WorkerService:
                 job.result_bytes = len(
                     json.dumps(result, ensure_ascii=False).encode("utf-8")
                 )
+            # The serialized result is sufficient for polling and idempotency.
+            # A settled Future can retain exception frames and model arrays.
+            job.future = None
             self._prune()
 
     def submit(self, payload: Any) -> dict[str, Any]:
@@ -231,6 +242,7 @@ class WorkerService:
             "max_tokens",
             "timeout",
             "tools",
+            "max_context_tokens",
         }:
             raise ValueError("invalid job submission fields")
         raw_messages = payload.get("messages")
@@ -247,6 +259,14 @@ class WorkerService:
             messages.append(ChatMessage(**raw))
         request_id = payload.get("request_id")
         max_tokens = payload.get("max_tokens")
+        max_context_tokens = validate_context_limit(payload.get("max_context_tokens"))
+        if (
+            max_context_tokens is not None
+            and getattr(self.backend, "supports_context_limits", False) is not True
+        ):
+            raise RequestValidationError(
+                "worker backend does not enforce request context limits"
+            )
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages="tools" in payload
         )
@@ -279,6 +299,8 @@ class WorkerService:
         }
         if tool_specs is not None:
             canonical["tools"] = tool_specs
+        if max_context_tokens is not None:
+            canonical["max_context_tokens"] = max_context_tokens
         fingerprint = hashlib.sha256(
             json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
@@ -300,7 +322,14 @@ class WorkerService:
             job = _Job(request_id, fingerprint, time.monotonic())
             self._jobs[request_id] = job
             job.future = asyncio.run_coroutine_threadsafe(
-                self._generate(messages, max_tokens, request_id, timeout, tool_specs),
+                self._generate(
+                    messages,
+                    max_tokens,
+                    request_id,
+                    timeout,
+                    tool_specs,
+                    max_context_tokens,
+                ),
                 self._loop,
             )
             job.future.add_done_callback(lambda future: self._done(job, future))
@@ -349,6 +378,10 @@ class WorkerService:
                 "pid": os.getpid(),
                 "native_tool_calls": getattr(
                     self.backend, "supports_native_tools", False
+                )
+                is True,
+                "supports_context_limits": getattr(
+                    self.backend, "supports_context_limits", False
                 )
                 is True,
             }
