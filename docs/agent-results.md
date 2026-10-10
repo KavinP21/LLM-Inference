@@ -31,14 +31,14 @@ tool permissions and transport failures. They do not establish reasoning ability
 
 ## Qwen3.5-4B daily driver
 
-The [revised frozen-source Qwen3.5 run](../benchmarks/results/qwen35-2026-10-10/agents-revised-7239c91.json)
-passed all four cases on clean source `7239c91`, using two supervised full
-MLX-VLM 0.7.6 replicas. Startup took 10.61 seconds and is excluded below.
+The [final frozen-source Qwen3.5 run](../benchmarks/results/qwen35-2026-10-10/agents-final.json)
+passed all four cases on clean source `35c262b`, using two supervised full
+MLX-VLM 0.7.6 replicas. Startup is excluded below.
 
 | Task | Single agent | Delegated | Completed children | Independent result |
 | --- | --- | --- | --- | --- |
-| Python repair | 25.38 s, 8 calls | 53.85 s, 13 calls | 2 | Both pass six independent tests; four additional inputs withheld until grading. |
-| Document analysis | 8.36 s, 2 calls | 51.25 s, 14 calls | 2 | Both return all eight correct typed facts. |
+| Python repair | 25.93 s, 8 calls | 56.08 s, 13 calls | 2 | Both pass six independent tests; four additional inputs withheld until grading. |
+| Document analysis | 8.35 s, 2 calls | 51.44 s, 14 calls | 2 | Both return all eight correct typed facts. |
 
 The [initial run](../benchmarks/results/qwen35-2026-10-10/agents-initial.json)
 failed delegated documents. One child failed its scope and valid XML calls with
@@ -46,7 +46,11 @@ surrounding explanation were rejected by the original strict parser. The trained
 XML dialect now explicitly accepts bounded explanatory text around validated
 calls. These are the same two development fixtures: successful retries do not
 establish unseen task generalization or a causal task-quality improvement.
-Delegation remains slower than a single agent.
+Delegation remains slower than a single agent. The earlier
+[passing revised run](../benchmarks/results/qwen35-2026-10-10/agents-revised-7239c91.json)
+is retained with its own source identity. A separate actual
+[visual child task](../benchmarks/results/qwen35-2026-10-10/workers-final.json)
+passed image reading, inherited media and reopened durable storage checks.
 
 The [Qwen3.5 guide](qwen35.md) separates this task evidence from inference,
 visual inputs, hybrid speculation, desktop and resource-control checks.

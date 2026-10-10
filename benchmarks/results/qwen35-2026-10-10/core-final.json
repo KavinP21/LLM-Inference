@@ -1,0 +1,363 @@
+{
+  "schema": "forge_qwen35_qualification_v2",
+  "source": {
+    "git_commit": "35c262b565e370196ecc149963bc1de7f0d56f48",
+    "git_dirty": false,
+    "runtime_source_sha256": "04c78c2c896c5e8dac4ec360ea46ac224bb2d66e43f0581703d167a995ab6bb1"
+  },
+  "implementation_source_sha256": {
+    "benchmarks/qualify_qwen35.py": "394d816a9c774681faf5f1899568a54fcd1b8f823d41adde0c62938eb43a4066",
+    "benchmarks/qualify_qwen35_speculative.py": "fcefdc13a65c40a33af9d10522b322fcfd7cff41651ec95afa5d58ff549e6369",
+    "python/forge_llm/qwen35_engine.py": "d19599222f4281d0e0cae1acdb40cd3981693fc06373de82d7b056655c16d2b3",
+    "python/forge_llm/qwen35_checkpoint.py": "caf0a2fb80e311e59fe17cdb7d073ef8473aa0bf5ed0b7ff82daaae69dcbfb02"
+  },
+  "configuration": {
+    "model": "models/qwen3.5-4b-mlx",
+    "output": "/private/tmp/forge-qwen35-core-final.json",
+    "fixtures_dir": null,
+    "font": "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "max_model_length": 32768,
+    "state_budget_bytes": 2147483648,
+    "prefill_chunk_size": 256,
+    "parity_tokens": 32,
+    "visual_tokens": 96,
+    "thinking_tokens": 256,
+    "long_records": 380,
+    "cancel_prompt_tokens": 8191,
+    "sampling_smoke": true,
+    "sampling_seed": 42,
+    "full_context_check": true
+  },
+  "environment": {
+    "python": "3.12.10",
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "mlx": "0.32.2",
+    "mlx_vlm": "0.7.6"
+  },
+  "rows": [
+    {
+      "case": "parity-short",
+      "passed": true,
+      "prompt": "What is 17+23? Answer with the number only.",
+      "prompt_tokens": 27,
+      "reference": [
+        19,
+        15,
+        248046
+      ],
+      "actual": [
+        19,
+        15,
+        248046
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 2,
+        "speculative": null
+      }
+    },
+    {
+      "case": "parity-code",
+      "passed": true,
+      "prompt": "Write a Python function returning the square of its integer input. Return code only.",
+      "prompt_tokens": 28,
+      "reference": [
+        727,
+        9057,
+        1393,
+        1590,
+        198,
+        262,
+        460,
+        307,
+        2972,
+        220,
+        17,
+        248046
+      ],
+      "actual": [
+        727,
+        9057,
+        1393,
+        1590,
+        198,
+        262,
+        460,
+        307,
+        2972,
+        220,
+        17,
+        248046
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 11,
+        "speculative": null
+      }
+    },
+    {
+      "case": "parity-long",
+      "passed": true,
+      "prompt": "A record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nA record contains three fields: name Ada; color blue; number 42.\nReturn the name from the records only.",
+      "prompt_tokens": 6860,
+      "reference": [
+        92055,
+        248046
+      ],
+      "actual": [
+        92055,
+        248046
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 278003712,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 28,
+        "decode_calls": 1,
+        "speculative": null
+      }
+    },
+    {
+      "case": "image-ocr",
+      "passed": true,
+      "text": "FORGE 42",
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 5,
+        "speculative": null
+      }
+    },
+    {
+      "case": "image-followup",
+      "passed": true,
+      "text": "42",
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 2,
+        "speculative": null
+      }
+    },
+    {
+      "case": "video-order",
+      "passed": true,
+      "text": "```json\n{\n  \"first\": \"Red\",\n  \"last\": \"Blue\"\n}\n```",
+      "parsed": {
+        "first": "Red",
+        "last": "Blue"
+      },
+      "normalized": {
+        "first": "red",
+        "last": "blue"
+      },
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 24,
+        "speculative": null
+      }
+    },
+    {
+      "case": "mixed-image-video",
+      "passed": true,
+      "text": "FORGE 42, red and blue",
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 68288512,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 3,
+        "decode_calls": 9,
+        "speculative": null
+      }
+    },
+    {
+      "case": "thinking",
+      "passed": true,
+      "text": "40",
+      "reasoning_present": true,
+      "thinking_complete": true,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 171,
+        "speculative": null
+      }
+    },
+    {
+      "case": "thinking-truncation",
+      "passed": true,
+      "text": "",
+      "truncated": true,
+      "thinking_complete": false,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 0,
+        "speculative": null
+      }
+    },
+    {
+      "case": "post-prefill-cancel-and-restart",
+      "passed": true,
+      "restart_actual": [
+        19,
+        15,
+        248046
+      ],
+      "reference": [
+        19,
+        15,
+        248046
+      ],
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 319946752,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 33,
+        "decode_calls": 0,
+        "speculative": null
+      }
+    },
+    {
+      "case": "full-configured-context-execution",
+      "passed": true,
+      "prompt_tokens": 32766,
+      "output_tokens": 2,
+      "actual": [
+        1234,
+        1234
+      ],
+      "synthetic_token_id": 1234,
+      "eos_token_ids": [
+        0
+      ],
+      "peak_logical_persistent_state_bytes": 1125253120,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 1125253120,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 129,
+        "decode_calls": 1,
+        "speculative": null
+      },
+      "scope": "Execution and resource cleanup at the configured context limit only; no long-context semantic-quality claim."
+    },
+    {
+      "case": "sampling-smoke",
+      "passed": true,
+      "text": "A cache is a small, high-speed memory storage located close to the processor that temporarily holds frequently accessed data or instructions to reduce access time and speed up overall system performance.",
+      "output_tokens": 35,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "presence_penalty": 1.5
+      },
+      "seed": 42,
+      "stats": {
+        "active_requests": 0,
+        "kv_reserved_bytes": 0,
+        "kv_persistent_bytes": 0,
+        "last_kv_peak_bytes": 59899904,
+        "speculative_reserved_bytes": 0,
+        "last_speculative_history_peak_bytes": 0,
+        "prefill_calls": 2,
+        "decode_calls": 34,
+        "speculative": null
+      }
+    }
+  ],
+  "passed": true,
+  "method": "Direct ordinary pinned MLX-VLM generate_step text reference; same affine4-bit weights shared sequentially, fresh mixed caches. Authored image/video recognition checks are functional evidence, not multimodal numerical parity. Sampling, when enabled, checks finite bounded nonempty output only. No original-FP16 parity, full advertised context, broad task quality or speed claim.",
+  "fixtures": {
+    "text.png": {
+      "path": "/private/tmp/forge-qwen35-core-final-fixtures/text.png",
+      "sha256": "4f6e8af3c7e1a2449fbd881e43521046168a89c55e0ab830a12f0a3023c86787"
+    },
+    "sequence.mp4": {
+      "path": "/private/tmp/forge-qwen35-core-final-fixtures/sequence.mp4",
+      "sha256": "c594841683117bc230080c0874d9e318918cd6377d4149cc06c2747a8b6e6bc4"
+    }
+  },
+  "checkpoint_identity": {
+    "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+    "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+    "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+    "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f"
+  },
+  "engine_metadata": {
+    "runner": "mlx_vlm",
+    "runner_version": "0.7.6",
+    "mlx_version": "0.32.2",
+    "checkpoint_format": "mlx_vlm_safetensors",
+    "weight_storage_bytes": 3034300695,
+    "model_type": "qwen3_5",
+    "kv_layers": 8,
+    "recurrent_layers": 24,
+    "kv_heads": 4,
+    "kv_head_dim": 256,
+    "kv_bytes_per_token": 32768,
+    "recurrent_state_bytes": 50331648,
+    "conv_state_bytes": 1179648,
+    "kv_accounting": "persistent_full_KV_plus_recurrent_and_conv; excludes weights, media, embeddings and transient arrays",
+    "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+    "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+    "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+    "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f",
+    "max_model_length": 32768,
+    "state_budget_bytes": 2147483648,
+    "supports_images": true,
+    "supports_video": true,
+    "supports_audio": false
+  }
+}

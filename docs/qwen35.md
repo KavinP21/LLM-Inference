@@ -130,7 +130,10 @@ children, visual follow-ups and resume. Worker materializations are private and
 request-owned. Context and global token admission cover expanded visual inputs.
 Resume binds the checkpoint, processor, runner versions and adapter implementation.
 Remote replicas can use the existing authenticated worker protocol; only one
-physical Mac was available for testing.
+physical Mac was available for testing. Set `"max_request_bytes": 25165824` on
+remote client entries to allow the bounded visual payloads (the legacy client
+default is 1 MiB). Each media item is limited to 8 MiB and a conversation to
+16 MiB before base64 encoding.
 
 ## Optional speculative decoding
 
@@ -160,18 +163,37 @@ for exact workloads, source versions, outputs and limits.
 
 ## Executed qualification
 
-The initial full-model checks matched an independent ordinary MLX-VLM reference
+The final checks on clean frozen source `35c262b` matched an independent ordinary MLX-VLM reference
 on three prompts, including a 6,860-token input. The total continuation coverage
 was 17 tokens; this is not sustained long-context decoding or original-FP16 parity.
 Synthetic image OCR, a visual follow-up, red-then-blue video order, mixed image/video,
 thinking separation, truncated thinking and request cleanup passed.
 
-On frozen source `7239c91`, both single and delegated coding/document fixtures
+A 32,766-token synthetic prompt plus two outputs executed at the default 32K
+limit, with a 1,125,253,120-byte peak persistent state and full reclamation.
+This checks execution, not long-context semantic quality. A seeded ordinary
+sampling smoke check produced finite bounded output. Actual worker image transport,
+expanded-context rejection, an image-reading child, reopened journal hydration
+and cancellation/restart also passed. All nine desktop checks passed, including
+visual follow-up, thinking truncation, Stop, output clamping, draft preservation,
+model switching and shutdown.
+
+Speculative checks passed three forced rounds at every accepted prefix 0–4,
+two allocation boundaries and cancellation inside all 24 live recurrent timelines.
+Image/video block decoding also matched ordinary outputs with real n-gram proposals
+(44/27 accepted draft tokens). Three warmed alternating timing repetitions per
+text workload gave median ratios of 1.920× for copying, 1.006× for code and 0.919×
+for arithmetic. All timed continuations matched; these are workload-specific
+measurements, and reserved history bytes are not measured Metal peak memory.
+
+On the same frozen source, both single and delegated coding/document fixtures
 passed their independent gates. Each delegated case executed two completed
-children. Coding took 25.38/53.85 seconds and document analysis 8.36/51.25 seconds;
+children. Coding took 25.93/56.08 seconds and document analysis 8.35/51.44 seconds;
 startup was excluded. Delegation was slower. The earlier delegated document failure
 is retained alongside the revised run. These are two development fixtures, not
-broad autonomous-task qualification.
+broad autonomous-task qualification. The final regression passed **1,082 tests
+without skips**, including Metal and loopback checks; a fresh C++ host build and
+all GitHub workflows passed.
 
 The [evidence directory](../benchmarks/results/qwen35-2026-10-10/) records separate
 source identities for core inference, task workflows and speculation. Portable

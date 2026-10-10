@@ -25,7 +25,11 @@ sys.path.insert(0, str(ROOT / "python"))
 from forge_llm.benchmark import source_provenance  # noqa: E402 - direct checkout CLI
 from forge_llm.qwen35_engine import Qwen35Engine  # noqa: E402
 from gpu_guard import exclusive_gpu_workflow  # noqa: E402
-from qualify_qwen35_speculative import Report, cleanup_passed  # noqa: E402
+from qualify_qwen35_speculative import (  # noqa: E402
+    Report,
+    cleanup_passed,
+    finalize_provenance,
+)
 
 
 def make_fixtures(directory, font_path):
@@ -482,9 +486,10 @@ def main(argv=None):
         payload["passed"] = all(row["passed"] for row in payload["rows"])
     except BaseException as exc:
         payload["error"] = {"type": type(exc).__name__, "message": str(exc)[:4096]}
-        report.save()
         raise
-    report.save()
+    finally:
+        finalize_provenance(payload)
+        report.save()
     if not payload["passed"]:
         raise SystemExit("Qwen3.5 core qualification failed; raw evidence preserved")
 
