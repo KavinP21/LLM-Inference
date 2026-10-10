@@ -1,18 +1,23 @@
 {
   "schema": "forge_agent_regression_v1",
-  "recorded_utc": "2026-10-10T05:31:39.819383+00:00",
+  "recorded_utc": "2026-10-10T06:41:23.363532+00:00",
+  "tested_commit": "f985492aeb3d78f9b835203a03b40088bbc518bb",
+  "source_changed_during_run": false,
   "pytest": {
-    "name": "pytest",
+    "tests": "854",
     "errors": "0",
     "failures": "0",
     "skipped": "0",
-    "tests": "854",
-    "time": "29.560",
-    "timestamp": "2026-10-10T02:21:04.477792-04:00",
-    "hostname": "ipsec-10-2-0-204.vpn.gatech.edu"
+    "name": "pytest",
+    "time": "29.631",
+    "timestamp": "2026-10-10T02:40:22.635115-04:00"
   },
-  "command": "FORGE_INSPECT_MODEL=/private/tmp/forge-publish-inspect-model PYTHONPATH=python python -m pytest -q",
-  "style_check": "ruff check and ruff format --check: passed",
-  "portable_host": "Fresh Clang C++20 build: all host tests passed",
+  "commands": [
+    "FORGE_INSPECT_MODEL=/private/tmp/forge-publish-inspect-model PYTHONPATH=python python -m pytest -q --ignore=tests/test_gpu_evidence_guard.py",
+    "PYTHONPATH=python python -m pytest -q tests/test_gpu_evidence_guard.py"
+  ],
+  "gpu_serialization": "852 tests under an exclusive GPU evidence lease; 2 lease-control tests run afterward outside the outer lease. All 854 collected tests executed, with no skips.",
+  "style_check": "Full Ruff check and format check passed; final GitHub Linux/macOS style and host checks passed at the tested commit.",
+  "portable_host": "Fresh Clang C++20 build: all host tests passed; GitHub sanitized/portable host checks passed.",
   "scope": "Local Apple Metal, portable Python/C++, actual loopback transports; no CUDA device or multi-host execution"
 }
