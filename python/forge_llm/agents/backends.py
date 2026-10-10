@@ -283,6 +283,9 @@ class LocalForgeBackend:
         tokenizer_factory: Callable[[], Any] | None = None,
     ) -> None:
         self.config = config
+        self.native_call_dialect = (
+            "qwen3_coder_xml" if config.runner == "qwen35" else "json"
+        )
         self.supports_native_tools = config.native_tool_calls
         if (
             config.cuda_visible_devices is not None
@@ -607,6 +610,7 @@ class LocalForgeBackend:
             "native_tool_calls": self.supports_native_tools,
             "enable_thinking": self.config.enable_thinking,
             "supports_media": self.config.runner == "qwen35",
+            "native_call_dialect": self.native_call_dialect,
             "speculative": self.config.speculative,
             "last_speculative_stats": self._last_speculative_stats,
             **self._artifact_identity,
@@ -616,6 +620,10 @@ class LocalForgeBackend:
 
     def _forget(self, engine_request_id: int) -> None:
         self._engine.forget(engine_request_id)
+
+    @property
+    def max_model_length(self):
+        return self._context_limit
 
     def _chat_messages(self, messages: tuple[ChatMessage, ...]) -> list[dict[str, str]]:
         if self._model_type != "gemma3_text":
@@ -664,14 +672,16 @@ class LocalForgeBackend:
                 raise GenerationTimeoutError("generation deadline exceeded")
 
         check()
+        if self.config.runner != "qwen35" and any(
+            message.media for message in messages
+        ):
+            raise RequestValidationError(
+                "image/video requests require the qwen35 runner"
+            )
         self._load()
         check()
         if self.config.runner == "qwen35":
             return self._generate_qwen35(messages, max_tokens, tool_specs, check)
-        if any(message.media for message in messages):
-            raise RequestValidationError(
-                "image/video requests require the qwen35 runner"
-            )
         try:
             template_options = {"tools": tool_specs} if tool_specs is not None else {}
             token_ids = self._tokenizer.apply_chat_template(
@@ -1094,6 +1104,10 @@ class RemoteWorkerBackend:
                 "worker is not ready or uses an unsupported protocol"
             )
         self.identity = result
+        dialect = result.get("native_call_dialect", "json")
+        if dialect not in {"json", "qwen3_coder_xml"}:
+            raise BackendError("worker returned an unsupported native tool dialect")
+        self.native_call_dialect = dialect
         native = result.get("native_tool_calls", False)
         if type(native) is not bool:
             raise BackendError("worker returned an invalid native tool capability")
@@ -1231,6 +1245,10 @@ class RemoteWorkerBackend:
         finally:
             self._active.discard(request_id)
 
+    @property
+    def max_model_length(self):
+        return self.identity.get("max_model_length") if self.identity else None
+
     async def cancel(self, request_id: str) -> None:
         validate_request([ChatMessage("user", "")], 1, request_id)
         try:
@@ -1311,6 +1329,29 @@ class WorkerPool:
     @property
     def loads(self) -> dict[str, int]:
         return dict(self._loads)
+
+    @property
+    def max_model_length(self):
+        limits = [
+            getattr(backend, "max_model_length", None)
+            for backend in self.backends.values()
+        ]
+        return (
+            max(limits)
+            if all(type(limit) is int and limit > 0 for limit in limits)
+            else None
+        )
+
+    @property
+    def native_call_dialect(self):
+        return (
+            "qwen3_coder_xml"
+            if any(
+                getattr(backend, "native_call_dialect", "json") == "qwen3_coder_xml"
+                for backend in self.backends.values()
+            )
+            else "json"
+        )
 
     @property
     def supports_native_tools(self) -> bool:

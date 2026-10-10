@@ -153,7 +153,7 @@ async def worker_identities(pool: WorkerPool) -> dict:
                     "worker lacks the artifact/tokenizer fingerprints required for resumable runs"
                 )
         result[name] = {key: health.get(key) for key in keys}
-        for key in ("processor_signature", "enable_thinking"):
+        for key in ("processor_signature", "enable_thinking", "native_call_dialect"):
             if key in health:
                 result[name][key] = health[key]
     return result
