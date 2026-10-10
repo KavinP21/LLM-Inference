@@ -1,5 +1,24 @@
 # Agent qualification and diagnostic results
 
+The [final frozen-source run](../benchmarks/results/agents-published-2026-10-10/qwen3-final-tasks.json)
+passed all four registered cases on commit `1477c4b`, with a clean checkout and
+unchanged sources throughout execution. Two supervised processes loaded the same
+already cached Qwen3-30B-A3B checkpoint through the explicitly selected MLX-LM
+runner. Startup took 21.65 seconds and is excluded from the task times below.
+
+| Task | Single agent | Delegated | Actual children | Independent result |
+| --- | --- | --- | --- | --- |
+| Python repair | 17.40 s, 6 model calls | 110.18 s, 28 calls | 2 | Both pass all six tests, including four additional inputs withheld until final grading. |
+| Document analysis | 8.84 s, 4 model calls | 25.61 s, 9 calls | 2 | Both return all eight correct typed facts, including excluded evidence and unverified release/energy claims. |
+
+Delegation was slower in these fixtures. No task-quality or latency improvement
+over one capable agent is established. These two development fixtures demonstrate
+actual tool use, edits/tests, child execution and source-grounded synthesis; they
+do not establish broad coding/research reliability, unseen task generalization,
+multi-host scaling, or an independent causal benefit from the handoff change.
+The inference work here is upstream MLX-LM execution; Forge-native speculation
+has its own separate measured contract.
+
 Control correctness and model task quality are separate checks. Scripted models
 exercise concurrency, durable effects, cancellation, recovery, budget limits,
 tool permissions and transport failures. They do not establish reasoning ability.
@@ -64,7 +83,7 @@ A child following parent spawning instructions exposed an assignment-scope
 problem. Line-range edits, inspection-first catalogs and stronger child scope
 framing address those concrete failures; a fresh actual-model run is required.
 
-Final source qualification is tracked separately. The current grader uses immutable
+The current grader uses immutable
 copies of visible tests for completion steering and adds four further inputs only
 after the run. Earlier diagnostic checkers also returned those additional tests'
 failure output to the model; they are not held-out evaluations. These two small

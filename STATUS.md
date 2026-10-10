@@ -75,8 +75,11 @@ the slower successful document delegation, are retained in
 The implementation regression passed **854 Python tests without skips** in
 29.57 seconds, including synthetic Metal references and real loopback transport.
 A fresh Clang C++20 host build passed. No CUDA device tests or multi-host
-measurements were run. Final frozen-source task evaluation is separate from
-these control tests.
+measurements were run. The final frozen-source task evaluation passed all four
+single/delegated coding and document cases, with two actual children in each
+delegated run. It uses the explicitly selected upstream MLX-LM runner and two
+small development fixtures; delegation was slower and no general task-quality
+advantage is claimed. See [the task report](docs/agent-results.md).
 
 ## Remaining limits
 
