@@ -20,8 +20,9 @@ PYTHONPATH=python .venv/bin/python -m forge_llm.agents.cli \
 
 `forge-agents` and `forge-worker` are installed entry points for the same modules.
 The example supervises two independent processes, each with its own loaded
-model and authenticated loopback endpoint. Each example replica enables bounded
-256 MiB FP16 prefix reuse for repeated task context. They run on the same Mac GPU;
+model and authenticated loopback endpoint. The separate Forge FP16 example enables
+bounded 256 MiB prefix reuse; the MLX-LM runner uses fresh full K/V caches.
+They run on the same Mac GPU;
 replicas do not create extra hardware or guarantee lower latency.
 
 The task configuration selects an already local Qwen3-30B-A3B-Instruct-2507
@@ -132,6 +133,15 @@ queries receive no-progress feedback.
 Child messages quote inherited parent goals as background and place the assigned
 scope last. Parent workflow steps belong to the parent; a child may delegate only
 when its current function catalog advertises spawning.
+
+Child handoffs separate the model's unverified conclusions from up to three
+recorded read-only observations. Source text, observed file/line metadata, exact
+journal event IDs, arguments and recovery cursors let the parent check decisive
+claims. Listings, empty searches, failed reads, mutations and recursive recall
+copies are excluded. Excerpts and total payloads are bounded; full observations
+remain in the journal. Missing measurements stay unknown rather than becoming
+zeros or approval claims. Recorded source evidence does not itself certify an
+arbitrary natural-language conclusion.
 
 Spawning is bounded by total agents, hierarchy depth, actions per agent, total
 tokens, concurrency and wall-clock deadline. Capacity comes from the operator's
