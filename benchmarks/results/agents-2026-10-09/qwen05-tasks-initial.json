@@ -1,0 +1,964 @@
+{
+  "schema": "forge_agent_task_evaluation_v1",
+  "configuration": {
+    "workers": [
+      {
+        "type": "process",
+        "name": "replica-1",
+        "model": "models/qwen2.5-0.5b.engine",
+        "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+        "backend": "mlx",
+        "max_model_length": 8192,
+        "kv_cache_bytes": 268435456,
+        "engine_options": {
+          "decode_mode": "rowwise"
+        }
+      },
+      {
+        "type": "process",
+        "name": "replica-2",
+        "model": "models/qwen2.5-0.5b.engine",
+        "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
+        "backend": "mlx",
+        "max_model_length": 8192,
+        "kv_cache_bytes": 268435456,
+        "engine_options": {
+          "decode_mode": "rowwise"
+        }
+      }
+    ],
+    "runtime": {
+      "max_agents": 6,
+      "max_depth": 2,
+      "max_concurrent_generations": 2,
+      "max_output_tokens": 512,
+      "max_steps_per_agent": 20,
+      "max_total_tokens": 128000,
+      "max_context_tokens": 7800,
+      "deadline_seconds": 900
+    }
+  },
+  "startup_seconds": 8.284502584006987,
+  "environment": {
+    "git_commit": "a19fbd386e5e22a7e7e5c963c46c9ef1796a8e2a",
+    "git_dirty": true,
+    "runtime_source_sha256": "c259b2aad806c8bcedef9d2155cf0d699b0cfb8a976f080097b1c13b5345c0b9"
+  },
+  "model_provenance": [
+    {
+      "model_format_version": 1,
+      "model_data_sha256": "87dde32c2f28ffbcb70016efea4332c4306e3f72c64f9df131def7654bff6c45",
+      "model_file_bytes": 988084480
+    },
+    {
+      "model_format_version": 1,
+      "model_data_sha256": "87dde32c2f28ffbcb70016efea4332c4306e3f72c64f9df131def7654bff6c45",
+      "model_file_bytes": 988084480
+    }
+  ],
+  "source_sha256": {
+    "python/forge_llm/agents/worker.py": "e190ef6ca0c68417fe53faced43fa3ce752b9bb1d6d0fc7836e9b963d913f654",
+    "python/forge_llm/agents/store.py": "84ae7997ae78e285ce6559350a2a6457c64936be68aefa0ee0954f557eae3db8",
+    "python/forge_llm/agents/protocol.py": "2e5245520bf69c3115942f81edac840a326285b369e48a807c000686d57293f5",
+    "python/forge_llm/agents/tools.py": "b9d7eebb60f624e3f70644fa4d7f825eeb3c792f22e81291617aaa5e505d7031",
+    "python/forge_llm/agents/__init__.py": "c1d704706a49484c11ffdb538fa61fe8303a4847c25bb3fb3eeb7d3f712499ba",
+    "python/forge_llm/agents/runtime.py": "066ab444db99b7e906f53bdf7b8baa101abfe222ceb6e39602bbcf38ebfff461",
+    "python/forge_llm/agents/backends.py": "6c46b0f697d827bdf35845908aefed50698626a31c31eaba05706306bfb83997",
+    "python/forge_llm/agents/cli.py": "138371544e9dd55826f7fcf6069e9ec237156c07e44fe3280247c766e997446e"
+  },
+  "cases": {
+    "coding": {
+      "files": {
+        "stats.py": "def mean(values):\n    return sum(values) / (len(values) + 1)\n",
+        "tests/test_stats.py": "import pytest\nfrom stats import mean\n\ndef test_mean():\n    assert mean([2, 4]) == 3\n    assert mean([1]) == 1\n    assert mean([-2, 2]) == 0\n\ndef test_empty():\n    with pytest.raises(ValueError):\n        mean([])\n"
+      },
+      "task": "Fix stats.py so mean(values) computes the arithmetic mean and raises ValueError for an empty list. Read the source and tests, make a minimal edit, and run tests/test_stats.py. Cite the actual test result in your final answer.",
+      "delegation": "First spawn two independent review agents: one inspects stats.py and proposes the minimal correction; the other inspects tests/test_stats.py and checks edge cases. Ask the children to report findings without editing files. Wait for both, then make and test the edit yourself."
+    },
+    "research": {
+      "files": {
+        "report_a.md": "# Registered experiment A\n12 concurrent requests on Host A. Same model and prompt/output lengths. Baseline throughput: 32 tokens/s; candidate throughput: 64 tokens/s. Baseline p95 latency: 40 ms; candidate p95 latency: 50 ms. Baseline memory: 256 MiB; candidate memory: 512 MiB. All 12 outputs matched the reference.\n",
+        "report_b.md": "# Diagnostic experiment B\nObserved throughput: 128 tokens/s. An unrelated GPU job overlapped the run, so this observation is excluded from performance claims. Energy was not measured. Final sustained-load qualification is still pending; no release-ready claim is justified.\n"
+      },
+      "task": "Read report_a.md and report_b.md. Compare the eligible throughput, latency and memory changes; distinguish the excluded observation. Finish with a JSON object encoded in the result string, with exactly these keys: eligible_throughput (number), baseline_throughput (number), speedup (number), latency_increase_ms (number), memory_increase_mib (number), excluded_throughput (number), release_ready (boolean), energy_measured (boolean). Base every value on the files.",
+      "delegation": "First spawn one child to analyze report_a.md and one child to analyze report_b.md. Wait for both reports, then synthesize the required JSON yourself."
+    }
+  },
+  "rows": [
+    {
+      "case": "coding",
+      "mode": "single",
+      "repetition": 0,
+      "elapsed_seconds": 2.20316304199514,
+      "result": {
+        "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+        "status": "failed",
+        "output": null,
+        "agents": [
+          {
+            "agent_id": "root",
+            "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+            "parent_id": null,
+            "task": "Fix stats.py so mean(values) computes the arithmetic mean and raises ValueError for an empty list. Read the source and tests, make a minimal edit, and run tests/test_stats.py. Cite the actual test result in your final answer. Solve this yourself without spawning children.",
+            "role": "Solve the user's task and synthesize evidence from delegated work.",
+            "depth": 0,
+            "status": "failed",
+            "steps": 3,
+            "protocol_errors": 2,
+            "backend_attempts": 1,
+            "dependencies": [],
+            "wait_for": [],
+            "result": null,
+            "error": "action repair limit reached: wait accepts only your direct child IDs",
+            "pending_action": null,
+            "action_phase": null
+          }
+        ],
+        "usage": {
+          "input_tokens": 2164,
+          "output_tokens": 68,
+          "uncertain_tokens": 0,
+          "reserved_tokens": 0
+        },
+        "error": "action repair limit reached: wait accepts only your direct child IDs"
+      },
+      "grading": {
+        "passed": false,
+        "independent_test_exit": 1,
+        "independent_test_output": "FF                                                                       [100%]\n=================================== FAILURES ===================================\n__________________________________ test_mean ___________________________________\n\n    def test_mean():\n>       assert mean([2, 4]) == 3\nE       assert 2.0 == 3\nE        +  where 2.0 = mean([2, 4])\n\ntests/test_stats.py:5: AssertionError\n__________________________________ test_empty __________________________________\n\n    def test_empty():\n>       with pytest.raises(ValueError):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE ValueError\n\ntests/test_stats.py:10: Failed\n=========================== short test summary info ============================\nFAILED tests/test_stats.py::test_mean - assert 2.0 == 3\nFAILED tests/test_stats.py::test_empty - Failed: DID NOT RAISE ValueError\n2 failed in 0.02s\n",
+        "final_source": "def mean(values):\n    return sum(values) / (len(values) + 1)\n"
+      },
+      "spawned_agents": 0,
+      "model_calls": 3,
+      "events": [
+        {
+          "id": 1,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "run_created",
+          "payload": {
+            "task": "Fix stats.py so mean(values) computes the arithmetic mean and raises ValueError for an empty list. Read the source and tests, make a minimal edit, and run tests/test_stats.py. Cite the actual test result in your final answer. Solve this yourself without spawning children.",
+            "config": {
+              "max_agents": 1,
+              "max_depth": 1,
+              "max_steps_per_agent": 12,
+              "max_concurrent_generations": 1,
+              "max_output_tokens": 512,
+              "max_total_tokens": 128000,
+              "max_context_tokens": 7800,
+              "max_protocol_errors": 3,
+              "max_backend_retries": 2,
+              "generation_timeout_seconds": 120.0,
+              "tool_timeout_seconds": 30.0,
+              "deadline_seconds": 120.0,
+              "max_tool_result_chars": 2000,
+              "max_stored_tool_chars": 262144,
+              "lease_seconds": 15.0,
+              "compact_history": true
+            }
+          },
+          "created": 1791603029.646234
+        },
+        {
+          "id": 2,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "5b4797ad85464c9a8e01ace082afd0b1.root.1",
+            "attempt": 1,
+            "input_tokens": 662,
+            "output_tokens": 32,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603030.591758
+        },
+        {
+          "id": 3,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\n  \"action\": \"fix\",\n  \"task\": \"fix stats.py\",\n  \"role\": \"correct error\",\n  \"dependencies\": []\n}"
+          },
+          "created": 1791603030.591805
+        },
+        {
+          "id": 4,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "unknown action: fix",
+            "consecutive_errors": 1
+          },
+          "created": 1791603030.591923
+        },
+        {
+          "id": 5,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "5b4797ad85464c9a8e01ace082afd0b1.root.2",
+            "attempt": 1,
+            "input_tokens": 725,
+            "output_tokens": 18,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603031.220672
+        },
+        {
+          "id": 6,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\n  \"action\": \"wait\",\n  \"agents\": [\"parent_id\"]\n}"
+          },
+          "created": 1791603031.220713
+        },
+        {
+          "id": 7,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "wait",
+            "agents": [
+              "parent_id"
+            ]
+          },
+          "created": 1791603031.220788
+        },
+        {
+          "id": 8,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "wait accepts only your direct child IDs",
+            "consecutive_errors": 2
+          },
+          "created": 1791603031.2208982
+        },
+        {
+          "id": 9,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "5b4797ad85464c9a8e01ace082afd0b1.root.3",
+            "attempt": 1,
+            "input_tokens": 777,
+            "output_tokens": 18,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603031.848779
+        },
+        {
+          "id": 10,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\n  \"action\": \"wait\",\n  \"agents\": [\"parent_id\"]\n}"
+          },
+          "created": 1791603031.8488178
+        },
+        {
+          "id": 11,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "wait",
+            "agents": [
+              "parent_id"
+            ]
+          },
+          "created": 1791603031.848865
+        },
+        {
+          "id": 12,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": "root",
+          "kind": "failed",
+          "payload": {
+            "error": "action repair limit reached: wait accepts only your direct child IDs"
+          },
+          "created": 1791603031.84899
+        },
+        {
+          "id": 13,
+          "run_id": "5b4797ad85464c9a8e01ace082afd0b1",
+          "agent_id": null,
+          "kind": "run_finished",
+          "payload": {
+            "status": "failed",
+            "error": "action repair limit reached: wait accepts only your direct child IDs"
+          },
+          "created": 1791603031.8491578
+        }
+      ]
+    },
+    {
+      "case": "coding",
+      "mode": "delegated",
+      "repetition": 0,
+      "elapsed_seconds": 2.2950662090006517,
+      "result": {
+        "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+        "status": "failed",
+        "output": null,
+        "agents": [
+          {
+            "agent_id": "root",
+            "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+            "parent_id": null,
+            "task": "Fix stats.py so mean(values) computes the arithmetic mean and raises ValueError for an empty list. Read the source and tests, make a minimal edit, and run tests/test_stats.py. Cite the actual test result in your final answer. First spawn two independent review agents: one inspects stats.py and proposes the minimal correction; the other inspects tests/test_stats.py and checks edge cases. Ask the children to report findings without editing files. Wait for both, then make and test the edit yourself.",
+            "role": "Solve the user's task and synthesize evidence from delegated work.",
+            "depth": 0,
+            "status": "failed",
+            "steps": 3,
+            "protocol_errors": 2,
+            "backend_attempts": 1,
+            "dependencies": [],
+            "wait_for": [],
+            "result": null,
+            "error": "action repair limit reached: invalid wait fields; missing=[], extra=['message']",
+            "pending_action": null,
+            "action_phase": null
+          }
+        ],
+        "usage": {
+          "input_tokens": 2337,
+          "output_tokens": 73,
+          "uncertain_tokens": 0,
+          "reserved_tokens": 0
+        },
+        "error": "action repair limit reached: invalid wait fields; missing=[], extra=['message']"
+      },
+      "grading": {
+        "passed": false,
+        "independent_test_exit": 1,
+        "independent_test_output": "FF                                                                       [100%]\n=================================== FAILURES ===================================\n__________________________________ test_mean ___________________________________\n\n    def test_mean():\n>       assert mean([2, 4]) == 3\nE       assert 2.0 == 3\nE        +  where 2.0 = mean([2, 4])\n\ntests/test_stats.py:5: AssertionError\n__________________________________ test_empty __________________________________\n\n    def test_empty():\n>       with pytest.raises(ValueError):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE ValueError\n\ntests/test_stats.py:10: Failed\n=========================== short test summary info ============================\nFAILED tests/test_stats.py::test_mean - assert 2.0 == 3\nFAILED tests/test_stats.py::test_empty - Failed: DID NOT RAISE ValueError\n2 failed in 0.02s\n",
+        "final_source": "def mean(values):\n    return sum(values) / (len(values) + 1)\n"
+      },
+      "spawned_agents": 0,
+      "model_calls": 3,
+      "events": [
+        {
+          "id": 1,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "run_created",
+          "payload": {
+            "task": "Fix stats.py so mean(values) computes the arithmetic mean and raises ValueError for an empty list. Read the source and tests, make a minimal edit, and run tests/test_stats.py. Cite the actual test result in your final answer. First spawn two independent review agents: one inspects stats.py and proposes the minimal correction; the other inspects tests/test_stats.py and checks edge cases. Ask the children to report findings without editing files. Wait for both, then make and test the edit yourself.",
+            "config": {
+              "max_agents": 3,
+              "max_depth": 1,
+              "max_steps_per_agent": 12,
+              "max_concurrent_generations": 2,
+              "max_output_tokens": 512,
+              "max_total_tokens": 128000,
+              "max_context_tokens": 7800,
+              "max_protocol_errors": 3,
+              "max_backend_retries": 2,
+              "generation_timeout_seconds": 120.0,
+              "tool_timeout_seconds": 30.0,
+              "deadline_seconds": 120.0,
+              "max_tool_result_chars": 2000,
+              "max_stored_tool_chars": 262144,
+              "lease_seconds": 15.0,
+              "compact_history": true
+            }
+          },
+          "created": 1791603032.0710871
+        },
+        {
+          "id": 2,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "1c323a9daf31477eaf8f99723bb839c6.root.1",
+            "attempt": 1,
+            "input_tokens": 708,
+            "output_tokens": 35,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603033.060381
+        },
+        {
+          "id": 3,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\n  \"action\": \"wait\",\n  \"task\": \"wait for agents to finish\",\n  \"role\": \"useful expertise\",\n  \"dependencies\": []\n}"
+          },
+          "created": 1791603033.0604212
+        },
+        {
+          "id": 4,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "invalid wait fields; missing=['agents'], extra=['dependencies', 'role', 'task']",
+            "consecutive_errors": 1
+          },
+          "created": 1791603033.060533
+        },
+        {
+          "id": 5,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "1c323a9daf31477eaf8f99723bb839c6.root.2",
+            "attempt": 1,
+            "input_tokens": 787,
+            "output_tokens": 19,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603033.687375
+        },
+        {
+          "id": 6,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\"action\":\"wait\",\"agents\":[\"agent ID\"],\"message\":\"Waiting for agents to finish\"}"
+          },
+          "created": 1791603033.687414
+        },
+        {
+          "id": 7,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "invalid wait fields; missing=[], extra=['message']",
+            "consecutive_errors": 2
+          },
+          "created": 1791603033.687501
+        },
+        {
+          "id": 8,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "1c323a9daf31477eaf8f99723bb839c6.root.3",
+            "attempt": 1,
+            "input_tokens": 842,
+            "output_tokens": 19,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603034.365584
+        },
+        {
+          "id": 9,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\"action\":\"wait\",\"agents\":[\"agent ID\"],\"message\":\"Waiting for agents to finish\"}"
+          },
+          "created": 1791603034.365621
+        },
+        {
+          "id": 10,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": "root",
+          "kind": "failed",
+          "payload": {
+            "error": "action repair limit reached: invalid wait fields; missing=[], extra=['message']"
+          },
+          "created": 1791603034.3657222
+        },
+        {
+          "id": 11,
+          "run_id": "1c323a9daf31477eaf8f99723bb839c6",
+          "agent_id": null,
+          "kind": "run_finished",
+          "payload": {
+            "status": "failed",
+            "error": "action repair limit reached: invalid wait fields; missing=[], extra=['message']"
+          },
+          "created": 1791603034.365896
+        }
+      ]
+    },
+    {
+      "case": "research",
+      "mode": "single",
+      "repetition": 0,
+      "elapsed_seconds": 2.667588208001689,
+      "result": {
+        "run_id": "d23dbb586af148c58d727d7267418370",
+        "status": "failed",
+        "output": null,
+        "agents": [
+          {
+            "agent_id": "root",
+            "run_id": "d23dbb586af148c58d727d7267418370",
+            "parent_id": null,
+            "task": "Read report_a.md and report_b.md. Compare the eligible throughput, latency and memory changes; distinguish the excluded observation. Finish with a JSON object encoded in the result string, with exactly these keys: eligible_throughput (number), baseline_throughput (number), speedup (number), latency_increase_ms (number), memory_increase_mib (number), excluded_throughput (number), release_ready (boolean), energy_measured (boolean). Base every value on the files. Solve this yourself without spawning children.",
+            "role": "Solve the user's task and synthesize evidence from delegated work.",
+            "depth": 0,
+            "status": "failed",
+            "steps": 3,
+            "protocol_errors": 2,
+            "backend_attempts": 1,
+            "dependencies": [],
+            "wait_for": [],
+            "result": null,
+            "error": "action repair limit reached: wait accepts only your direct child IDs",
+            "pending_action": null,
+            "action_phase": null
+          }
+        ],
+        "usage": {
+          "input_tokens": 2163,
+          "output_tokens": 96,
+          "uncertain_tokens": 0,
+          "reserved_tokens": 0
+        },
+        "error": "action repair limit reached: wait accepts only your direct child IDs"
+      },
+      "grading": {
+        "passed": false,
+        "expected": {
+          "eligible_throughput": 64,
+          "baseline_throughput": 32,
+          "speedup": 2,
+          "latency_increase_ms": 10,
+          "memory_increase_mib": 256,
+          "excluded_throughput": 128,
+          "release_ready": false,
+          "energy_measured": false
+        },
+        "actual": null
+      },
+      "spawned_agents": 0,
+      "model_calls": 3,
+      "events": [
+        {
+          "id": 1,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "run_created",
+          "payload": {
+            "task": "Read report_a.md and report_b.md. Compare the eligible throughput, latency and memory changes; distinguish the excluded observation. Finish with a JSON object encoded in the result string, with exactly these keys: eligible_throughput (number), baseline_throughput (number), speedup (number), latency_increase_ms (number), memory_increase_mib (number), excluded_throughput (number), release_ready (boolean), energy_measured (boolean). Base every value on the files. Solve this yourself without spawning children.",
+            "config": {
+              "max_agents": 1,
+              "max_depth": 1,
+              "max_steps_per_agent": 12,
+              "max_concurrent_generations": 1,
+              "max_output_tokens": 512,
+              "max_total_tokens": 128000,
+              "max_context_tokens": 7800,
+              "max_protocol_errors": 3,
+              "max_backend_retries": 2,
+              "generation_timeout_seconds": 120.0,
+              "tool_timeout_seconds": 30.0,
+              "deadline_seconds": 120.0,
+              "max_tool_result_chars": 2000,
+              "max_stored_tool_chars": 262144,
+              "lease_seconds": 15.0,
+              "compact_history": true
+            }
+          },
+          "created": 1791603034.5905678
+        },
+        {
+          "id": 2,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "d23dbb586af148c58d727d7267418370.root.1",
+            "attempt": 1,
+            "input_tokens": 632,
+            "output_tokens": 74,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603036.315899
+        },
+        {
+          "id": 3,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\n  \"eligible_throughput\": 0,\n  \"baseline_throughput\": 0,\n  \"speedup\": 0,\n  \"latency_increase_ms\": 0,\n  \"memory_increase_mib\": 0,\n  \"excluded_throughput\": 0,\n  \"release_ready\": false,\n  \"energy_measured\": false\n}"
+          },
+          "created": 1791603036.3159392
+        },
+        {
+          "id": 4,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "response must be an object with string field \"action\"",
+            "consecutive_errors": 1
+          },
+          "created": 1791603036.316035
+        },
+        {
+          "id": 5,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "d23dbb586af148c58d727d7267418370.root.2",
+            "attempt": 1,
+            "input_tokens": 743,
+            "output_tokens": 11,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603036.787013
+        },
+        {
+          "id": 6,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\"action\":\"wait\",\"agents\":[\"child ID\"]}"
+          },
+          "created": 1791603036.787052
+        },
+        {
+          "id": 7,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "wait",
+            "agents": [
+              "child ID"
+            ]
+          },
+          "created": 1791603036.787124
+        },
+        {
+          "id": 8,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "wait accepts only your direct child IDs",
+            "consecutive_errors": 2
+          },
+          "created": 1791603036.7872388
+        },
+        {
+          "id": 9,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "d23dbb586af148c58d727d7267418370.root.3",
+            "attempt": 1,
+            "input_tokens": 788,
+            "output_tokens": 11,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603037.257539
+        },
+        {
+          "id": 10,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\"action\":\"wait\",\"agents\":[\"child ID\"]}"
+          },
+          "created": 1791603037.257579
+        },
+        {
+          "id": 11,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "wait",
+            "agents": [
+              "child ID"
+            ]
+          },
+          "created": 1791603037.257633
+        },
+        {
+          "id": 12,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": "root",
+          "kind": "failed",
+          "payload": {
+            "error": "action repair limit reached: wait accepts only your direct child IDs"
+          },
+          "created": 1791603037.257764
+        },
+        {
+          "id": 13,
+          "run_id": "d23dbb586af148c58d727d7267418370",
+          "agent_id": null,
+          "kind": "run_finished",
+          "payload": {
+            "status": "failed",
+            "error": "action repair limit reached: wait accepts only your direct child IDs"
+          },
+          "created": 1791603037.257927
+        }
+      ]
+    },
+    {
+      "case": "research",
+      "mode": "delegated",
+      "repetition": 0,
+      "elapsed_seconds": 2.6616277499997523,
+      "result": {
+        "run_id": "0ac11c333c944e72829aa51590faf039",
+        "status": "failed",
+        "output": null,
+        "agents": [
+          {
+            "agent_id": "root",
+            "run_id": "0ac11c333c944e72829aa51590faf039",
+            "parent_id": null,
+            "task": "Read report_a.md and report_b.md. Compare the eligible throughput, latency and memory changes; distinguish the excluded observation. Finish with a JSON object encoded in the result string, with exactly these keys: eligible_throughput (number), baseline_throughput (number), speedup (number), latency_increase_ms (number), memory_increase_mib (number), excluded_throughput (number), release_ready (boolean), energy_measured (boolean). Base every value on the files. First spawn one child to analyze report_a.md and one child to analyze report_b.md. Wait for both reports, then synthesize the required JSON yourself.",
+            "role": "Solve the user's task and synthesize evidence from delegated work.",
+            "depth": 0,
+            "status": "failed",
+            "steps": 3,
+            "protocol_errors": 2,
+            "backend_attempts": 1,
+            "dependencies": [],
+            "wait_for": [],
+            "result": null,
+            "error": "action repair limit reached: wait accepts only your direct child IDs",
+            "pending_action": null,
+            "action_phase": null
+          }
+        ],
+        "usage": {
+          "input_tokens": 2235,
+          "output_tokens": 96,
+          "uncertain_tokens": 0,
+          "reserved_tokens": 0
+        },
+        "error": "action repair limit reached: wait accepts only your direct child IDs"
+      },
+      "grading": {
+        "passed": false,
+        "expected": {
+          "eligible_throughput": 64,
+          "baseline_throughput": 32,
+          "speedup": 2,
+          "latency_increase_ms": 10,
+          "memory_increase_mib": 256,
+          "excluded_throughput": 128,
+          "release_ready": false,
+          "energy_measured": false
+        },
+        "actual": null
+      },
+      "spawned_agents": 0,
+      "model_calls": 3,
+      "events": [
+        {
+          "id": 1,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "run_created",
+          "payload": {
+            "task": "Read report_a.md and report_b.md. Compare the eligible throughput, latency and memory changes; distinguish the excluded observation. Finish with a JSON object encoded in the result string, with exactly these keys: eligible_throughput (number), baseline_throughput (number), speedup (number), latency_increase_ms (number), memory_increase_mib (number), excluded_throughput (number), release_ready (boolean), energy_measured (boolean). Base every value on the files. First spawn one child to analyze report_a.md and one child to analyze report_b.md. Wait for both reports, then synthesize the required JSON yourself.",
+            "config": {
+              "max_agents": 3,
+              "max_depth": 1,
+              "max_steps_per_agent": 12,
+              "max_concurrent_generations": 2,
+              "max_output_tokens": 512,
+              "max_total_tokens": 128000,
+              "max_context_tokens": 7800,
+              "max_protocol_errors": 3,
+              "max_backend_retries": 2,
+              "generation_timeout_seconds": 120.0,
+              "tool_timeout_seconds": 30.0,
+              "deadline_seconds": 120.0,
+              "max_tool_result_chars": 2000,
+              "max_stored_tool_chars": 262144,
+              "lease_seconds": 15.0,
+              "compact_history": true
+            }
+          },
+          "created": 1791603037.2599301
+        },
+        {
+          "id": 2,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "0ac11c333c944e72829aa51590faf039.root.1",
+            "attempt": 1,
+            "input_tokens": 656,
+            "output_tokens": 74,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603039.034183
+        },
+        {
+          "id": 3,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\n  \"eligible_throughput\": 0,\n  \"baseline_throughput\": 0,\n  \"speedup\": 0,\n  \"latency_increase_ms\": 0,\n  \"memory_increase_mib\": 0,\n  \"excluded_throughput\": 0,\n  \"release_ready\": false,\n  \"energy_measured\": false\n}"
+          },
+          "created": 1791603039.034223
+        },
+        {
+          "id": 4,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "response must be an object with string field \"action\"",
+            "consecutive_errors": 1
+          },
+          "created": 1791603039.034313
+        },
+        {
+          "id": 5,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "0ac11c333c944e72829aa51590faf039.root.2",
+            "attempt": 1,
+            "input_tokens": 767,
+            "output_tokens": 11,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603039.452118
+        },
+        {
+          "id": 6,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\"action\":\"wait\",\"agents\":[\"child ID\"]}"
+          },
+          "created": 1791603039.4521558
+        },
+        {
+          "id": 7,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "wait",
+            "agents": [
+              "child ID"
+            ]
+          },
+          "created": 1791603039.452229
+        },
+        {
+          "id": 8,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "action_rejected",
+          "payload": {
+            "error": "wait accepts only your direct child IDs",
+            "consecutive_errors": 2
+          },
+          "created": 1791603039.452336
+        },
+        {
+          "id": 9,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "generation",
+          "payload": {
+            "request_id": "0ac11c333c944e72829aa51590faf039.root.3",
+            "attempt": 1,
+            "input_tokens": 812,
+            "output_tokens": 11,
+            "finish_reason": "stop",
+            "model": "models/qwen2.5-0.5b.engine"
+          },
+          "created": 1791603039.920973
+        },
+        {
+          "id": 10,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "model_response",
+          "payload": {
+            "text": "{\"action\":\"wait\",\"agents\":[\"child ID\"]}"
+          },
+          "created": 1791603039.921012
+        },
+        {
+          "id": 11,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "action_prepared",
+          "payload": {
+            "action": "wait",
+            "agents": [
+              "child ID"
+            ]
+          },
+          "created": 1791603039.921057
+        },
+        {
+          "id": 12,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": "root",
+          "kind": "failed",
+          "payload": {
+            "error": "action repair limit reached: wait accepts only your direct child IDs"
+          },
+          "created": 1791603039.9211788
+        },
+        {
+          "id": 13,
+          "run_id": "0ac11c333c944e72829aa51590faf039",
+          "agent_id": null,
+          "kind": "run_finished",
+          "payload": {
+            "status": "failed",
+            "error": "action repair limit reached: wait accepts only your direct child IDs"
+          },
+          "created": 1791603039.9213471
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Two small controlled tasks; no general task-success claim.",
+    "Single and delegated modes share task content, tools and global budgets, but delegated prompts request independent review.",
+    "Protocol/control tests with scripted backends are separate evidence."
+  ]
+}

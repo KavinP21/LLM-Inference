@@ -135,4 +135,20 @@ Metal and CUDA checks require their respective devices.
 | [benchmarks/](benchmarks/) | Workloads, measurement drivers, saved reports |
 
 A local chat UI is available at [tools/forge_chat.py](tools/forge_chat.py).
-The next work is [prefix-cache measurement and NVIDIA validation](docs/roadmap.md).
+The [roadmap](docs/roadmap.md) tracks outstanding measurement and NVIDIA validation.
+
+## Speculation and task agents
+
+Opt-in [greedy speculative decoding](docs/speculative-decoding.md) verifies draft
+blocks and rolls back rejected K/V. The controlled local Qwen/Gemma measurements
+cover three fixed 64-token workloads; the numerical contract and limits are
+documented alongside the results.
+
+The [task agent runtime](docs/agent-runtime.md) adds supervised local/remote
+replicas, bounded child agents, durable messages and recovery, workspace tools,
+and executable completion criteria. Logical agents share physical workers.
+Task-quality evidence is tracked separately from protocol tests in
+[agent results](docs/agent-results.md).
+
+See [orchestration and other serving engines](docs/orchestration-and-serving.md)
+for the architecture boundary and comparison with vLLM, SGLang and TensorRT-LLM.

@@ -1,0 +1,60 @@
+# Agent qualification and diagnostic results
+
+Control correctness and model task quality are separate checks. Scripted models
+exercise concurrency, durable effects, cancellation, recovery, budget limits,
+tool permissions and transport failures. They do not establish reasoning ability.
+
+The available physical machine is an Apple M3 Max with 128 GB unified memory.
+Two supervised loopback processes can each load a full model. The earlier
+[0.5B worker smoke](../benchmarks/results/agents-2026-10-09/worker-smoke.json)
+records actual generation, cancellation, recovery and process cleanup. It does
+not establish coding or research task success, multiple physical GPUs or
+multi-host deployment.
+
+## Actual task procedure
+
+[evaluate_agents.py](../benchmarks/evaluate_agents.py) runs the same two small
+tasks through single-agent and delegated workflows, with the same tool interface
+and global budget. The delegated prompt requests two independent reviews; it
+therefore has a different instruction and additional coordination work.
+
+The coding task repairs an arithmetic mean and the empty-input behavior, then
+runs tests. Independent grading uses an operator-owned test copy outside the
+agent workspace, including four additional input cases. Editing the visible
+tests cannot manufacture acceptance. The document task reads two supplied
+reports, computes six numeric fields and distinguishes excluded evidence and
+two unverified claims. Its fact grader checks exact fields and types.
+
+Completion steering checks executable coding tests or the requested document
+answer structure and completed children. Document fact values are withheld from
+the model. A format check alone is not factual verification.
+
+The task model is the FP16 reconstruction of an already cached MLX affine-4-bit
+Qwen2.5-7B model. The import does not recover original FP16 weights. Its artifact
+and source fingerprints are recorded in the reports. No model download or
+multi-computer experiment was performed for these trials.
+
+## Retained failed development trials
+
+| Trial | Coding single / delegated | Documents single / delegated | Interpretation |
+| --- | --- | --- | --- |
+| [0.5B initial](../benchmarks/results/agents-2026-10-09/qwen05-tasks-initial.json) | Fail / fail | Fail / fail | Protocol failures; suitable for transport smoke only. |
+| [7B initial](../benchmarks/results/agents-2026-10-09/qwen7b-tasks-initial.json) | Fail / fail | Pass / fail | Initial JSON interface and delegation issues. |
+| [7B revised](../benchmarks/results/agents-2026-10-10/qwen7b-tasks-revised.json) | Fail / fail | Pass / fail | Invalid edits, evidence loops and incomplete synthesis. |
+| [7B native initial](../benchmarks/results/agents-2026-10-10/qwen7b-native-tasks.json) | Fail / fail | Fail / fact answer passes with **zero children** | The last result does not qualify delegation. |
+| [7B completion-check diagnostics](../benchmarks/results/agents-2026-10-10/qwen7b-checker-diagnostics.json) | Fail / fail | Pass / pass with **two children** | Loaded development code; source files changed during the run. |
+
+These reports contain the actual model outputs and tool events from earlier
+source versions. They are diagnostic evidence, not measurements of the final
+implementation. Their failures motivated native tool templates, validated
+bounded batches, per-agent automatic edit version checks, complete Python
+compilation preflight, clearer diagnostics, and executable completion criteria.
+The last document pair took 20.13 seconds for one agent and 150.17 seconds for
+delegation. Both children inspected actual reports, but this is not a latency
+advantage or a result from the final frozen sources.
+
+Final source qualification is tracked separately. Two small tasks, even when
+successful, would not establish general coding/research reliability or an
+advantage over one capable agent. Single-GPU replicas can increase contention;
+delegation should be selected for independent deliverables rather than assumed
+to improve latency or correctness.

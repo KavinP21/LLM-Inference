@@ -1,0 +1,7 @@
+{
+  "workers": [
+    {"type": "remote", "name": "gpu-host-a", "url": "https://gpu-host-a.example:8443", "token_env": "FORGE_HOST_A_TOKEN", "max_concurrency": 1},
+    {"type": "remote", "name": "gpu-host-b", "url": "https://gpu-host-b.example:8443", "token_env": "FORGE_HOST_B_TOKEN", "max_concurrency": 1}
+  ],
+  "runtime": {"max_agents": 8, "max_concurrent_generations": 2, "max_total_tokens": 128000}
+}
