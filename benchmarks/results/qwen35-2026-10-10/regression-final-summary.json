@@ -1,0 +1,36 @@
+{
+  "schema": "forge_qwen35_regression_v1",
+  "source_at_regression": {
+    "git_commit": "35c262b565e370196ecc149963bc1de7f0d56f48",
+    "git_dirty": true,
+    "runtime_source_sha256": "04c78c2c896c5e8dac4ec360ea46ac224bb2d66e43f0581703d167a995ab6bb1"
+  },
+  "python": {
+    "tests": 1082,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 29.278
+  },
+  "environment": {
+    "mlx": "0.32.2",
+    "mlx-vlm": "0.7.6",
+    "mlx-lm": "0.28.3",
+    "transformers": "5.17.0",
+    "Pillow": "12.3.0",
+    "opencv-python": "5.0.0.93"
+  },
+  "host": {
+    "passed": true,
+    "compiler": "Apple Clang C++20",
+    "method": "Fresh direct all-source host_tests and inspect_model builds, -O2 -Wall -Wextra -Wpedantic -Wconversion. CMake unavailable locally; C++ sources unchanged since this build."
+  },
+  "ruff": {
+    "check": "passed",
+    "format": "154 files formatted"
+  },
+  "lease_procedure": "1080 tests under exclusive GPU lease; two lease-control tests outside it. Includes synthetic Metal references and real loopback tests.",
+  "limits": [
+    "No CUDA or multi-host tests. Official-model qualification is separately recorded."
+  ]
+}

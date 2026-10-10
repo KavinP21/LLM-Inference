@@ -527,7 +527,10 @@ class AgentRuntime:
             + "\nReply with exactly one action object. Do not copy the menu itself."
         )
 
-    async def run(self, task: str, *, run_id: str | None = None) -> RunResult:
+    async def run(self, task: str, *, run_id: str | None = None, media=()) -> RunResult:
+        from .media import validate_media
+
+        attachments = validate_media(media)
         if not isinstance(task, str) or not task.strip() or len(task) > 12_000:
             raise ValueError(
                 "task must be a nonempty string of at most 12000 characters"
@@ -552,6 +555,7 @@ class AgentRuntime:
             tools=sorted({*self.tools, "journal_read"}),
             completion_required=self.completion_validator is not None,
             completion_root_only=self.completion_root_only,
+            media=attachments,
         )
         return await self._drive(run_id, self.config, recover=False)
 
@@ -854,7 +858,9 @@ class AgentRuntime:
             # the current legal state share the final user message.
             if len(messages) > 2 and messages[-1].role == "user":
                 return messages[:-1] + [
-                    ChatMessage("user", messages[-1].content + "\n\n" + menu)
+                    ChatMessage(
+                        "user", messages[-1].content + "\n\n" + menu, messages[-1].media
+                    )
                 ]
             return messages + [ChatMessage("user", menu)]
 
@@ -913,7 +919,7 @@ class AgentRuntime:
                     remaining - 32,
                     "\n[TRUNCATED for model context; full evidence in journal_read]",
                 )
-                recent.append(ChatMessage(message.role, excerpt))
+                recent.append(ChatMessage(message.role, excerpt, message.media))
                 break
             else:
                 break
@@ -1382,6 +1388,31 @@ class AgentRuntime:
                 f"context limit reached ({input_bound} conservative input tokens + {config.max_output_tokens} output > {config.max_context_tokens}); full history is retained in the journal",
             )
             return
+        reservation_input_bound = input_bound
+        backend_options = {}
+        if any(message.media for message in messages):
+            model_limit = getattr(self.backend, "max_model_length", None)
+            if type(model_limit) is not int or model_limit <= 0:
+                self._fail(
+                    run_id,
+                    agent_id,
+                    "multimodal backend must advertise a bounded model context",
+                )
+                return
+            if getattr(self.backend, "supports_context_limits", False) is True:
+                backend_options["max_context_tokens"] = config.max_context_tokens
+            elif model_limit > config.max_context_tokens:
+                self._fail(
+                    run_id,
+                    agent_id,
+                    "multimodal backend must enforce the runtime's smaller request context limit",
+                )
+                return
+            # Processor expansion is checked by the worker before inference.
+            # Reserve its full context until measured usage refunds the excess.
+            reservation_input_bound = max(
+                input_bound, min(model_limit, config.max_context_tokens)
+            )
         async with self._semaphore, self._run_semaphores[run_id]:
             while True:
                 self._assert_lease(run_id)
@@ -1395,7 +1426,7 @@ class AgentRuntime:
                     self.store.reserve(
                         run_id,
                         reservation,
-                        input_bound + config.max_output_tokens,
+                        reservation_input_bound + config.max_output_tokens,
                         config.max_total_tokens,
                     )
                 except BudgetError as exc:
@@ -1410,10 +1441,14 @@ class AgentRuntime:
                             config.max_output_tokens,
                             request_id,
                             tool_specs=tool_specs,
+                            **backend_options,
                         )
                         if tool_specs is not None
                         else self.backend.generate(
-                            messages, config.max_output_tokens, request_id
+                            messages,
+                            config.max_output_tokens,
+                            request_id,
+                            **backend_options,
                         )
                     )
                     generation = await asyncio.wait_for(
@@ -1441,9 +1476,15 @@ class AgentRuntime:
                         )
                     if generation.output_tokens > config.max_output_tokens:
                         raise ValueError("backend exceeded max_output_tokens")
+                    if (
+                        backend_options
+                        and generation.input_tokens + config.max_output_tokens
+                        > config.max_context_tokens
+                    ):
+                        raise ValueError("backend exceeded the requested context limit")
                     # Zero/missing counts use conservative estimates, rather
                     # than allowing a backend to defeat the token budget.
-                    input_tokens = generation.input_tokens or input_bound
+                    input_tokens = generation.input_tokens or reservation_input_bound
                     output_tokens = generation.output_tokens or min(
                         config.max_output_tokens, len(generation.text.encode("utf-8"))
                     )
@@ -1514,7 +1555,13 @@ class AgentRuntime:
             )
         try:
             if tool_specs is not None:
-                actions = parse_native_actions(generation.text, tool_specs, max_calls=4)
+                actions = parse_native_actions(
+                    generation.text,
+                    tool_specs,
+                    max_calls=4,
+                    allow_xml_text=getattr(self.backend, "native_call_dialect", "json")
+                    == "qwen3_coder_xml",
+                )
                 if len(actions) > 1:
                     self._validate_batch(run_id, agent_id, actions, config)
                     action = {"action": "batch", "items": actions, "next_index": 0}

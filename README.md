@@ -3,10 +3,15 @@
 Forge LLM is a C++20 and Python inference runtime with an Apple MLX/Metal backend
 and a CUDA backend. It implements transformer execution, KV-cache allocation,
 request scheduling, and GPU kernels. PyTorch and Transformers are used for weight
-export and reference checks; neither executes the inference loop.
+export, tokenization/processors and reference checks; neither executes the inference loop.
+
+**Qwen3.5-4B is the default daily driver**, with text, images, short video,
+optional thinking and tool-based agents. Its complete 4-bit model runs through
+the explicitly integrated MLX-VLM adapter. See the [setup and scope](docs/qwen35.md).
+The native Forge Qwen2/Gemma execution path remains available.
 
 
-## Runtime
+## Native Qwen2 and Gemma runtime
 
 - **Paged KV cache:** 16-token physical pages, lazy allocation, capacity reservations,
   and reclamation on completion, cancellation, or failure.
@@ -45,7 +50,8 @@ contains latency, memory, source identity, and reproduction commands;
 
 | Area | Evidence |
 | --- | --- |
-| Python regression | 883 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen7b-2026-10-10/regression-summary.json) |
+| Python regression | 1,082 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen35-2026-10-10/regression-final-summary.json) |
+| Qwen3.5-4B | Full upstream text/image/video execution; 32K execution/reclamation, worker/desktop controls and all four small task cases pass. [Scope and evidence](docs/qwen35.md) |
 | Qwen2.5-0.5B reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
 | Gemma 3 1B reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
 | 32K context | Qwen2.5-0.5B and Gemma 3 1B executed a 32,766-token prompt plus two outputs and reclaimed their pages. This checks execution and resource integrity. |
@@ -54,9 +60,10 @@ contains latency, memory, source identity, and reproduction commands;
 | CUDA | On-device correctness and performance are unverified. |
 
 See [implementation status](STATUS.md) for the reports behind these claims.
-The runtime uses greedy decoding, with optional MLX speculative verification and
+The native runtime uses greedy decoding, with optional MLX speculative verification and
 authenticated model-worker job endpoints. Task agents coordinate local or configured
-remote replicas. Sampling, Forge-native W4A16, streaming/OpenAI-compatible serving
+remote replicas. Qwen3.5's upstream adapter also supports sampling and full visual inputs.
+Native sampling, Forge-native W4A16, streaming/OpenAI-compatible serving
 and tensor/pipeline parallelism remain future work. An explicitly selected MLX-LM
 runner can execute a local upstream 4-bit checkpoint for task agents.
 
@@ -69,9 +76,27 @@ From the repository root:
 python3 -m venv .venv
 source .venv/bin/activate
 CMAKE_ARGS="-DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF" \
-  python -m pip install -e '.[mlx,export,test]'
-forge-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine
+  python -m pip install -e '.[mlx,qwen35,agents,test]'
+python -m forge_llm.prepare_qwen35
+python tools/forge_chat.py
 ```
+
+```python
+from forge_llm import create_engine
+
+with create_engine() as engine:
+    answer = engine.generate_chat(
+        [{"role": "user", "content": "Explain hybrid attention briefly."}],
+        max_new_tokens=256,
+        enable_thinking=False,
+    )
+    print(answer.text)
+```
+
+The [Qwen3.5 guide](docs/qwen35.md) covers images/video, reasoning, memory limits,
+two-replica agents and optional hybrid-state speculation. For the native paged
+Qwen2 backend, install the `export` extra and run
+`forge-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine`:
 
 ```python
 from transformers import AutoTokenizer
@@ -138,7 +163,8 @@ Metal and CUDA checks require their respective devices.
 | [benchmarks/](benchmarks/) | Workloads, measurement drivers, saved reports |
 
 A local chat UI is available at [tools/forge_chat.py](tools/forge_chat.py).
-Its model picker now includes native reconstructed Qwen2.5-7B-Instruct. The
+It defaults to full Qwen3.5-4B with Thinking, attachments and Stop. Its model
+picker also includes native reconstructed Qwen2.5-7B-Instruct. The
 [7B guide](docs/qwen-7b.md) also covers local 4-bit model workers, memory budgets
 and measured qualification limits.
 The [roadmap](docs/roadmap.md) tracks outstanding measurement and NVIDIA validation.

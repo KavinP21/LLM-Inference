@@ -89,7 +89,7 @@ checkpoints and derives their 57,344-byte/token full KV geometry. A two-replica
 7B profile with a 32K configured context and 2 GiB KV budget, offline tokenizer
 loading and one thread owning model operations.
 
-The latest regression passes **883 tests without skips**. Actual desktop loading,
+The 7B checkpoint regression passed **883 tests without skips**. Actual desktop loading,
 model switching, two-turn chat, failed-load status and cleanup pass. Three adapter
 prompts, including an 8,163-token synthetic input, match all 66 direct MLX-LM
 greedy output tokens and reclaim KV on completion/cancellation.
@@ -111,7 +111,37 @@ qualification. See [Qwen7B usage and evidence](docs/qwen-7b.md).
   semantic quality or sustained decoding latency.
 - Prefix reuse is engine-local. Workers explicitly forget terminal request history;
   direct engine callers can use `forget` after consuming a request's final state.
-- Sampling, native W4A16 and tensor/pipeline parallel execution are unimplemented.
+- Native sampling, native W4A16 and tensor/pipeline parallel execution are unimplemented.
 - Speculation is opt-in greedy MLX execution with an explicit numerical contract.
   Replica workers and task orchestration are implemented; multi-host/GPU deployments
   and general task quality require separate qualification.
+
+## Qwen3.5-4B daily driver
+
+The default engine and desktop profile now select the complete local
+`mlx-community/Qwen3.5-4B-4bit` model through MLX-VLM 0.7.6. The adapter implements
+text/image/short-video preparation, thinking separation, ordinary sampling,
+bounded hybrid state, cancellation and explicit terminal cleanup. The native
+Qwen2/Gemma graphs and earlier profiles remain selectable.
+
+Qwen3.5 has 24 recurrent and eight full-attention layers. Admission derives the
+actual 256-dimensional attention heads and accounts for FP32 recurrent state,
+convolution state and growing KV separately. One active request runs per replica;
+this path does not inherit native paging, prefix reuse or continuous batching.
+Optional greedy speculation commits/aborts recurrent timelines and KV together.
+It remains off by default and does not claim universal floating-point equality.
+
+The model's trained XML tool format, bounded inline media transport, content-addressed
+journal, child media inheritance and implementation-bound resume are integrated
+with task workers. Frozen source `35c262b` passed all four development coding and
+document workflows, including two actual completed children per delegated case.
+Delegation was slower. Core inference/reference and synthetic visual checks also
+passed, with their exact scope recorded separately. Default 32K execution,
+ordinary sampling, actual visual child tasks and all nine desktop checks passed.
+Speculation passed repeated rejection, live recurrent cancellation, allocation
+boundaries and image/video token comparisons. Warmed ratios were 1.920×/1.006×/0.919×
+for copying/code/arithmetic; the default remains off. The final full regression
+passed **1,082 Python tests without skips**, plus fresh C++ host checks and GitHub CI.
+
+See [Qwen3.5 setup, qualification and limits](docs/qwen35.md). No Qwen3.5 CUDA,
+audio, MTP drafter, tensor/pipeline parallelism or full 262K qualification is claimed.

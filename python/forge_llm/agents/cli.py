@@ -78,6 +78,7 @@ async def create_pool(config: dict) -> WorkerPool:
                     "connect_timeout",
                     "poll_interval",
                     "allow_insecure_http",
+                    "max_request_bytes",
                 }
                 if (
                     worker.keys() - permitted
@@ -152,6 +153,32 @@ async def worker_identities(pool: WorkerPool) -> dict:
                     "worker lacks the artifact/tokenizer fingerprints required for resumable runs"
                 )
         result[name] = {key: health.get(key) for key in keys}
+        for key in (
+            "processor_signature",
+            "enable_thinking",
+            "native_call_dialect",
+            "adapter_implementation_sha256",
+        ):
+            if key in health:
+                if key == "adapter_implementation_sha256" and (
+                    not isinstance(health[key], str)
+                    or len(health[key]) != 64
+                    or any(
+                        character not in "0123456789abcdef" for character in health[key]
+                    )
+                ):
+                    raise ValueError(
+                        "worker returned an invalid adapter implementation fingerprint"
+                    )
+                result[name][key] = health[key]
+        if (
+            health.get("runner") == "mlx_vlm"
+            and health.get("model_type") == "qwen3_5"
+            and "adapter_implementation_sha256" not in health
+        ):
+            raise ValueError(
+                "Qwen3.5 worker lacks the adapter implementation fingerprint required for resumable runs"
+            )
     return result
 
 
@@ -277,7 +304,15 @@ async def execute(args) -> int:
                 result = await runtime.resume(run_id)
             else:
                 task = Path(args.task_file).read_text() if args.task_file else args.task
-                result = await runtime.run(task, run_id=run_id)
+                import mimetypes
+
+                from .media import media_from_file
+
+                attachments = []
+                for path in getattr(args, "image", []) + getattr(args, "video", []):
+                    mime = mimetypes.guess_type(path)[0]
+                    attachments.append(media_from_file(path, mime=mime))
+                result = await runtime.run(task, run_id=run_id, media=attachments)
             document = asdict(result)
             output = state / f"{run_id}.result.json"
             if not output.exists():
@@ -310,6 +345,8 @@ def main() -> None:
             task = command.add_mutually_exclusive_group(required=True)
             task.add_argument("--task")
             task.add_argument("--task-file")
+            command.add_argument("--image", action="append", default=[])
+            command.add_argument("--video", action="append", default=[])
     for name in ("inspect", "cancel"):
         command = commands.add_parser(name)
         command.add_argument("--run-id", required=True)
