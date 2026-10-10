@@ -6,9 +6,9 @@ from __future__ import annotations
 import queue
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from forge_chat_runtime import CHAT_PROFILES, ChatWorker
+from forge_chat_runtime import CHAT_PROFILES, ChatWorker, record_final_reply
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_GENERATION_TOKENS = 32768
@@ -18,8 +18,8 @@ class ForgeChat(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Forge LLM")
-        self.geometry("760x620")
-        self.minsize(620, 480)
+        self.geometry("800x740")
+        self.minsize(700, 660)
         self.configure(background="#f5f5f7")
 
         self.ready = False
@@ -27,7 +27,9 @@ class ForgeChat(tk.Tk):
         self.loading = False
         self.closing = False
         self.profile = CHAT_PROFILES[0]
-        self.conversation: list[dict[str, str]] = []
+        self.conversation: list[dict] = []
+        self.attachments: list[dict] = []
+        self.last_reasoning = ""
         self.context_limit = 0
         self.device_name = "Metal"
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -63,7 +65,7 @@ class ForgeChat(tk.Tk):
             header,
             values=[profile.label for profile in CHAT_PROFILES],
             state="readonly",
-            width=49,
+            width=55,
         )
         self.model_picker.current(0)
         self.model_picker.pack(anchor="w", pady=(8, 0))
@@ -104,16 +106,46 @@ class ForgeChat(tk.Tk):
         self.max_tokens = ttk.Spinbox(
             controls, from_=1, to=MAX_GENERATION_TOKENS, width=8
         )
-        self.max_tokens.set("512")
+        self.max_tokens.set("2048")
         self.max_tokens.pack(side="left", padx=(8, 14))
         self.generate_button = ttk.Button(
             controls, text="Generate", command=self._generate, state="disabled"
         )
         self.generate_button.pack(side="left")
+        self.stop_button = ttk.Button(
+            controls, text="Stop", command=self._stop, state="disabled"
+        )
+        self.stop_button.pack(side="left", padx=(8, 0))
         self.clear_button = ttk.Button(
             controls, text="Clear chat", command=self._clear_chat
         )
         self.clear_button.pack(side="left", padx=(8, 0))
+
+        media_controls = ttk.Frame(outer)
+        media_controls.pack(fill="x", pady=(0, 8))
+        self.thinking = tk.BooleanVar(value=False)
+        self.thinking_button = ttk.Checkbutton(
+            media_controls, text="Thinking", variable=self.thinking
+        )
+        self.thinking_button.pack(side="left")
+        self.image_button = ttk.Button(
+            media_controls, text="Attach image", command=lambda: self._attach("image")
+        )
+        self.image_button.pack(side="left", padx=(12, 0))
+        self.video_button = ttk.Button(
+            media_controls,
+            text="Attach short video",
+            command=lambda: self._attach("video"),
+        )
+        self.video_button.pack(side="left", padx=(8, 0))
+        self.remove_media_button = ttk.Button(
+            media_controls, text="Remove attachments", command=self._remove_attachments
+        )
+        self.remove_media_button.pack(side="left", padx=(8, 0))
+        self.attachment_label = ttk.Label(
+            outer, text="No attachments", foreground="#666666", wraplength=740
+        )
+        self.attachment_label.pack(anchor="w", pady=(0, 12))
 
         ttk.Label(outer, text="Conversation", font=("SF Pro Text", 11, "bold")).pack(
             anchor="w"
@@ -160,6 +192,12 @@ class ForgeChat(tk.Tk):
             return
         self.profile = profile
         self.conversation.clear()
+        self.attachments.clear()
+        self.last_reasoning = ""
+        self.worker.media_store.clear()
+        self.thinking.set(False)
+        self.max_tokens.set("2048" if profile.supports_thinking else "512")
+        self._update_attachments()
         self._write_output("")
         self.model_label.configure(text=f"{profile.label}  ·  Apple MLX")
         self.artifact_label.configure(text=f"Model: {profile.artifact}")
@@ -174,12 +212,93 @@ class ForgeChat(tk.Tk):
         self.generate_button.configure(
             state="normal" if idle and self.ready else "disabled"
         )
+        self.stop_button.configure(
+            state="normal" if self.busy and not self.closing else "disabled"
+        )
+        media = idle and self.ready and self.profile.supports_media
+        self.image_button.configure(state="normal" if media else "disabled")
+        self.video_button.configure(state="normal" if media else "disabled")
+        self.remove_media_button.configure(
+            state="normal" if media and self.attachments else "disabled"
+        )
+        self.thinking_button.configure(
+            state="normal" if idle and self.profile.supports_thinking else "disabled"
+        )
+
+    def _attach(self, kind: str) -> None:
+        if (
+            self.busy
+            or self.loading
+            or self.closing
+            or not self.ready
+            or not self.profile.supports_media
+        ):
+            return
+        limit = 4 if kind == "image" else 1
+        history_count = sum(
+            part.get("type") == kind
+            for message in self.conversation
+            if isinstance(message["content"], list)
+            for part in message["content"]
+        )
+        if (
+            history_count + sum(part["type"] == kind for part in self.attachments)
+            >= limit
+        ):
+            messagebox.showinfo(
+                "Attachment limit",
+                f"This chat supports up to {limit} {kind} files. Clear chat to attach more.",
+            )
+            return
+        patterns = (
+            "*.png *.jpg *.jpeg *.webp *.bmp"
+            if kind == "image"
+            else "*.mp4 *.mov *.m4v *.webm"
+        )
+        source = filedialog.askopenfilename(
+            title=f"Choose a local {kind}", filetypes=[(kind.title(), patterns)]
+        )
+        if not source:
+            return
+        try:
+            self.attachments.append(self.worker.media_store.stage(Path(source), kind))
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Attachment error", str(exc))
+        self._update_attachments()
+        self._set_controls()
+
+    def _update_attachments(self) -> None:
+        labels = []
+        for part in self.attachments:
+            path = part[part["type"]]
+            labels.append(
+                f"{part['type'].title()}: {self.worker.media_store.names.get(path, Path(path).name)}"
+            )
+        self.attachment_label.configure(
+            text=" · ".join(labels) if labels else "No attachments"
+        )
+
+    def _remove_attachments(self) -> None:
+        if self.busy or self.loading or self.closing:
+            return
+        # Pending copies have not entered history; keep older visual turns intact.
+        for part in self.attachments:
+            self.worker.media_store.discard(part)
+        self.attachments.clear()
+        self._update_attachments()
+        self._set_controls()
+
+    def _stop(self) -> None:
+        if self.busy and not self.closing:
+            self.worker.stop()
+            self.stop_button.configure(state="disabled")
+            self._set_status("Stopping…", "#8a5a00")
 
     def _generate(self) -> None:
         if self.busy or self.loading or self.closing or not self.ready:
             return
         prompt = self.prompt.get("1.0", "end").strip()
-        if not prompt:
+        if not prompt and not self.attachments:
             messagebox.showinfo("Forge LLM", "Enter a prompt first.")
             return
         try:
@@ -196,8 +315,13 @@ class ForgeChat(tk.Tk):
         self.busy = True
         self._set_controls()
         self._set_status("Generating…", "#8a5a00")
+        content = prompt or "Describe the attached media."
+        if self.attachments:
+            content = [{"type": "text", "text": content}, *self.attachments]
         self.worker.generate(
-            [*self.conversation, {"role": "user", "content": prompt}], max_tokens
+            [*self.conversation, {"role": "user", "content": content}],
+            max_tokens,
+            enable_thinking=self.thinking.get() and self.profile.supports_thinking,
         )
 
     def _drain_events(self) -> None:
@@ -214,18 +338,39 @@ class ForgeChat(tk.Tk):
                     self._set_controls()
                     self._set_status(self._ready_status(), "#188038")
                 elif kind == "response":
-                    prompt, response = value  # type: ignore[misc]
-                    self.conversation.extend(
-                        [
-                            {"role": "user", "content": str(prompt)},
-                            {"role": "assistant", "content": str(response)},
-                        ]
+                    user_message, response = value  # type: ignore[misc]
+                    self.last_reasoning = response.reasoning
+                    if response.finish_reason == "cancelled":
+                        self.busy = False
+                        self._set_controls()
+                        self._set_status(f"Stopped · {self._ready_status()}", "#8a5a00")
+                        continue
+                    accepted = record_final_reply(
+                        self.conversation, user_message, response
                     )
+                    if accepted:
+                        self.prompt.delete("1.0", "end")
+                        self.attachments.clear()
+                        self._update_attachments()
                     self._render_conversation()
-                    self.prompt.delete("1.0", "end")
                     self.busy = False
                     self._set_controls()
-                    self._set_status(self._ready_status(), "#188038")
+                    if not response.thinking_complete:
+                        self._set_status(
+                            "Token limit reached during thinking; no final answer yet.",
+                            "#8a5a00",
+                        )
+                    elif response.truncated:
+                        self._set_status(
+                            "Token limit reached · answer may be incomplete", "#8a5a00"
+                        )
+                    elif not accepted:
+                        self._set_status(
+                            "No final answer returned; increase the token limit or try again.",
+                            "#8a5a00",
+                        )
+                    else:
+                        self._set_status(self._ready_status(), "#188038")
                 elif kind == "error":
                     self.loading = False
                     self.busy = False
@@ -254,7 +399,23 @@ class ForgeChat(tk.Tk):
         lines = []
         for message in self.conversation:
             speaker = "You" if message["role"] == "user" else "Forge"
-            lines.append(f"{speaker}\n{message['content'].strip()}")
+            content = message["content"]
+            if isinstance(content, list):
+                pieces = []
+                for part in content:
+                    if part["type"] == "text":
+                        pieces.append(part["text"])
+                    else:
+                        path = part[part["type"]]
+                        pieces.append(
+                            f"[{part['type'].title()}: {self.worker.media_store.names.get(path, Path(path).name)}]"
+                        )
+                content = "\n".join(pieces)
+            lines.append(f"{speaker}\n{content.strip()}")
+        if self.last_reasoning:
+            lines.append(
+                f"Thinking (latest response; excluded from chat history)\n{self.last_reasoning}"
+            )
         self._write_output("\n\n".join(lines))
 
     def _ready_status(self) -> str:
@@ -269,6 +430,11 @@ class ForgeChat(tk.Tk):
         if self.busy or self.loading or self.closing:
             return
         self.conversation.clear()
+        self.attachments.clear()
+        self.last_reasoning = ""
+        self.worker.media_store.clear()
+        self._update_attachments()
+        self._set_controls()
         self._write_output("")
         if self.ready:
             self._set_status(self._ready_status(), "#188038")
