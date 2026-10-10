@@ -67,9 +67,10 @@ class ScriptState:
 
 
 class ScriptedReplica:
-    def __init__(self, name, scripts, state, *, delays=None):
+    def __init__(self, name, scripts, state, *, delays=None, first_child_gate=None):
         self.name, self.scripts, self.state = name, scripts, state
         self.delays = delays or {}
+        self.first_child_gate = first_child_gate
         self.calls = []
         self.active = 0
         self.peak = 0
@@ -95,6 +96,14 @@ class ScriptedReplica:
             self.state.active += 1
             self.state.peak = max(self.state.peak, self.state.active)
         try:
+            if (
+                self.first_child_gate is not None
+                and agent.startswith("agent-")
+                and int(turn) == 1
+            ):
+                # HTTP replicas own different threads and asyncio loops. Block
+                # only their helper threads, after counting both live requests.
+                await asyncio.to_thread(self.first_child_gate.wait, timeout=10.0)
             await asyncio.sleep(self.delays.get(agent, 0.008))
             response = self.scripts[agent][int(turn) - 1]
             if callable(response):
@@ -315,6 +324,14 @@ def test_native_runtime_catalogs_and_tool_roles_cross_two_http_workers(tmp_path)
     (workspace / "A.txt").write_text("A: 12 units\n")
     (workspace / "B.txt").write_text("B: 7 units\n")
     state = ScriptState()
+    rendezvous_counts = []
+
+    def verify_concurrent_children():
+        with state.lock:
+            assert state.active == 2
+            rendezvous_counts.append(state.active)
+
+    first_child_gate = threading.Barrier(2, action=verify_concurrent_children)
 
     def child_finish(messages):
         evidence = tool_result(messages, "read_file")
@@ -356,8 +373,12 @@ def test_native_runtime_catalogs_and_tool_roles_cross_two_http_workers(tmp_path)
         "agent-0001": [native_call("read_file", path="A.txt"), child_finish],
         "agent-0002": [native_call("read_file", path="B.txt"), child_finish],
     }
-    first = NativeScriptedReplica("native-control-a", scripts, state)
-    second = NativeScriptedReplica("native-control-b", scripts, state)
+    first = NativeScriptedReplica(
+        "native-control-a", scripts, state, first_child_gate=first_child_gate
+    )
+    second = NativeScriptedReplica(
+        "native-control-b", scripts, state, first_child_gate=first_child_gate
+    )
     with serve(first) as (url_a, _), serve(second) as (url_b, _):
 
         async def run():
@@ -385,6 +406,7 @@ def test_native_runtime_catalogs_and_tool_roles_cross_two_http_workers(tmp_path)
                 assert result.output.endswith("19 units.")
                 assert len(result.agents) == 3
                 assert first.calls and second.calls
+                assert rendezvous_counts == [2]
                 assert state.peak == 2
                 catalogs = {**first.catalogs, **second.catalogs}
                 assert len(catalogs) == 8
