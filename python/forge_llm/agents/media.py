@@ -16,9 +16,12 @@ _TYPES = {
     "image/png": ("image", ".png"),
     "image/jpeg": ("image", ".jpg"),
     "image/webp": ("image", ".webp"),
+    "image/bmp": ("image", ".bmp"),
     "video/mp4": ("video", ".mp4"),
     "video/quicktime": ("video", ".mov"),
     "video/x-msvideo": ("video", ".avi"),
+    "video/webm": ("video", ".webm"),
+    "video/x-m4v": ("video", ".m4v"),
 }
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 

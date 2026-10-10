@@ -1394,6 +1394,19 @@ class AgentRuntime:
                 f"context limit reached ({input_bound} conservative input tokens + {config.max_output_tokens} output > {config.max_context_tokens}); full history is retained in the journal",
             )
             return
+        reservation_input_bound = input_bound
+        if any(message.media for message in messages):
+            model_limit = getattr(self.backend, "max_model_length", None)
+            if type(model_limit) is not int or model_limit <= 0:
+                self._fail(
+                    run_id,
+                    agent_id,
+                    "multimodal backend must advertise a bounded model context",
+                )
+                return
+            # Processor expansion is checked by the worker before inference.
+            # Reserve its full context until measured usage refunds the excess.
+            reservation_input_bound = max(input_bound, model_limit)
         async with self._semaphore, self._run_semaphores[run_id]:
             while True:
                 self._assert_lease(run_id)
@@ -1407,7 +1420,7 @@ class AgentRuntime:
                     self.store.reserve(
                         run_id,
                         reservation,
-                        input_bound + config.max_output_tokens,
+                        reservation_input_bound + config.max_output_tokens,
                         config.max_total_tokens,
                     )
                 except BudgetError as exc:
@@ -1455,7 +1468,7 @@ class AgentRuntime:
                         raise ValueError("backend exceeded max_output_tokens")
                     # Zero/missing counts use conservative estimates, rather
                     # than allowing a backend to defeat the token budget.
-                    input_tokens = generation.input_tokens or input_bound
+                    input_tokens = generation.input_tokens or reservation_input_bound
                     output_tokens = generation.output_tokens or min(
                         config.max_output_tokens, len(generation.text.encode("utf-8"))
                     )
@@ -1526,7 +1539,13 @@ class AgentRuntime:
             )
         try:
             if tool_specs is not None:
-                actions = parse_native_actions(generation.text, tool_specs, max_calls=4)
+                actions = parse_native_actions(
+                    generation.text,
+                    tool_specs,
+                    max_calls=4,
+                    allow_xml_text=getattr(self.backend, "native_call_dialect", "json")
+                    == "qwen3_coder_xml",
+                )
                 if len(actions) > 1:
                     self._validate_batch(run_id, agent_id, actions, config)
                     action = {"action": "batch", "items": actions, "next_index": 0}

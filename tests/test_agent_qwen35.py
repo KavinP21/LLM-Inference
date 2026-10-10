@@ -91,6 +91,53 @@ def test_invalid_run_media_fails_before_creating_a_run():
     )
 
 
+def test_spawn_inherits_operator_media_without_duplicating_blob(attachment):
+    from forge_llm.agents.runtime import RuntimeConfig
+
+    with AgentStore() as store:
+        store.create_run("run", "inspect image", vars(RuntimeConfig()), "system")
+        store.add_message("run", "root", "user", "operator image", media=[attachment])
+        child = store.spawn(
+            "run", "root", "spawn-1", "Review the image", "reviewer", [], "system"
+        )
+        assert store.messages("run", child)[-1].media == (attachment,)
+        assert (
+            store.connection.execute("SELECT count(*) FROM media_blobs").fetchone()[0]
+            == 1
+        )
+
+
+def test_media_reserves_advertised_context_before_inference(attachment):
+    from forge_llm.agents.protocol import Generation
+    from forge_llm.agents.runtime import RuntimeConfig
+
+    class Native:
+        supports_native_tools = True
+        max_model_length = 32768
+        calls = 0
+
+        async def generate_action(self, messages, maximum, request_id, tool_specs):
+            self.calls += 1
+            assert messages[1].media == (attachment,)
+            reserved = runtime.store.run(request_id.split(".")[0])["reserved_tokens"]
+            assert reserved == self.max_model_length + maximum
+            return Generation(
+                '<tool_call>{"name":"finish","arguments":{"result":"observed"}}</tool_call>',
+                2000,
+                30,
+            )
+
+    backend = Native()
+    runtime = AgentRuntime(backend, config=RuntimeConfig(max_total_tokens=40000))
+    result = asyncio.run(runtime.run("Read the image", media=[attachment]))
+    assert result.status == "completed" and backend.calls == 1
+    assert result.usage.input_tokens == 2000 and result.usage.reserved_tokens == 0
+    backend = Native()
+    runtime = AgentRuntime(backend, config=RuntimeConfig(max_total_tokens=32000))
+    result = asyncio.run(runtime.run("Read the image", media=[attachment]))
+    assert result.status == "failed" and backend.calls == 0
+
+
 class Tokenizer:
     chat_template = "fixture"
     eos_token_id = 248044

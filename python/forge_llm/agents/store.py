@@ -598,12 +598,21 @@ class AgentStore:
                 ),
             )
             self.add_message(run_id, agent_id, "system", system)
+            inherited_media = next(
+                (
+                    message.media
+                    for message in self.messages(run_id, parent_id)
+                    if message.role == "user" and message.media
+                ),
+                (),
+            )
             self.add_message(
                 run_id,
                 agent_id,
                 "user",
                 inherited_context
                 + f"\nParent: {parent_id}\nAssigned role: {role}\nYOUR ASSIGNED SCOPE: {task}",
+                media=inherited_media,
             )
             if tools is not None:
                 self.update_agent(run_id, agent_id, tools=tools)
