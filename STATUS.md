@@ -72,8 +72,8 @@ physical Mac was available. Model-quality diagnostics, including failures and
 the slower successful document delegation, are retained in
 [agent results](docs/agent-results.md).
 
-The implementation regression passed **798 Python tests without skips** in
-27.48 seconds, including synthetic Metal references and real loopback transport.
+The implementation regression passed **827 Python tests without skips** in
+29.09 seconds, including synthetic Metal references and real loopback transport.
 A fresh Clang C++20 host build passed. No CUDA device tests or multi-host
 measurements were run. Final frozen-source task evaluation is separate from
 these control tests.

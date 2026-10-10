@@ -53,7 +53,23 @@ The last document pair took 20.13 seconds for one agent and 150.17 seconds for
 delegation. Both children inspected actual reports, but this is not a latency
 advantage or a result from the final frozen sources.
 
-Final source qualification is tracked separately. Two small tasks, even when
+## Frozen-source continuation
+
+The [first published-source continuation](../benchmarks/results/agents-published-2026-10-10/qwen7b-before-line-edits.json)
+ran commit `f5a1a6e` with no source changes during execution. Coding failed in
+147.58/450.18 seconds for single/delegated modes; document analysis passed in
+19.17 seconds for one agent and failed in 327.75 seconds with delegation.
+Compilation/acceptance checks prevented invalid edits from becoming a success.
+A child following parent spawning instructions exposed an assignment-scope
+problem. Line-range edits, inspection-first catalogs and stronger child scope
+framing address those concrete failures; a fresh actual-model run is required.
+
+Final source qualification is tracked separately. The current grader uses immutable
+copies of visible tests for completion steering and adds four further inputs only
+after the run. Earlier diagnostic checkers also returned those additional tests'
+failure output to the model; they are not held-out evaluations. These two small
+fixtures were used during development and are not a broad agent benchmark.
+Two small tasks, even when
 successful, would not establish general coding/research reliability or an
 advantage over one capable agent. Single-GPU replicas can increase contention;
 delegation should be selected for independent deliverables rather than assumed

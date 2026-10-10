@@ -1,0 +1,18 @@
+{
+  "schema": "forge_agent_regression_v1",
+  "recorded_utc": "2026-10-10T05:31:39.819383+00:00",
+  "pytest": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "827",
+    "time": "29.084",
+    "timestamp": "2026-10-10T01:29:53.248595-04:00",
+    "hostname": "ipsec-10-2-0-204.vpn.gatech.edu"
+  },
+  "command": "FORGE_INSPECT_MODEL=/private/tmp/forge-publish-inspect-model PYTHONPATH=python python -m pytest -q",
+  "style_check": "ruff check and ruff format --check: passed",
+  "portable_host": "Fresh Clang C++20 build: all host tests passed",
+  "scope": "Local Apple Metal, portable Python/C++, actual loopback transports; no CUDA device or multi-host execution"
+}

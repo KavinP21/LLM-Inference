@@ -46,7 +46,7 @@ CASES = {
 }
 
 
-def grade(case: str, workspace: Path, result) -> dict:
+def grade(case: str, workspace: Path, result, *, extra_cases: bool = True) -> dict:
     if case == "coding":
         environment = dict(os.environ)
         environment["PYTHONPATH"] = str(workspace)
@@ -58,7 +58,10 @@ def grade(case: str, workspace: Path, result) -> dict:
             environment["PYTHONPYCACHEPREFIX"] = str(Path(temporary) / "pycache")
             test = Path(temporary) / "test_acceptance.py"
             extra = "\n@pytest.mark.parametrize('values', [[-4, 6, 13], [0, 0, 0], [0.5, 1.25, 3.75], [7, -1, 2, 8]])\ndef test_unseen_inputs(values):\n    assert mean(values) == pytest.approx(sum(values) / len(values))\n"
-            test.write_text(CASES[case]["files"]["tests/test_stats.py"] + extra)
+            test.write_text(
+                CASES[case]["files"]["tests/test_stats.py"]
+                + (extra if extra_cases else "")
+            )
             command = [sys.executable, "-m", "pytest", "-q", "--", str(test)]
             checked = subprocess.run(
                 command,
@@ -126,7 +129,11 @@ def completion_checker(case: str, mode: str, workspace: Path, store: AgentStore)
                 )
         if case == "coding":
             checked = await asyncio.to_thread(
-                grade, case, workspace, SimpleNamespace(status="completed")
+                grade,
+                case,
+                workspace,
+                SimpleNamespace(status="completed"),
+                extra_cases=False,
             )
             diagnostic = checked["independent_test_output"]
             if len(diagnostic) > 3000:
@@ -310,7 +317,7 @@ async def evaluate(args):
             "Two small controlled tasks; no general task-success claim.",
             "Single and delegated modes share task content, tools and global budgets, but delegated prompts request independent review.",
             "Protocol/control tests with scripted backends are separate evidence.",
-            "Completion steering uses immutable executable tests for coding and requested JSON structure/child completion for research; research fact values remain withheld from the model.",
+            "Completion steering uses immutable copies of visible coding tests and requested JSON structure/child completion for research. Additional coding inputs are graded only after completion; research fact values remain withheld from the model.",
         ],
     }
 

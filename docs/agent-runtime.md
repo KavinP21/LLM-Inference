@@ -30,6 +30,10 @@ uses the smaller 0.5B model for transport smoke tests.
 
 For a coding task, add `--allow-write --allow-tests`. Writes require a version
 obtained from reading the file. Prefer `replace_text` for a narrow edit;
+`edit_lines` replaces an inclusive range of complete source lines and is the
+preferred multi-line edit. Preserve the actual indentation and omit displayed
+line-number labels. Outside lines remain unchanged; a nonempty replacement
+without a final terminator retains the selected block's boundary terminator.
 `write_file` replaces the entire file. The coordinator serializes its own writes
 and rejects stale versions. This is an optimistic check, not a transaction with
 unmanaged external editors. New reports/patch proposals can be saved through
@@ -104,6 +108,10 @@ is a complete grant limited to the parent's existing permissions. Parent/root
 requirements supply context while the assigned child task defines its scope.
 Completed child outcomes are delivered once; repeated waits or identical journal
 queries receive no-progress feedback.
+
+Child messages quote inherited parent goals as background and place the assigned
+scope last. Parent workflow steps belong to the parent; a child may delegate only
+when its current function catalog advertises spawning.
 
 Spawning is bounded by total agents, hierarchy depth, actions per agent, total
 tokens, concurrency and wall-clock deadline. Capacity comes from the operator's

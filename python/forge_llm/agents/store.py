@@ -519,8 +519,8 @@ class AgentStore:
                 run_id,
                 agent_id,
                 "user",
-                f"Assigned role: {role}\nYOUR ASSIGNED SCOPE: {task}\nParent: {parent_id}\n"
-                + inherited_context,
+                inherited_context
+                + f"\nParent: {parent_id}\nAssigned role: {role}\nYOUR ASSIGNED SCOPE: {task}",
             )
             if tools is not None:
                 self.update_agent(run_id, agent_id, tools=tools)

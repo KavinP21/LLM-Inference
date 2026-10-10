@@ -88,6 +88,20 @@ def test_native_calls_use_scoped_functions_tool_responses_and_parent_synthesis()
     assert "For reviews omit spawn.tools" in first[1][0].content
     child = next(item for item in backend.calls if ".agent-0001.1" in item[0])
     assert "write_file" not in names(child[2]) and "spawn" not in names(child[2])
+    assert child[1][0].content.startswith("You are a delegated subagent.")
+    assert (
+        "Parent workflow instructions are background, not actions for you"
+        in child[1][0].content
+    )
+    assert "only when spawn is actually advertised" in child[1][0].content
+    assignment = child[1][1].content
+    assert (
+        assignment.index("BACKGROUND GOALS")
+        < assignment.index("Assigned role")
+        < assignment.index("YOUR ASSIGNED SCOPE")
+    )
+    assert assignment.endswith("YOUR ASSIGNED SCOPE: Review source.py")
+    assert "Root goal (quoted background):" in assignment
     child_finish = next(item for item in backend.calls if ".agent-0001.2" in item[0])
     assert any(
         message.role == "tool" and "Actual source" in message.content
@@ -178,6 +192,73 @@ def test_native_catalog_is_reserved_before_generation_and_context_bounded():
 def test_native_backend_requires_explicit_parameter_schemas():
     with pytest.raises(ValueError, match="explicit parameter schemas"):
         AgentRuntime(NativeBackend({}), tools={"read_file": lambda args: "source"})
+
+
+def test_quoted_ancestor_background_remains_bounded_and_original_goal_retained():
+    runtime = AgentRuntime(NativeBackend({}))
+    original = '"\\\n' * 2000
+    runtime.store.create_run("quoted", original, vars(runtime.config), "system")
+    background = runtime._inherited_goals("quoted", "root")
+    assert len(background) < 2400 and "TRUNCATED" in background
+    assert runtime.store.agent("quoted", "root").task == original
+
+
+def test_native_catalog_stably_prioritizes_actual_inspection_and_recall_last():
+    tool_names = ["edit_lines", "list_files", "search", "read_file"]
+    runtime = AgentRuntime(
+        NativeBackend({}),
+        tools={name: lambda args: "unused" for name in tool_names},
+        tool_schemas={name: READ_SCHEMA for name in tool_names},
+    )
+    runtime.store.create_run(
+        "ordered",
+        "Task",
+        vars(runtime.config),
+        "system",
+        tools=tool_names + ["journal_read"],
+    )
+    first = runtime._native_catalog("ordered", "root", runtime.config)
+    second = runtime._native_catalog("ordered", "root", runtime.config)
+    ordered = [spec["function"]["name"] for spec in first]
+    assert first == second
+    assert ordered[:3] == ["read_file", "search", "list_files"]
+    assert ordered[-1] == "journal_read"
+    assert ordered.index("edit_lines") > ordered.index("list_files")
+    assert ordered.index("spawn") > ordered.index("edit_lines")
+
+
+def test_review_child_cannot_call_or_batch_new_line_edit_tool():
+    writes = []
+    backend = NativeBackend(
+        {
+            "root": [
+                call("spawn", task="Inspect source.py; report without edits"),
+                call("wait", agents=["agent-0001"]),
+                call("finish", result="Review reported"),
+            ],
+            "agent-0001": [
+                call("edit_lines", path="source.py"),
+                call("read_file", path="source.py")
+                + call("edit_lines", path="source.py"),
+                call("finish", result="Read-only findings"),
+            ],
+        }
+    )
+    runtime = AgentRuntime(
+        backend,
+        tools={
+            "read_file": lambda args: "source",
+            "edit_lines": lambda args: writes.append(args) or "edited",
+        },
+        tool_schemas={"read_file": READ_SCHEMA, "edit_lines": READ_SCHEMA},
+        replay_safe_tools={"read_file", "edit_lines"},
+    )
+    result = asyncio.run(runtime.run("Collect read-only review"))
+    assert result.status == "completed" and not writes
+    assert "edit_lines" not in result.agents[1].tools
+    child_calls = [item for item in backend.calls if ".agent-0001." in item[0]]
+    assert all("edit_lines" not in names(item[2]) for item in child_calls)
+    assert "inclusive whole-line ranges" in backend.calls[0][1][0].content
 
 
 def test_native_invalid_function_is_repaired_without_dsl_instructions():
