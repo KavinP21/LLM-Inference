@@ -145,12 +145,12 @@ are inside timing.
 
 | Model | Task | No-draft median, s | Speculative median, s | Speedup | Accepted proposals |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Qwen 0.5B | Copy a sentence repeatedly | 0.783 | 0.205 | 3.83x | 100.0% |
-| Qwen 0.5B | Repeated Python functions | 0.885 | 0.576 | 1.54x | 51.5% |
-| Qwen 0.5B | Arithmetic explanation | 0.791 | 0.696 | 1.14x | 45.0% |
-| Gemma 1B | Copy a sentence repeatedly | 1.389 | 0.480 | 2.89x | 100.0% |
-| Gemma 1B | Repeated Python functions | 1.414 | 1.072 | 1.32x | 57.6% |
-| Gemma 1B | Arithmetic explanation | 1.490 | 1.367 | 1.09x | 35.3% |
+| Qwen 0.5B | Copy a sentence repeatedly | 0.846 | 0.208 | 4.06x | 100.0% |
+| Qwen 0.5B | Repeated Python functions | 0.849 | 0.562 | 1.51x | 51.5% |
+| Qwen 0.5B | Arithmetic explanation | 0.844 | 0.701 | 1.20x | 45.0% |
+| Gemma 1B | Copy a sentence repeatedly | 1.408 | 0.435 | 3.24x | 100.0% |
+| Gemma 1B | Repeated Python functions | 1.405 | 1.076 | 1.31x | 57.6% |
+| Gemma 1B | Arithmetic explanation | 1.434 | 1.325 | 1.08x | 35.3% |
 
 Every timed output matched the independently generated canonical `MlxEngine`
 greedy token sequence exactly on these tasks: 36 timed trials across both

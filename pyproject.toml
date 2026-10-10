@@ -30,6 +30,7 @@ forge-validate-int8 = "forge_llm.validate_int8:main"
 forge-calibrate-int8 = "forge_llm.calibrate_int8:main"
 forge-calibrate-second-order = "forge_llm.calibrate_second_order:main"
 forge-calibrate-cached = "forge_llm.calibrate_cached:main"
+forge-agents = "forge_llm.agents.cli:main"
 forge-worker = "forge_llm.agents.worker:main"
 forge-import-mlx = "forge_llm.import_mlx:main"
 
