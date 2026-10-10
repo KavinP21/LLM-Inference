@@ -98,6 +98,73 @@ simdgroup per request/query-head with online FP32 softmax. This avoids per-reque
 concatenation and longest-sequence padding. It is not a zero-copy page pool: MLX's immutable array
 contract requires the layer-page stack, which remains a measured single-request cost.
 
+## Speculative execution
+
+The [greedy speculative controller](speculative-decoding.md) owns one request and a private paged
+cache. Prompt/history n-grams supply proposals without another model; an optional compatible draft
+model has its own cache. The target evaluates the pending output token and proposals in one causal
+`forward_paged_chunk` call. Matching proposals are accepted, followed by the target correction or
+bonus token. Rejected K/V slots lose both their occupancy masks and underlying values before reuse.
+Context, output and KV budgets apply before execution; completion, cancellation and failure release
+request caches.
+
+Native FP16 block projections and attention can use different reductions from one-token decoding.
+The block policy therefore has an explicit numerical contract rather than a universal canonical
+token-parity guarantee. A sequential verification mode and no-draft baseline use ordinary decode
+calls. The existing continuous scheduler and prefix-cache snapshots are not shared with this
+standalone decoder. CUDA verification, probabilistic speculation and multi-request speculative
+batching remain separate implementation work.
+
+## Task agents and worker replicas
+
+The [agent runtime](agent-runtime.md) coordinates logical tasks over independent model replicas:
+
+```text
+                  task + explicitly registered workspace tools
+                                     │
+                          AgentRuntime ↔ SQLite journal
+                                     │
+                        bounded generation requests
+                                     │
+                                WorkerPool
+                      ┌──────────────┼────────────────┐
+                      │              │                │
+                local actor    supervised process   configured HTTP worker
+                      │              │                │
+                      └──────────────┼────────────────┘
+                                     │
+                          worker-owned complete model
+                       MlxEngine / CUDA Engine / MLX speculation / optional MLX-LM
+```
+
+Each logical agent owns its assigned scope, conversation, inbox, children, dependencies and result.
+Spawning creates journaled task state and schedules model calls on the available pool; it does not
+create another weight copy or acquire another machine. An actor serializes access to its engine.
+Separate workers may run calls concurrently, with independent weights and K/V capacity. Supervised
+local workers use separate processes and authenticated loopback job endpoints; configured remote
+workers use the same bounded submit/poll/cancel protocol. Request affinity and idempotent job IDs
+support bounded retries. Placement on a selected NVIDIA device is a worker-launch setting, not a
+tensor-parallel collective.
+
+State-derived native function catalogs or the legacy action protocol restrict tool names,
+arguments, actual agent IDs and child grants. Batches are limited to independent spawns or granted
+replay-safe reads. File edits use per-agent observed versions; writes and test execution require
+operator permission. Model output does not become an arbitrary shell command or evaluated program.
+Configured tests do execute repository Python, so this is a bounded tool interface rather than an
+operating-system sandbox.
+
+The journal retains exact model inputs, token reservations, prepared actions, effects and delivered
+outcomes. Coordinator leases, cancellation and conservative recovery protect those contracts;
+ambiguous non-replayable effects are not silently repeated. Optional operator-selected completion
+checks distinguish an agent's final response from a verified criterion. Control tests and local
+worker execution do not establish general task quality; [model qualification](agent-results.md)
+is tracked separately.
+
+Worker HTTP generation jobs are implemented. Streaming chat sessions, an OpenAI-compatible API,
+automatic cluster discovery/placement, NCCL tensor parallelism and physical multi-host/GPU scaling
+qualification remain outside that transport contract. Each current replica must fit its complete
+model on its selected device.
+
 ## CUDA KV layout
 
 The device allocation is logically

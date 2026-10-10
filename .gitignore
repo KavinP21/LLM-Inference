@@ -9,9 +9,12 @@ __pycache__/
 *.py[cod]
 *.engine
 *.safetensors
-models/
+models
 benchmark-results/
 profiles/
 .DS_Store
 
 .publication/
+.forge/
+*.sqlite-wal
+*.sqlite-shm

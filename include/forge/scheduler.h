@@ -55,6 +55,7 @@ class Scheduler {
   void finish_prefill(RequestId id);
   [[nodiscard]] bool append_token(RequestId id, std::int32_t token);
   void cancel(RequestId id);
+  void forget(RequestId id);
   [[nodiscard]] const Sequence& sequence(RequestId id) const;
   [[nodiscard]] SchedulerStats stats() const;
 

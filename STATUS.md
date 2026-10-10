@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated October 6, 2026. The measured device is an Apple M3 Max with MLX 0.32.2.
+Updated October 10, 2026. The measured device is an Apple M3 Max with MLX 0.32.2.
 
 ## FP16 runtime
 
@@ -56,6 +56,31 @@ loss does not establish exact generation parity. FP16 remains the default.
 
 The [evidence index](benchmarks/results/README.md) links saved runs and source archives.
 
+## Speculation and task agents
+
+Opt-in greedy MLX speculation verifies proposed blocks and physically clears
+rejected K/V. The frozen Qwen/Gemma reports show 1.08–4.06x median speedups across
+six fixed 64-token workloads; all 36 measured continuations match independent
+canonical greedy references. This is workload-specific evidence with an explicit
+FP16 numerical boundary, not a universal losslessness or full-task speed claim.
+See [speculative decoding](docs/speculative-decoding.md).
+
+Task orchestration now supports bounded hierarchies, messages, dependencies,
+supervised local processes, authenticated remote replicas, journaled recovery,
+scoped workspace tools and operator-selected completion criteria. Only one
+physical Mac was available. Model-quality diagnostics, including failures and
+the slower successful document delegation, are retained in
+[agent results](docs/agent-results.md).
+
+The implementation regression passed **854 Python tests without skips** in
+29.57 seconds, including synthetic Metal references and real loopback transport.
+A fresh Clang C++20 host build passed. No CUDA device tests or multi-host
+measurements were run. The final frozen-source task evaluation passed all four
+single/delegated coding and document cases, with two actual children in each
+delegated run. It uses the explicitly selected upstream MLX-LM runner and two
+small development fixtures; delegation was slower and no general task-quality
+advantage is claimed. See [the task report](docs/agent-results.md).
+
 ## Remaining limits
 
 - CUDA Qwen execution, cuBLASLt plans, kernels, arenas, and tests are implemented.
@@ -66,6 +91,9 @@ The [evidence index](benchmarks/results/README.md) links saved runs and source a
 - Gemma sliding layers bound attention work but retain pages until completion.
 - A 32K prompt plus two outputs checks execution and reclamation, not long-context
   semantic quality or sustained decoding latency.
-- Prefix reuse is engine-local. Completed request history still grows; a service
-  needs a bounded lifecycle.
-- Sampling, serving, speculation, W4A16, and distributed execution are unimplemented.
+- Prefix reuse is engine-local. Workers explicitly forget terminal request history;
+  direct engine callers can use `forget` after consuming a request's final state.
+- Sampling, native W4A16 and tensor/pipeline parallel execution are unimplemented.
+- Speculation is opt-in greedy MLX execution with an explicit numerical contract.
+  Replica workers and task orchestration are implemented; multi-host/GPU deployments
+  and general task quality require separate qualification.
