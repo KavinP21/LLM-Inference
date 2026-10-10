@@ -1,0 +1,50 @@
+{
+  "schema": "forge_qwen7b_native_chat_v1",
+  "environment": {
+    "git_commit": "7a84d75a87cf8c9b0c7422a6501bc92c7e904952",
+    "git_dirty": true,
+    "runtime_source_sha256": "c6a415e66a150bce9c92dc20977313f8af57de90ac96dbda8b9be861527adac9"
+  },
+  "native_model": {
+    "model_format_version": 2,
+    "model_data_sha256": "d0e0b279687eacd06e5f08072209a77b5ae9cac780970c14f44aa528038d5911",
+    "model_file_bytes": 15231255040
+  },
+  "transcript": [
+    [
+      {
+        "role": "user",
+        "content": "Remember my name is Ada. Answer only 'Saved'."
+      },
+      {
+        "role": "assistant",
+        "content": "Saved"
+      }
+    ],
+    [
+      {
+        "role": "user",
+        "content": "What is my name? Answer only with my name."
+      },
+      {
+        "role": "assistant",
+        "content": "Ada"
+      }
+    ]
+  ],
+  "scope": "Actual Tk control flow and native Forge model execution on one Apple M3 Max; no general task capability, long-context execution or CUDA claim.",
+  "default_profile": "qwen05",
+  "selected_profile": {
+    "key": "qwen7b",
+    "label": "Qwen2.5-7B-Instruct \u00b7 reconstructed FP16",
+    "artifact": "qwen2.5-7b-mlx-reconstructed.engine",
+    "tokenizer": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+    "kv_cache_bytes": 2147483648,
+    "max_model_length": 32768,
+    "decode_mode": "rowwise"
+  },
+  "ready_status": "Ready \u00b7 Apple M3 Max \u00b7 32K context",
+  "multi_turn_passed": true,
+  "load_error_retained_after_clear": true,
+  "worker_closed": true
+}
