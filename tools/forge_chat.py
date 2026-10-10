@@ -4,16 +4,13 @@
 from __future__ import annotations
 
 import queue
-import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from forge_chat_runtime import CHAT_PROFILES, ChatWorker
+
 ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = ROOT / "models" / "qwen2.5-0.5b.engine"
-MODEL_NAME = "Qwen2.5-0.5B-Instruct"
-PREFILL_CHUNK_SIZE = 512
-KV_CACHE_BYTES = 512 << 20
 MAX_GENERATION_TOKENS = 32768
 
 
@@ -25,16 +22,18 @@ class ForgeChat(tk.Tk):
         self.minsize(620, 480)
         self.configure(background="#f5f5f7")
 
-        self.engine = None
-        self.tokenizer = None
+        self.ready = False
         self.busy = False
         self.loading = False
+        self.closing = False
+        self.profile = CHAT_PROFILES[0]
         self.conversation: list[dict[str, str]] = []
         self.context_limit = 0
         self.device_name = "Metal"
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
 
         self._build_ui()
+        self.worker = ChatWorker(ROOT, self.events)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(100, self._drain_events)
         self._start_loading()
@@ -48,16 +47,27 @@ class ForgeChat(tk.Tk):
         ttk.Label(header, text="Forge LLM", font=("SF Pro Display", 24, "bold")).pack(
             anchor="w"
         )
-        ttk.Label(
+        self.model_label = ttk.Label(
             header,
-            text=f"{MODEL_NAME}  ·  Apple MLX",
+            text=f"{self.profile.label}  ·  Apple MLX",
             foreground="#666666",
-        ).pack(anchor="w", pady=(2, 0))
-        ttk.Label(
+        )
+        self.model_label.pack(anchor="w", pady=(2, 0))
+        self.artifact_label = ttk.Label(
             header,
-            text=f"Model: {MODEL_PATH.name}",
+            text=f"Model: {self.profile.artifact}",
             foreground="#666666",
-        ).pack(anchor="w", pady=(2, 0))
+        )
+        self.artifact_label.pack(anchor="w", pady=(2, 0))
+        self.model_picker = ttk.Combobox(
+            header,
+            values=[profile.label for profile in CHAT_PROFILES],
+            state="readonly",
+            width=49,
+        )
+        self.model_picker.current(0)
+        self.model_picker.pack(anchor="w", pady=(8, 0))
+        self.model_picker.bind("<<ComboboxSelected>>", self._select_model)
 
         status_row = ttk.Frame(outer)
         status_row.pack(fill="x", pady=(0, 14))
@@ -132,40 +142,41 @@ class ForgeChat(tk.Tk):
         self.status_dot.configure(fg=color)
 
     def _start_loading(self) -> None:
-        if self.loading or self.busy:
+        if self.loading or self.busy or self.closing:
             return
         self.loading = True
-        if self.engine is not None:
-            self.engine.close()
-        self.engine = None
-        self.tokenizer = None
-        self.generate_button.configure(state="disabled")
+        self.ready = False
+        self.context_limit = 0
+        self._set_controls()
         self.load_button.configure(state="disabled", text="Loading…")
         self._set_status("Loading model…", "#8a5a00")
-        threading.Thread(target=self._load_model, daemon=True).start()
+        self.worker.load(self.profile)
 
-    def _load_model(self) -> None:
-        try:
-            if not MODEL_PATH.exists():
-                raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
-            from forge_llm import create_engine
-            from transformers import AutoTokenizer
+    def _select_model(self, _event=None) -> None:
+        if self.loading or self.busy or self.closing:
+            return
+        profile = CHAT_PROFILES[self.model_picker.current()]
+        if profile.key == self.profile.key:
+            return
+        self.profile = profile
+        self.conversation.clear()
+        self._write_output("")
+        self.model_label.configure(text=f"{profile.label}  ·  Apple MLX")
+        self.artifact_label.configure(text=f"Model: {profile.artifact}")
+        self._start_loading()
 
-            tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
-            engine = create_engine(
-                MODEL_PATH,
-                backend="mlx",
-                max_num_sequences=1,
-                max_model_length=None,
-                kv_cache_bytes=KV_CACHE_BYTES,
-                prefill_chunk_size=PREFILL_CHUNK_SIZE,
-            )
-            self.events.put(("ready", (engine, tokenizer)))
-        except Exception as exc:  # surfaced in the UI so terminal use is unnecessary
-            self.events.put(("error", str(exc)))
+    def _set_controls(self) -> None:
+        idle = not (self.loading or self.busy or self.closing)
+        self.model_picker.configure(state="readonly" if idle else "disabled")
+        self.load_button.configure(state="normal" if idle else "disabled")
+        self.clear_button.configure(state="normal" if idle else "disabled")
+        self.max_tokens.configure(state="normal" if idle else "disabled")
+        self.generate_button.configure(
+            state="normal" if idle and self.ready else "disabled"
+        )
 
     def _generate(self) -> None:
-        if self.busy or self.engine is None or self.tokenizer is None:
+        if self.busy or self.loading or self.closing or not self.ready:
             return
         prompt = self.prompt.get("1.0", "end").strip()
         if not prompt:
@@ -183,50 +194,24 @@ class ForgeChat(tk.Tk):
             return
 
         self.busy = True
-        self.generate_button.configure(state="disabled")
+        self._set_controls()
         self._set_status("Generating…", "#8a5a00")
-        threading.Thread(
-            target=self._run_generation, args=(prompt, max_tokens), daemon=True
-        ).start()
-
-    def _run_generation(self, prompt: str, max_tokens: int) -> None:
-        try:
-            messages = [*self.conversation, {"role": "user", "content": prompt}]
-            rendered = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            tokens = self.tokenizer(rendered, return_tensors=None).input_ids
-            available_tokens = self.context_limit - len(tokens)
-            if available_tokens <= 0:
-                raise ValueError(
-                    f"This conversation is too long for the {self.context_limit:,}-token context. "
-                    "Press Clear chat to start a new conversation."
-                )
-            output_tokens = self.engine.generate(
-                tokens,
-                max_new_tokens=min(max_tokens, available_tokens),
-                eos_token_ids=[self.tokenizer.eos_token_id],
-            )
-            response = self.tokenizer.decode(
-                output_tokens, skip_special_tokens=True
-            ).strip()
-            self.events.put(("response", (prompt, response)))
-        except Exception as exc:
-            self.events.put(("error", str(exc)))
+        self.worker.generate(
+            [*self.conversation, {"role": "user", "content": prompt}], max_tokens
+        )
 
     def _drain_events(self) -> None:
+        if self.closing:
+            return
         try:
             while True:
                 kind, value = self.events.get_nowait()
                 if kind == "ready":
-                    self.engine, self.tokenizer = value  # type: ignore[misc]
-                    self.context_limit = int(self.engine.max_model_length)
-                    self.device_name = str(
-                        self.engine.build_info().get("device", "Metal")
-                    )
+                    self.profile, self.context_limit, self.device_name = value  # type: ignore[misc]
+                    self.ready = True
                     self.loading = False
                     self.load_button.configure(state="normal", text="Reload model")
-                    self.generate_button.configure(state="normal")
+                    self._set_controls()
                     self._set_status(self._ready_status(), "#188038")
                 elif kind == "response":
                     prompt, response = value  # type: ignore[misc]
@@ -239,19 +224,17 @@ class ForgeChat(tk.Tk):
                     self._render_conversation()
                     self.prompt.delete("1.0", "end")
                     self.busy = False
-                    self.generate_button.configure(state="normal")
+                    self._set_controls()
                     self._set_status(self._ready_status(), "#188038")
                 elif kind == "error":
                     self.loading = False
                     self.busy = False
                     self.load_button.configure(
                         state="normal",
-                        text="Reload model"
-                        if self.engine is not None
-                        else "Load model",
+                        text="Reload model" if self.ready else "Load model",
                     )
-                    if self.engine is not None:
-                        self.generate_button.configure(state="normal")
+                    self._set_controls()
+                    if self.ready:
                         self._set_status(f"Error · {self._ready_status()}", "#c5221f")
                     else:
                         self.generate_button.configure(state="disabled")
@@ -283,15 +266,18 @@ class ForgeChat(tk.Tk):
         return f"Ready · {self.device_name} · {context}"
 
     def _clear_chat(self) -> None:
-        if self.busy:
+        if self.busy or self.loading or self.closing:
             return
         self.conversation.clear()
         self._write_output("")
-        self._set_status(self._ready_status(), "#188038")
+        if self.ready:
+            self._set_status(self._ready_status(), "#188038")
 
     def _close(self) -> None:
-        if self.engine is not None:
-            self.engine.close()
+        if self.closing:
+            return
+        self.closing = True
+        self.worker.close()
         self.destroy()
 
 

@@ -1,0 +1,22 @@
+{
+  "schema": "forge_qwen7b_regression_v1",
+  "recorded_utc": "2026-10-10T07:27:09.451118+00:00",
+  "tested_commit": "7a84d75a87cf8c9b0c7422a6501bc92c7e904952",
+  "pytest": {
+    "tests": "883",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "time": "30.573"
+  },
+  "python": "/private/tmp/forge-qwen7b-validation/bin/python",
+  "loaded_forge_package": "/private/tmp/forge-speculative-agents-publish/python/forge_llm",
+  "environment": "Existing dependency files shared by symlink in an isolated validation venv; editable .pth hooks omitted to prevent importing a different checkout. No dependency upgrade.",
+  "commands": [
+    "FORGE_INSPECT_MODEL=/private/tmp/forge-publish-inspect-model PYTHONPATH=python python -m pytest -q --ignore=tests/test_gpu_evidence_guard.py",
+    "PYTHONPATH=python python -m pytest -q tests/test_gpu_evidence_guard.py"
+  ],
+  "gpu_serialization": "881 tests under the exclusive GPU evidence lease, then 2 lease-control tests outside it. All 883 tests executed; no skips.",
+  "style": "Full Ruff check and format check passed.",
+  "scope": "Apple Metal references, portable Python/C++ inspector and authenticated loopback workers; no CUDA or multi-host execution."
+}

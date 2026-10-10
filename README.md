@@ -45,10 +45,10 @@ contains latency, memory, source identity, and reproduction commands;
 
 | Area | Evidence |
 | --- | --- |
-| Python regression | 854 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/agents-published-2026-10-10/regression-summary.json) |
-| Qwen reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
-| Gemma reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
-| 32K context | Both models executed a 32,766-token prompt plus two outputs and reclaimed their pages. This checks execution and resource integrity. |
+| Python regression | 883 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen7b-2026-10-10/regression-summary.json) |
+| Qwen2.5-0.5B reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
+| Gemma 3 1B reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
+| 32K context | Qwen2.5-0.5B and Gemma 3 1B executed a 32,766-token prompt plus two outputs and reclaimed their pages. This checks execution and resource integrity. |
 | Prefix cache | All eight registered parity/resource gates pass. Performance and final qualification are pending. |
 | INT8 | Experimental; held-out exact-token quality gates fail. FP16 remains the default. |
 | CUDA | On-device correctness and performance are unverified. |
@@ -138,6 +138,9 @@ Metal and CUDA checks require their respective devices.
 | [benchmarks/](benchmarks/) | Workloads, measurement drivers, saved reports |
 
 A local chat UI is available at [tools/forge_chat.py](tools/forge_chat.py).
+Its model picker now includes native reconstructed Qwen2.5-7B-Instruct. The
+[7B guide](docs/qwen-7b.md) also covers local 4-bit model workers, memory budgets
+and measured qualification limits.
 The [roadmap](docs/roadmap.md) tracks outstanding measurement and NVIDIA validation.
 
 ## Speculation and task agents

@@ -19,6 +19,12 @@ multi-host scaling, or an independent causal benefit from the handoff change.
 The inference work here is upstream MLX-LM execution; Forge-native speculation
 has its own separate measured contract.
 
+The subsequent [Qwen7B qualification](qwen-7b.md#executed-checks-and-task-limits)
+checks the new dense 4-bit adapter separately. Its single-agent document case
+passes, while both coding modes and delegated document analysis fail their
+independent gates. Native 7B chat and direct-MLX-LM generation parity pass;
+inference support does not establish autonomous task quality for that checkpoint.
+
 Control correctness and model task quality are separate checks. Scripted models
 exercise concurrency, durable effects, cancellation, recovery, budget limits,
 tool permissions and transport failures. They do not establish reasoning ability.

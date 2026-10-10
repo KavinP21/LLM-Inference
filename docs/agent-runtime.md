@@ -33,6 +33,12 @@ local checkpoint directory, or link it at the configured ignored path:
 ln -s /path/to/local/qwen3-checkpoint models/qwen3-30b-a3b-mlx
 ```
 
+For dense Qwen2.5-7B, use `examples/agents-qwen2.5-7b-mlx-lm.json` with a local
+checkpoint linked at `models/qwen2.5-7b-mlx`. This profile uses two 16K workers
+and 1 GiB persistent KV per worker. The [7B guide](qwen-7b.md) separates passing
+inference/chat checks from failed autonomous task gates. Qwen3 remains the
+configuration that passed all four recorded task cases.
+
 The Forge runner remains the default. `examples/agents-local.json` uses its
 reconstructed 7B artifact; that model failed coding qualification and should be
 treated as a diagnostic configuration. `examples/agents-local-smoke.json`
@@ -73,7 +79,8 @@ Use the small model for worker smoke tests; judge task quality using an
 appropriately capable model and executable acceptance criteria.
 
 `runner: "mlx_lm"` is an explicit optional inference adapter, pinned to MLX-LM
-0.28.3. It currently accepts the validated local Qwen3 MoE affine-4-bit layout.
+0.28.3. It accepts validated local Qwen3 MoE and dense Qwen2/Qwen2.5 7B
+affine-4-bit layouts. KV admission derives from the validated layer/head geometry.
 It uses upstream model execution and full K/V caches, with one actor-owned
 request at a time, context/persistent-KV admission, cancellation, and cleanup.
 Health/resume identity includes checkpoint/config hashes and library versions.
