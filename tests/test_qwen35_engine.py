@@ -258,6 +258,47 @@ def engine(fake=None, **options):
     ), fake
 
 
+def test_context_manager_closes_active_state_without_suppressing_body_error():
+    model, fake = engine()
+    original = LookupError("operator failure")
+    with pytest.raises(LookupError) as captured:
+        with model as owned:
+            assert owned is model
+            model.submit([1, 2, 3], 4)
+            raise original
+    assert captured.value is original
+    assert model._closed and model.model is model.processor is model.tokenizer is None
+    assert model.stats()["active_requests"] == model.stats()["kv_persistent_bytes"] == 0
+    assert not model._cache and fake.clears > 0
+    with pytest.raises(RuntimeError, match="closed"):
+        model.__enter__()
+
+
+def test_context_manager_closes_completed_chat():
+    model, _ = engine()
+    with model as owned:
+        result = owned.generate_chat([{"role": "user", "content": "test"}], 4)
+        assert result.tokens
+    assert model._closed and model._prepared is None and model._terminal is None
+
+
+def test_context_cleanup_error_preserves_original_and_propagates_without_body_error():
+    model, _ = engine()
+
+    def failed_close():
+        raise RuntimeError("cleanup failed")
+
+    model.close = failed_close
+    original = LookupError("original error")
+    with pytest.raises(LookupError) as captured:
+        with model:
+            raise original
+    assert captured.value is original and "cleanup failed" in original.__notes__[0]
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        with model:
+            pass
+
+
 def test_generation_owns_all_cache_state_and_forgets_bounded_history():
     model, fake = engine()
     prepared = model.prepare_chat([{"role": "user", "content": "test"}])

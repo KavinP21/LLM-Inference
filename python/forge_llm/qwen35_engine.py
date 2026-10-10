@@ -1239,3 +1239,15 @@ class Qwen35Engine:
             self._guard = lambda: None
             self._closed = True
             self._runtime.clear_cache()
+
+    def __enter__(self) -> Qwen35Engine:
+        self._check_owner()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        try:
+            self.close()
+        except BaseException as cleanup:
+            if exc_value is None:
+                raise
+            exc_value.add_note(f"Qwen3.5 context cleanup also failed: {cleanup}")

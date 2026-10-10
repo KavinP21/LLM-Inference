@@ -1,0 +1,16 @@
+{
+  "schema": "forge_qwen35_context_manager_regression_v1",
+  "source_at_regression": {
+    "git_commit": "0fa77fcb395f055e24761dc98ecbe26f0f88829c",
+    "git_dirty": true,
+    "runtime_source_sha256": "914c5068ceeb10817568fd4279b6fa0ea731526c768af305c85b2ca046ea3428"
+  },
+  "python": {
+    "tests": 1085,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 29.645
+  },
+  "scope": "Public context-manager entry/exit, active-state cleanup, completed-chat closure and preservation of original exceptions; full Metal/loopback regression. Inference math and worker/UI generation paths are unchanged by this interface addition."
+}
