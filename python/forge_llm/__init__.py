@@ -19,6 +19,7 @@ except (
 from .backends.mlx import mlx_build_info
 from .mlx_engine import MlxEngine
 from .mlx_engine import SequenceState as MlxSequenceState
+from .speculative import SpeculativeEngine
 
 
 def create_engine(model_path: str | Path, *, backend: str = "auto", **kwargs: object):
@@ -51,6 +52,7 @@ __all__ = [
     "Engine",
     "MlxEngine",
     "SequenceState",
+    "SpeculativeEngine",
     "build_info",
     "create_engine",
 ]

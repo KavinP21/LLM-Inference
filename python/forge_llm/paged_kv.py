@@ -403,6 +403,43 @@ class MlxPagedKVStore:
         if arrays:
             self.mx.eval(*arrays)
 
+    def truncate(self, block_table: tuple[int, ...], token_count: int) -> None:
+        """Discard a speculative suffix from an independently owned sequence.
+
+        Clear both occupancy masks and the underlying values. Writes use
+        addition into zero slots, so clearing masks alone would silently add
+        rejected K/V values to replacement tokens. Physical identifiers in the
+        caller's reservation remain valid and may be materialized again.
+        """
+        if (
+            type(token_count) is not int
+            or token_count < 0
+            or token_count > len(block_table) * self.block_tokens
+            or len(set(block_table)) != len(block_table)
+        ):
+            raise ValueError("invalid K/V truncation coverage")
+        first = token_count // self.block_tokens
+        affected = block_table[first:]
+        self._check_writable(affected)
+        if token_count:
+            covered = (token_count + self.block_tokens - 1) // self.block_tokens
+            self.validate_prefix(block_table[:covered], token_count)
+        keep = token_count % self.block_tokens
+        for index, physical_id in enumerate(affected):
+            if index or not keep:
+                self._blocks.pop(int(physical_id), None)
+                continue
+            block = self._blocks.get(int(physical_id))
+            if block is None:
+                continue
+            mask = (1 << keep) - 1
+            for layer, page in enumerate(block.layers):
+                if page is not None:
+                    block.layers[layer] = self.mx.concatenate(
+                        [page[:, :keep], self.mx.zeros_like(page[:, keep:])], axis=1
+                    )
+                block.written_masks[layer] &= mask
+
     def release(self, physical_ids: Iterable[int]) -> None:
         for physical_id in physical_ids:
             self._blocks.pop(int(physical_id), None)
