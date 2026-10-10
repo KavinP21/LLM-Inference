@@ -16,6 +16,7 @@ test = ["pytest>=8"]
 dev = ["ruff>=0.16,<0.17"]
 reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 agents = ["transformers>=4.50,<6", "safetensors>=0.4"]
+agents-mlx = ["transformers>=4.50,<6", "safetensors>=0.4", "mlx-lm==0.28.3; platform_system == 'Darwin' and platform_machine == 'arm64'"]
 
 [project.scripts]
 forge-export = "forge_llm.export:main"

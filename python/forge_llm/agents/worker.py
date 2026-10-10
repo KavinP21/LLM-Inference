@@ -544,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model")
     parser.add_argument("--tokenizer")
     parser.add_argument("--backend", choices=("auto", "mlx", "cuda"), default="auto")
+    parser.add_argument("--runner", choices=("forge", "mlx_lm"), default="forge")
     parser.add_argument("--max-model-length", type=int, default=2048)
     parser.add_argument("--kv-cache-bytes", type=int, default=256 << 20)
     parser.add_argument("--max-pending", type=int, default=8)
@@ -589,6 +590,7 @@ def main(argv: list[str] | None = None) -> int:
                 "model": args.model,
                 "tokenizer": args.tokenizer,
                 "backend": args.backend,
+                "runner": args.runner,
                 "max_model_length": args.max_model_length,
                 "kv_cache_bytes": args.kv_cache_bytes,
                 "max_pending": args.max_pending,

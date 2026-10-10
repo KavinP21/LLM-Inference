@@ -21,7 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from forge_llm.agents import AgentRuntime, AgentStore, RuntimeConfig, WorkspaceTools
-from forge_llm.agents.cli import create_pool, load_config
+from forge_llm.agents.cli import create_pool, load_config, worker_identities
 from forge_llm.agents.runtime import CompletionCheck
 from forge_llm.benchmark import model_provenance, source_provenance
 from gpu_guard import exclusive_gpu_workflow
@@ -194,6 +194,7 @@ async def evaluate(args):
     started = time.monotonic()
     pool = await create_pool(config)
     startup = time.monotonic() - started
+    loaded_worker_identities = await worker_identities(pool)
     rows = []
     try:
         for repetition in range(args.repetitions):
@@ -309,6 +310,7 @@ async def evaluate(args):
         "startup_seconds": startup,
         "environment": source_provenance(),
         "model_provenance": identities,
+        "loaded_worker_identities": loaded_worker_identities,
         "source_sha256": sources,
         "source_changed_during_run": sources != current_sources,
         "cases": CASES,
