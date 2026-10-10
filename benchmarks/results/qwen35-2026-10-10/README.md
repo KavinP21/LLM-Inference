@@ -70,6 +70,9 @@ after execution. Subsequent drivers also enforce an after-run source check.
 The model/worker measurements above retain their original source hash. A subsequent
 public context-manager interface fix has its own
 [1,085-test regression](context-manager-regression.json) and
-[JUnit](context-manager-tests.xml); it does not change inference math or worker/UI
+[JUnit](context-manager-tests.xml), plus an actual
+[default-model context smoke](context-manager-smoke.json) on clean source `5b3bdad`.
+The documented pattern returns `40` for `17+23` and closes model/state ownership.
+The interface addition does not change inference math or worker/UI
 generation. No original-FP16, general task quality,
 262K semantic qualification, NVIDIA or multi-host claim is made.
