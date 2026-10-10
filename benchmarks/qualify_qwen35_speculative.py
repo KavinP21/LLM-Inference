@@ -262,6 +262,27 @@ class Report:
         )
 
 
+def finalize_provenance(payload):
+    """Reject source changes; a newly written evidence file may change dirtiness."""
+    after = source_provenance()
+    current = {}
+    for name in payload["implementation_source_sha256"]:
+        try:
+            current[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        except OSError:
+            current[name] = None
+    payload["source_after"] = after
+    payload["implementation_source_sha256_after"] = current
+    payload["source_unchanged"] = (
+        all(
+            payload["source"].get(key) == after.get(key)
+            for key in ("git_commit", "runtime_source_sha256")
+        )
+        and current == payload["implementation_source_sha256"]
+    )
+    payload["passed"] = payload["passed"] and payload["source_unchanged"]
+
+
 def timing_run(engine, ids, args):
     reference = None
     warmups, trials = [], []
@@ -485,9 +506,10 @@ def main(argv=None):
         )
     except BaseException as exc:
         payload["error"] = {"type": type(exc).__name__, "message": str(exc)[:4096]}
-        report.save()
         raise
-    report.save()
+    finally:
+        finalize_provenance(payload)
+        report.save()
     if not payload["passed"]:
         raise SystemExit(
             "Qwen3.5 speculative qualification failed; raw evidence preserved"

@@ -143,6 +143,52 @@ def test_parity_failure_is_reported_instead_of_hidden_in_speed_summary(driver):
     )
 
 
+def test_provenance_ignores_evidence_dirtiness_but_rejects_changed_code(
+    driver, tmp_path, monkeypatch
+):
+    import hashlib
+
+    path = tmp_path / "runtime.py"
+    path.write_text("original")
+    source = {
+        "git_commit": "head",
+        "runtime_source_sha256": "runtime",
+        "git_dirty": False,
+    }
+    payload = {
+        "source": source,
+        "implementation_source_sha256": {
+            "runtime.py": hashlib.sha256(path.read_bytes()).hexdigest()
+        },
+        "passed": True,
+    }
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        driver, "source_provenance", lambda: {**source, "git_dirty": True}
+    )
+    driver.finalize_provenance(payload)
+    assert payload["passed"] and payload["source_unchanged"]
+    path.write_text("changed while running")
+    driver.finalize_provenance(payload)
+    assert not payload["passed"] and not payload["source_unchanged"]
+
+
+def test_provenance_rejects_runtime_or_commit_change(driver, tmp_path, monkeypatch):
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    payload = {
+        "source": {"git_commit": "head", "runtime_source_sha256": "runtime"},
+        "implementation_source_sha256": {},
+        "passed": True,
+    }
+    monkeypatch.setattr(
+        driver,
+        "source_provenance",
+        lambda: {"git_commit": "head", "runtime_source_sha256": "changed"},
+    )
+    driver.finalize_provenance(payload)
+    assert not payload["passed"]
+
+
 def test_video_grader_rejects_ambiguous_and_nonfinite_json(monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "benchmarks"))
     core = importlib.import_module("qualify_qwen35")

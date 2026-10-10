@@ -50,7 +50,8 @@ contains latency, memory, source identity, and reproduction commands;
 
 | Area | Evidence |
 | --- | --- |
-| Python regression | 883 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen7b-2026-10-10/regression-summary.json) |
+| Python regression | 1,082 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen35-2026-10-10/regression-final-summary.json) |
+| Qwen3.5-4B | Full upstream text/image/video execution; 32K execution/reclamation, worker/desktop controls and all four small task cases pass. [Scope and evidence](docs/qwen35.md) |
 | Qwen2.5-0.5B reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
 | Gemma 3 1B reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
 | 32K context | Qwen2.5-0.5B and Gemma 3 1B executed a 32,766-token prompt plus two outputs and reclaimed their pages. This checks execution and resource integrity. |
