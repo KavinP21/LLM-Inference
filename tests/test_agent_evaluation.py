@@ -78,3 +78,61 @@ def test_completion_steering_does_not_reveal_additional_code_cases(
     final = module.grade("coding", tmp_path, SimpleNamespace(status="completed"))
     assert not final["passed"]
     assert "test_unseen_inputs" in final["independent_test_output"]
+
+
+def test_qwen7b_example_admits_coding_catalog_and_independent_review_prompt(
+    tmp_path, monkeypatch
+):
+
+    from forge_llm.agents import AgentRuntime, RuntimeConfig, WorkspaceTools
+    from forge_llm.agents.cli import load_config
+    from forge_llm.agents.protocol import Generation
+
+    module = evaluator(monkeypatch)
+    example = (
+        Path(__file__).resolve().parents[1] / "examples/agents-qwen2.5-7b-mlx-lm.json"
+    )
+    config = load_config(example)
+    for name, text in module.CASES["coding"]["files"].items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    tools = WorkspaceTools(
+        tmp_path, tmp_path / "artifacts", allow_write=True, allow_tests=True
+    )
+
+    class NativePreflight:
+        supports_native_tools = True
+        calls = []
+
+        async def generate_action(self, messages, max_tokens, request_id, tool_specs):
+            self.calls.append(tool_specs)
+            return Generation(
+                '<tool_call>{"name":"finish","arguments":{"result":"Preflight dispatched"}}</tool_call>',
+                10,
+                10,
+            )
+
+        async def cancel(self, request_id):
+            pass
+
+    backend = NativePreflight()
+    runtime = AgentRuntime(
+        backend,
+        tools=tools.mapping(),
+        config=RuntimeConfig(**config["runtime"]),
+        tool_descriptions=tools.tool_descriptions(),
+        replay_safe_tools=tools.replay_safe_tools,
+    )
+    task = module.CASES["coding"]["task"] + " " + module.CASES["coding"]["delegation"]
+    result = asyncio.run(runtime.run(task))
+    assert result.status == "completed", result.error
+    assert len(backend.calls) == 1
+    assert {"edit_lines", "run_tests", "spawn"} <= {
+        spec["function"]["name"] for spec in backend.calls[0]
+    }
+    assert config["runtime"]["max_context_tokens"] < min(
+        worker["max_model_length"] for worker in config["workers"]
+    )
+    for worker in config["workers"]:
+        assert worker["kv_cache_bytes"] >= worker["max_model_length"] * 57344
