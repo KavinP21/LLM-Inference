@@ -39,6 +39,7 @@ jobs:
           tests/test_agent_native_batches.py tests/test_agent_native_tools.py tests/test_agent_mlx_lm_runner.py
           tests/test_agent_workers.py tests/test_agent_integration.py tests/test_agent_tools.py
           tests/test_agent_profiles.py tests/test_agent_evaluation.py tests/test_agent_handoff.py
+          tests/test_chat_runtime.py
       - run: bash -n tools/verify_wsl_environment.sh tools/run_sanitizer.sh
 
   sanitized-host:

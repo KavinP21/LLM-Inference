@@ -44,14 +44,19 @@ def checkpoint(tmp_path):
         "torch_dtype": "bfloat16",
     }
     (directory / "config.json").write_text(json.dumps(config))
+    _write_kv_fixture(directory, layers=48, columns=32, dtype="BF16")
+    return directory
+
+
+def _write_kv_fixture(directory, *, layers, columns, dtype):
     header = {}
-    length = 512 * 32 * 2
-    for layer in range(48):
+    length = 512 * columns * 2
+    for layer in range(layers):
         for projection in ("k_proj", "v_proj"):
             offset = len(header) * length
             header[f"model.layers.{layer}.self_attn.{projection}.scales"] = {
-                "dtype": "BF16",
-                "shape": [512, 32],
+                "dtype": dtype,
+                "shape": [512, columns],
                 "data_offsets": [offset, offset + length],
             }
     encoded = json.dumps(header).encode()
@@ -59,6 +64,29 @@ def checkpoint(tmp_path):
     (directory / "model.safetensors").write_bytes(
         struct.pack("<Q", len(encoded)) + encoded + b"\x00" * (len(header) * length)
     )
+
+
+@pytest.fixture
+def dense_checkpoint(tmp_path):
+    directory = tmp_path / "local-dense-checkpoint"
+    directory.mkdir()
+    config = {
+        "model_type": "qwen2",
+        "num_hidden_layers": 28,
+        "num_attention_heads": 28,
+        "num_key_value_heads": 4,
+        "hidden_size": 3584,
+        "vocab_size": 152064,
+        "max_position_embeddings": 32768,
+        "eos_token_id": 151645,
+        "quantization": {"bits": 4, "group_size": 64},
+        "sliding_window": 131072,
+        "use_sliding_window": False,
+        # Actual scale dtype, not this label, determines the two-byte cache path.
+        "torch_dtype": "bfloat16",
+    }
+    (directory / "config.json").write_text(json.dumps(config))
+    _write_kv_fixture(directory, layers=28, columns=56, dtype="F16")
     return directory
 
 
@@ -69,6 +97,7 @@ class FakeRuntime:
         self.events = []
         self.caches = []
         self.owner = None
+        self.layers, self.heads, self.head_dim = 48, 4, 128
 
     def own(self):
         owner = threading.get_ident()
@@ -79,7 +108,8 @@ class FakeRuntime:
     def make_cache(self):
         self.own()
         self.caches = [
-            SimpleNamespace(keys=None, values=None, offset=0) for _ in range(48)
+            SimpleNamespace(keys=None, values=None, offset=0)
+            for _ in range(self.layers)
         ]
         return self.caches
 
@@ -88,13 +118,13 @@ class FakeRuntime:
         for cache in self.caches:
             cache.keys = SimpleNamespace(
                 dtype=SimpleNamespace(size=2),
-                shape=(1, 4, rounded, 128),
-                nbytes=4 * rounded * 128 * 2,
+                shape=(1, self.heads, rounded, self.head_dim),
+                nbytes=self.heads * rounded * self.head_dim * 2,
             )
             cache.values = SimpleNamespace(
                 dtype=SimpleNamespace(size=2),
-                shape=(1, 4, rounded, 128),
-                nbytes=4 * rounded * 128 * 2,
+                shape=(1, self.heads, rounded, self.head_dim),
+                nbytes=self.heads * rounded * self.head_dim * 2,
             )
             cache.offset = total
 
@@ -135,6 +165,11 @@ class FakeRuntime:
         self.events.append("clear")
 
     def load(self, info):
+        self.layers, self.heads, self.head_dim = (
+            info.geometry.layers,
+            info.geometry.heads,
+            info.geometry.head_dim,
+        )
         return _Runtime(
             SimpleNamespace(),
             self.make_cache,
@@ -172,7 +207,7 @@ def test_checkpoint_hashes_actual_bytes_and_validates_kv_dimensions(checkpoint):
     config = json.loads((checkpoint / "config.json").read_text())
     config["num_key_value_heads"] = 8
     (checkpoint / "config.json").write_text(json.dumps(config))
-    with pytest.raises(ValueError, match="validated Qwen3"):
+    with pytest.raises(ValueError, match="validated Qwen"):
         inspect_checkpoint(checkpoint)
 
 
@@ -183,6 +218,159 @@ def test_checkpoint_load_set_changes_invalidate_fingerprint(checkpoint):
     assert not snapshot.unchanged()
     extra.unlink()
     assert snapshot.unchanged()
+
+
+def test_dense_geometry_scale_dtype_and_identity_are_from_checkpoint(
+    dense_checkpoint, checkpoint
+):
+    dense = inspect_checkpoint(dense_checkpoint)
+    assert (dense.geometry.layers, dense.geometry.heads, dense.geometry.head_dim) == (
+        28,
+        4,
+        128,
+    )
+    assert dense.geometry.bytes_per_token == 57344
+    assert dense.geometry.scale_shape == [512, 56]
+    assert "head_dim" not in dense.config  # Do not alter config before strict loading.
+    assert dense.identity != inspect_checkpoint(checkpoint).identity
+    original = dense.identity.copy()
+    config = dense.config.copy()
+    config["max_position_embeddings"] = 16384
+    config["eos_token_id"] = 53
+    (dense_checkpoint / "config.json").write_text(json.dumps(config))
+    changed = inspect_checkpoint(dense_checkpoint)
+    assert changed.identity["model_config_sha256"] != original["model_config_sha256"]
+    assert changed.identity["model_data_sha256"] != original["model_data_sha256"]
+    assert changed.config["eos_token_id"] == 53
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("num_hidden_layers", 28.0),
+        ("num_attention_heads", True),
+        ("num_key_value_heads", 8),
+        ("hidden_size", 4096),
+        ("head_dim", 64),
+        ("head_dim", 128.0),
+        ("max_position_embeddings", True),
+        ("eos_token_id", True),
+        ("use_sliding_window", True),
+        ("use_sliding_window", 0),
+        ("sliding_window", True),
+        ("quantization", {"bits": 4.0, "group_size": 64}),
+        ("quantization", {"bits": 4, "group_size": 64.0}),
+        ("quantization", {"bits": True, "group_size": 64}),
+        ("quantization", {"bits": 4, "group_size": True}),
+    ],
+)
+def test_dense_rejects_unvalidated_and_ambiguous_config_fields(
+    dense_checkpoint, field, value
+):
+    config = json.loads((dense_checkpoint / "config.json").read_text())
+    config[field] = value
+    (dense_checkpoint / "config.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError):
+        inspect_checkpoint(dense_checkpoint)
+
+
+def test_disabled_sliding_metadata_requires_explicit_false(
+    dense_checkpoint, checkpoint
+):
+    config = json.loads((dense_checkpoint / "config.json").read_text())
+    config.pop("use_sliding_window")
+    (dense_checkpoint / "config.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="explicitly disabled"):
+        inspect_checkpoint(dense_checkpoint)
+    config["sliding_window"] = None
+    (dense_checkpoint / "config.json").write_text(json.dumps(config))
+    assert inspect_checkpoint(dense_checkpoint).geometry.layers == 28
+    moe = json.loads((checkpoint / "config.json").read_text())
+    moe.update(sliding_window=131072, use_sliding_window=False)
+    (checkpoint / "config.json").write_text(json.dumps(moe))
+    with pytest.raises(ValueError):
+        inspect_checkpoint(checkpoint)
+
+
+def test_dense_scales_must_match_hidden_geometry(dense_checkpoint):
+    _write_kv_fixture(dense_checkpoint, layers=28, columns=32, dtype="F16")
+    with pytest.raises(ValueError, match="projection dimensions"):
+        inspect_checkpoint(dense_checkpoint)
+
+
+def test_dense_admission_and_cleanup_use_28_layers(dense_checkpoint):
+    engine, fake = runner(dense_checkpoint, kv_cache_bytes=256 * 57344)
+    try:
+        assert engine.bytes_per_token == 57344
+        assert engine.metadata["kv_layers"] == 28
+        with pytest.raises(ContextLengthError, match="persistent KV"):
+            engine.submit([1] * 255, 2, [])
+        for _ in range(4):
+            request = engine.submit([1] * 255, 1, [])
+            allocated = tuple(fake.caches)
+            assert len(allocated) == 28
+            assert engine.step()[0].finished
+            assert fake.caches == []
+            assert all(
+                cache.keys is None and cache.values is None for cache in allocated
+            )
+            assert engine.stats()["last_kv_peak_bytes"] == 256 * 57344
+            engine.forget(request)
+        request = engine.submit([1], 4, [151645])
+        engine.step()
+        engine.cancel(request)
+        engine.forget(request)
+        assert (
+            engine.stats()["kv_reserved_bytes"]
+            == engine.stats()["kv_persistent_bytes"]
+            == 0
+        )
+    finally:
+        engine.close()
+
+
+@pytest.mark.parametrize("defect", ["layers", "heads", "head_dim"])
+def test_loaded_dense_cache_geometry_is_checked_and_failure_releases_buffers(
+    dense_checkpoint, defect
+):
+    class WrongGeometry(FakeRuntime):
+        def allocate(self, total):
+            super().allocate(total)
+            if defect == "layers":
+                self.caches.pop()
+            else:
+                shape = list(self.caches[0].keys.shape)
+                shape[1 if defect == "heads" else 3] += 1
+                self.caches[0].keys.shape = tuple(shape)
+
+    engine, fake = runner(dense_checkpoint, WrongGeometry())
+    try:
+        request = engine.submit([1], 1, [])
+        with pytest.raises(RuntimeError, match="layer count|dimensions"):
+            engine.step()
+        assert all(cache.keys is None for cache in fake.caches)
+        assert engine.stats()["active_requests"] == 0
+        engine.forget(request)
+    finally:
+        engine.close()
+
+
+def test_dense_respects_config_context_and_caller_eos(dense_checkpoint):
+    config = json.loads((dense_checkpoint / "config.json").read_text())
+    config.update(max_position_embeddings=64, eos_token_id=53)
+    (dense_checkpoint / "config.json").write_text(json.dumps(config))
+    engine, _ = runner(
+        dense_checkpoint, FakeRuntime(tokens=[17, 53]), max_model_length=64
+    )
+    try:
+        with pytest.raises(ContextLengthError, match="context"):
+            engine.submit([1] * 64, 1, [])
+        request = engine.submit([1], 10, [engine.model.config.eos_token_id])
+        assert not engine.step()[0].finished
+        assert engine.step()[0].finished
+        engine.forget(request)
+    finally:
+        engine.close()
 
 
 def test_adapter_greedy_eos_reclaims_cache_and_forgets_history(checkpoint):
