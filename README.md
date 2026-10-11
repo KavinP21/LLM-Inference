@@ -10,6 +10,16 @@ optional thinking and tool-based agents. Its complete 4-bit model runs through
 the explicitly integrated MLX-VLM adapter. See the [setup and scope](docs/qwen35.md).
 The native Forge Qwen2/Gemma execution path remains available.
 
+## Forge Studio agent workspace
+
+Launch `.venv/bin/python tools/forge_studio.py` (or double-click
+`Forge Studio.command` on macOS) for a local mission workspace: bounded
+sub-agents, live activity, exact-action review with file diffs, durable recovery,
+steering, follow-ups, trace export, selected skills and stdio MCP tools.
+Studio shares the existing inference workers and keeps its state in `.forge/`.
+The [Studio guide](docs/forge-studio.md) covers setup, controls and limitations;
+`--demo` exercises orchestration without model inference.
+
 
 ## Native Qwen2 and Gemma runtime
 

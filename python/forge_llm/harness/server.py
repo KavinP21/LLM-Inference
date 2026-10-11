@@ -153,6 +153,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if (
                 set(body) != {"token"}
                 or not isinstance(token, str)
+                or not token.isascii()
                 or not hmac.compare_digest(token, self.server.bootstrap_token)
             ):
                 return self._json(401, {"error": "invalid browser bootstrap"})
