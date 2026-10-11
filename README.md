@@ -13,9 +13,10 @@ The native Forge Qwen2/Gemma execution path remains available.
 ## Forge Studio agent workspace
 
 Launch `.venv/bin/python tools/forge_studio.py` (or double-click
-`Forge Studio.command` on macOS) for a local mission workspace: bounded
-sub-agents, live activity, exact-action review with file diffs, durable recovery,
-steering, follow-ups, trace export, selected skills and stdio MCP tools.
+`Forge Studio.command` on macOS), type a prompt, and press Enter. Studio starts
+the model automatically and keeps follow-ups in the same chat. Tool activity,
+bounded sub-agents and change approvals appear inline, with skills, hooks,
+stdio MCP, recovery and trace export available underneath.
 Studio shares the existing inference workers and keeps its state in `.forge/`.
 The [Studio guide](docs/forge-studio.md) covers setup, controls and limitations;
 `--demo` exercises orchestration without model inference.

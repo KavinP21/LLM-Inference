@@ -18,6 +18,7 @@ from ..agents.profiles import CompletionProfile
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
+from .conversation import ConversationController, ConversationRuntime
 from .demo import DemoBackend
 from .extensions import MCPStdioClient
 from .policy import ApprovalGate, workspace_preview
@@ -106,6 +107,7 @@ class StudioService:
         self.hooks = hooks
         self.closing = False
         self._closed = False
+        self.conversations = ConversationController(self)
 
     async def start_backend(self) -> dict:
         if self.closing:
@@ -218,7 +220,10 @@ class StudioService:
             if "run_tests" in wrapped:
                 tools.run_tests = wrapped["run_tests"]
             validator = CompletionProfile(self.config["acceptance"], tools, self.store)
-        runtime = AgentRuntime(
+        runtime_class = (
+            ConversationRuntime if manifest.get("conversation") else AgentRuntime
+        )
+        runtime = runtime_class(
             self.backend,
             self.store,
             wrapped,
@@ -232,24 +237,8 @@ class StudioService:
         self.runtimes[run_id], self.gates[run_id] = runtime, gate
         return runtime
 
-    async def create_run(self, payload: dict, *, parent_id: str | None = None) -> dict:
-        if self.closing or self.backend_status != "ready":
-            raise ValueError("Start the model before creating a mission")
-        if not isinstance(payload, dict) or payload.keys() - {
-            "task",
-            "policy",
-            "max_agents",
-            "max_total_tokens",
-            "max_steps_per_agent",
-            "skill",
-        }:
-            raise ValueError("unsupported mission fields")
-        if sum(not job.done() for job in self.jobs.values()) >= 4:
-            raise ValueError("Four missions are already active; wait or stop one")
-        task = _text(payload.get("task"), "task")
-        policy = payload.get("policy", "read_only")
-        if policy not in {"read_only", "review"}:
-            raise ValueError("policy must be read_only or review")
+    def _configuration(self, payload: dict) -> RuntimeConfig:
+        """Resolve operator budgets once; conversations retain this exact configuration."""
         runtime_options = dict(self.config.get("runtime", {}))
         for key, default, low, high in (
             ("max_agents", 4, 1, 16),
@@ -267,7 +256,35 @@ class StudioService:
             runtime_options["completion_timeout_seconds"] = max(
                 390, runtime_options.get("completion_timeout_seconds", 390)
             )
-        config = RuntimeConfig(**runtime_options)
+        return RuntimeConfig(**runtime_options)
+
+    async def create_run(
+        self,
+        payload: dict,
+        *,
+        parent_id: str | None = None,
+        _history: list[tuple[str, str]] | None = None,
+        _configuration: RuntimeConfig | None = None,
+        _conversation: bool = False,
+    ) -> dict:
+        if self.closing or self.backend_status != "ready":
+            raise ValueError("Start the model before creating a mission")
+        if not isinstance(payload, dict) or payload.keys() - {
+            "task",
+            "policy",
+            "max_agents",
+            "max_total_tokens",
+            "max_steps_per_agent",
+            "skill",
+        }:
+            raise ValueError("unsupported mission fields")
+        if sum(not job.done() for job in self.jobs.values()) >= 4:
+            raise ValueError("Four missions are already active; wait or stop one")
+        task = _text(payload.get("task"), "task")
+        policy = payload.get("policy", "read_only")
+        if policy not in {"read_only", "review"}:
+            raise ValueError("policy must be read_only or review")
+        config = _configuration or self._configuration(payload)
         skill = payload.get("skill")
         skill_body = ""
         if skill:
@@ -310,6 +327,7 @@ class StudioService:
             "extensions_sha256": self._extensions_digest(),
             "parent_id": parent_id,
             "brief": task,
+            "conversation": _conversation,
         }
         runtime = self._runtime(run_id, manifest, config)
         self.store.connection.execute(
@@ -323,6 +341,17 @@ class StudioService:
             tools=sorted({*runtime.tools, "journal_read"}),
             completion_required=runtime.completion_validator is not None,
         )
+        if _history:
+            # Install real chat roles before the new request. The conversation
+            # runtime also anchors this request in its immutable system scope.
+            with self.store.transaction():
+                self.store.connection.execute(
+                    "DELETE FROM messages WHERE run_id=? AND agent_id='root' AND role='user'",
+                    (run_id,),
+                )
+                for role, content in _history:
+                    self.store.add_message(run_id, "root", role, content)
+                self.store.add_message(run_id, "root", "user", augmented)
         self.store.event(
             run_id,
             "root",
@@ -547,6 +576,8 @@ class StudioService:
 
     async def dispatch(self, method: str, path: str, payload: dict) -> dict:
         parts = path.strip("/").split("/")
+        if parts[:2] == ["api", "chats"]:
+            return await self.conversations.dispatch(method, parts, payload)
         if (
             method == "GET"
             and len(parts) >= 5
@@ -602,6 +633,7 @@ class StudioService:
         if self._closed:
             return
         self.closing = True
+        await self.conversations.close()
         if hasattr(self, "_loader") and not self._loader.done():
             self._loader.cancel()
             await asyncio.gather(self._loader, return_exceptions=True)

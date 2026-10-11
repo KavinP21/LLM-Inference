@@ -1,6 +1,6 @@
 # Forge Studio harness
 
-Forge Studio turns the existing task-agent runtime into an operator workspace.
+Forge Studio presents the existing task-agent runtime as a conversational assistant.
 The design is based on public documentation and original implementation; no
 leaked proprietary implementation is used. The local inference engine remains
 the model execution layer. Harness scheduling does not improve a model's
@@ -8,12 +8,17 @@ reasoning ability by itself.
 
 ## Experience
 
-Studio is a mission workspace, with a brief, an agent ledger, an activity
-timeline, and a delivered result. A horizontal navigation bar and restrained
-light palette distinguish it from terminal assistants and chat-first interfaces.
-Operators can inspect budgets, approve a concrete action, steer active agents,
-cancel, recover an interrupted run, branch a follow-up and export the evidence.
-An empty workspace shows actionable starters rather than fabricated activity.
+The normal path is open, type, Enter, read the reply, and type a follow-up in
+the same composer. Backend loading happens automatically. User messages, answers,
+tool activity, child-agent progress and approval prompts share one transcript.
+Technical controls are secondary settings rather than required task setup.
+The custom palette and styling do not introduce another workflow to learn.
+
+Enter sends, Shift+Enter inserts a newline, and Escape/Stop interrupts active
+work. Accepted messages are durable before model startup. Request IDs prevent
+an uncertain browser retry from creating duplicate work. Follow-ups preserve
+conversation roles and context rather than asking the user to branch a mission.
+A collapsed Chats rail supplies history and a New chat action.
 
 ## Components and boundaries
 
@@ -22,16 +27,17 @@ An empty workspace shows actionable starters rather than fabricated activity.
 | `agents.AgentRuntime` | Existing bounded agent loop, child dependencies, messages, native tool calls, compaction, leases and recovery |
 | `agents.AgentStore` | Existing durable SQLite journal, input snapshots, idempotent effects and token reservations |
 | `harness.service` | Operator sessions, lineage, backend lifecycle, per-run tools and live snapshots |
+| `harness.conversation` | Durable chats, ordered turns, prompt acceptance, startup queuing and conversation context |
 | `harness.policy` | Exact-invocation approval, expiry, cancellation, read-only mode and lifecycle hooks |
 | `harness.extensions` | Selected local skills and explicitly configured MCP processes |
 | `harness.server` | Loopback HTTP, authenticated mutations, static UI and trace export |
-| `harness.web` | Mission creation, agent state, tool receipts, review and controls |
+| `harness.web` | Persistent composer, transcript, inline activity/review, chat history and secondary settings |
 
 One asyncio loop owns the journal, policies, runtime tasks and model pool.
 HTTP handlers dispatch onto that loop; they never share a SQLite connection
 across threads. Logical agents share model replicas instead of each loading
 weights. The existing worker configuration selects the model/backend. Startup
-is explicit, and model-loading errors appear in Studio. A deterministic demo
+starts in the background, and model-loading errors appear in the conversation. A deterministic demo
 mode exercises real scheduling and tools and is always labeled as simulation.
 
 ## Run lifecycle
@@ -46,8 +52,11 @@ Steering appends an operator message durably; a generation already in flight
 finishes against its recorded input, and the next turn sees the message.
 Cancellation propagates through runtime and worker cancellation.
 Interrupted runs retain remaining budgets and deadline; recovery is explicit.
-Terminal runs remain immutable and follow-up creates a new run linked to its
-parent, with a bounded previous result in the new brief.
+Terminal agent runs remain immutable. A conversation links ordered runs while
+preserving prior user and assistant roles in bounded model context. Current
+requests stay pinned if older history is compacted. Internal run IDs and lineage
+do not require the user to learn a separate branching workflow. The legacy
+mission endpoints remain available for programmatic integrations.
 
 ## Tool policy
 

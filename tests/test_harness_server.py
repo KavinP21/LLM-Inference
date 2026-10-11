@@ -94,6 +94,41 @@ def test_loopback_http_security_and_run_roundtrip(tmp_path):
             assert headers["Content-Disposition"].endswith('"forge-trace.json"')
             assert (await call("GET", "/../../pyproject.toml"))[0] == 404
             assert headers["X-Content-Type-Options"] == "nosniff"
+            first_payload = json.dumps(
+                {
+                    "message": "Inspect this fixture",
+                    "policy": "read_only",
+                    "request_id": "http-chat-first",
+                }
+            )
+            status, body, _ = await call("POST", "/api/chats", first_payload)
+            assert status == 200, body
+            first = json.loads(body)
+            status, body, _ = await call("POST", "/api/chats", first_payload)
+            assert status == 200
+            assert json.loads(body)["turn_id"] == first["turn_id"]
+            chat_id = first["chat_id"]
+            status, body, _ = await call(
+                "POST",
+                f"/api/chats/{chat_id}/message",
+                json.dumps(
+                    {
+                        "message": "Explain the inspection",
+                        "request_id": "http-chat-followup",
+                    }
+                ),
+            )
+            assert status == 200, body
+            second = json.loads(body)
+            await asyncio.wait_for(service.conversations.jobs[first["turn_id"]], 5)
+            await asyncio.wait_for(service.conversations.jobs[second["turn_id"]], 5)
+            status, body, _ = await call("GET", f"/api/chats/{chat_id}")
+            assert status == 200
+            chat = json.loads(body)
+            assert len(chat["turns"]) == 2
+            assert all(turn["status"] == "completed" for turn in chat["turns"])
+            assert chat["turns"][1]["user"] == "Explain the inspection"
+            assert len(chat["transcript"]) == 4
         finally:
             await asyncio.to_thread(server.shutdown)
             server.server_close()
