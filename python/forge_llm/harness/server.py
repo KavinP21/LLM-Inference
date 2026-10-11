@@ -1,0 +1,198 @@
+"""Loopback-only Studio server, with exact-origin and cookie authentication."""
+
+from __future__ import annotations
+
+import asyncio
+import concurrent.futures
+import hmac
+import json
+import secrets
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+WEB_ROOT = Path(__file__).with_name("web")
+MAX_BODY = 128_000
+
+
+class StudioHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, address, service, loop, *, token: str | None = None):
+        if address[0] != "127.0.0.1":
+            raise ValueError("Studio only binds to 127.0.0.1")
+        self.service, self.loop = service, loop
+        self.bootstrap_token = token or secrets.token_urlsafe(32)
+        self.session_token = secrets.token_urlsafe(32)
+        super().__init__(address, StudioHandler)
+        self.origin = f"http://127.0.0.1:{self.server_port}"
+
+
+class StudioHandler(BaseHTTPRequestHandler):
+    server: StudioHTTPServer
+
+    def log_message(self, *args):
+        # Browser credentials and operator briefs never enter access logs.
+        return None
+
+    def _send(self, status: int, body: bytes, mime="application/json", headers=()):
+        self.send_response(status)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        )
+        for key, value in headers:
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, status: int, value, headers=()):
+        self._send(
+            status,
+            json.dumps(value, ensure_ascii=False, allow_nan=False).encode(),
+            headers=headers,
+        )
+
+    def _origin_ok(self):
+        return (
+            self.headers.get("Host") == urlsplit(self.server.origin).netloc
+            and self.headers.get("Origin", self.server.origin) == self.server.origin
+            and self.headers.get("Sec-Fetch-Site", "same-origin")
+            in {"same-origin", "none"}
+        )
+
+    def _authenticated(self):
+        try:
+            cookies = SimpleCookie()
+            cookies.load(self.headers.get("Cookie", ""))
+            value = cookies.get("forge_studio")
+            return value is not None and hmac.compare_digest(
+                value.value, self.server.session_token
+            )
+        except Exception:
+            return False
+
+    def _body(self):
+        if (
+            self.headers.get("Content-Type", "").split(";")[0].strip()
+            != "application/json"
+        ):
+            raise ValueError("Studio mutations require application/json")
+        if self.headers.get("Transfer-Encoding"):
+            raise ValueError("chunked requests are not supported")
+        size = int(self.headers.get("Content-Length", "0"))
+        if not 1 <= size <= MAX_BODY:
+            raise ValueError("request body must contain 1 to 128000 bytes")
+        self.connection.settimeout(5)
+        data = self.rfile.read(size)
+        if len(data) != size:
+            raise ValueError("incomplete request body")
+
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate JSON field")
+                value[key] = item
+            return value
+
+        value = json.loads(
+            data,
+            object_pairs_hook=unique,
+            parse_constant=lambda _: (_ for _ in ()).throw(
+                ValueError("nonfinite JSON")
+            ),
+        )
+        json.dumps(value, allow_nan=False)
+        if not isinstance(value, dict):
+            raise ValueError("request must be a JSON object")
+        return value
+
+    def do_GET(self):
+        if not self._origin_ok():
+            return self._json(403, {"error": "unexpected origin or host"})
+        path = urlsplit(self.path).path
+        if path.startswith("/api/"):
+            if not self._authenticated():
+                return self._json(
+                    401,
+                    {
+                        "error": "Open Studio from its launcher to authorize this browser"
+                    },
+                )
+            return self._dispatch("GET", path, {})
+        files = {
+            "/": ("index.html", "text/html; charset=utf-8"),
+            "/studio.css": ("studio.css", "text/css; charset=utf-8"),
+            "/studio.js": ("studio.js", "text/javascript; charset=utf-8"),
+        }
+        if path not in files:
+            return self._json(404, {"error": "not found"})
+        filename, mime = files[path]
+        try:
+            self._send(200, (WEB_ROOT / filename).read_bytes(), mime)
+        except OSError:
+            self._json(503, {"error": "Studio UI assets are unavailable"})
+
+    def do_POST(self):
+        if not self._origin_ok():
+            return self._json(403, {"error": "unexpected origin or host"})
+        path = urlsplit(self.path).path
+        try:
+            body = self._body()
+        except (ValueError, TypeError, OSError, RecursionError) as exc:
+            return self._json(400, {"error": str(exc)})
+        if path == "/api/auth":
+            token = body.get("token")
+            if (
+                set(body) != {"token"}
+                or not isinstance(token, str)
+                or not hmac.compare_digest(token, self.server.bootstrap_token)
+            ):
+                return self._json(401, {"error": "invalid browser bootstrap"})
+            return self._json(
+                200,
+                {"authenticated": True},
+                [
+                    (
+                        "Set-Cookie",
+                        f"forge_studio={self.server.session_token}; HttpOnly; SameSite=Strict; Path=/",
+                    )
+                ],
+            )
+        if not self._authenticated():
+            return self._json(401, {"error": "browser is not authorized"})
+        self._dispatch("POST", path, body)
+
+    def _dispatch(self, method, path, body):
+        future = asyncio.run_coroutine_threadsafe(
+            self.server.service.dispatch(method, path, body), self.server.loop
+        )
+        try:
+            result = future.result(timeout=10)
+            headers = (
+                [("Content-Disposition", 'attachment; filename="forge-trace.json"')]
+                if path.endswith("/export")
+                else []
+            )
+            self._json(200, result, headers)
+        except concurrent.futures.TimeoutError:
+            # Do not imply rollback of a mutation already submitted to the loop.
+            self._json(
+                503,
+                {
+                    "error": "Controller response timed out; refresh state before retrying"
+                },
+            )
+        except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+            self._json(400, {"error": str(exc)})
+        except Exception:
+            self._json(
+                500, {"error": "Unexpected controller failure; inspect the local trace"}
+            )
