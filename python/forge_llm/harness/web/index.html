@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#f4f4ee">
+    <title>Forge Studio</title>
+    <link rel="stylesheet" href="/studio.css">
+    <script src="/studio.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to workspace</a>
+    <header class="app-header">
+      <a class="brand" href="/" aria-label="Forge Studio home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span>forge<span class="brand-suffix"> / studio</span></span>
+      </a>
+      <div class="header-location"><span class="nav-current">Workspace</span><span class="header-divider">/</span><span id="workspace-name">Loading workspace</span></div>
+      <div class="header-status"><span class="connection-indicator" id="connection-dot"></span><span id="connection-label">Connecting</span><span class="mode-badge" id="mode-badge" hidden></span></div>
+    </header>
+    <div class="notice notice-error" id="global-error" role="alert" hidden><span id="global-error-text"></span><button class="text-button" id="retry-button" type="button">Retry</button></div>
+    <div class="notice notice-demo" id="demo-notice" hidden><span class="notice-icon" aria-hidden="true">◈</span><span><strong>Validation mode.</strong> Runs use a deterministic backend to exercise the harness. No model inference is performed.</span></div>
+    <div class="workspace-shell">
+      <aside class="mission-sidebar" aria-label="Mission navigation">
+        <div class="sidebar-heading"><span class="eyebrow">Missions</span><span class="count-label" id="run-count">0</span></div>
+        <button type="button" class="button button-dark new-mission-button" id="new-mission"><span aria-hidden="true">＋</span> New mission <kbd>N</kbd></button>
+        <div class="run-list" id="run-list" aria-live="polite"><p class="sidebar-empty">Your missions will appear here.</p></div>
+        <div class="sidebar-footer"><span class="mini-mark" aria-hidden="true">F</span><div><strong>Local by design</strong><span>Workspace-scoped execution</span></div></div>
+      </aside>
+      <main class="mission-main" id="main" tabindex="-1">
+        <div class="mission-heading"><div><div class="eyebrow" id="mission-kicker">YOUR WORKSPACE, ORCHESTRATED</div><h1 id="mission-title">Give your work a direction.</h1></div><span class="status-badge" id="mission-status" hidden></span></div>
+        <div class="tab-bar" id="tab-bar" role="tablist" aria-label="Mission views" hidden>
+          <button role="tab" type="button" id="tab-brief" aria-selected="true" aria-controls="panel-brief" data-tab="brief" tabindex="0">Brief</button>
+          <button role="tab" type="button" id="tab-agents" aria-selected="false" aria-controls="panel-agents" data-tab="agents" tabindex="-1">Agents <span class="tab-count" id="agent-count">0</span></button>
+          <button role="tab" type="button" id="tab-activity" aria-selected="false" aria-controls="panel-activity" data-tab="activity" tabindex="-1">Activity <span class="tab-count" id="event-count">0</span></button>
+          <button role="tab" type="button" id="tab-output" aria-selected="false" aria-controls="panel-output" data-tab="output" tabindex="-1">Output</button>
+        </div>
+        <section id="panel-brief" class="view-panel" role="tabpanel" aria-labelledby="tab-brief"></section>
+        <section id="panel-agents" class="view-panel" role="tabpanel" aria-labelledby="tab-agents" hidden></section>
+        <section id="panel-activity" class="view-panel" role="tabpanel" aria-labelledby="tab-activity" hidden></section>
+        <section id="panel-output" class="view-panel" role="tabpanel" aria-labelledby="tab-output" hidden></section>
+      </main>
+      <aside class="control-sidebar" aria-label="Mission controls">
+        <section class="control-section" id="controls-section"></section>
+        <section class="control-section" id="usage-section" hidden></section>
+        <section class="control-section system-section"><div class="section-heading"><span class="eyebrow">Inference backend</span><span class="small-status" id="backend-status">Checking</span></div><strong class="backend-name" id="backend-name">Loading backend</strong><p class="subtle" id="backend-description">Checking the local inference connection.</p><button type="button" class="button button-outline" id="start-backend" hidden>Start backend</button></section>
+        <section class="control-section workspace-section"><span class="eyebrow">Workspace boundary</span><p class="workspace-path" id="workspace-path">—</p><p class="subtle">Tools operate within this workspace. Changes follow the mission’s permission policy.</p></section>
+      </aside>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog class="fork-dialog" id="fork-dialog" aria-labelledby="fork-heading"><form id="fork-form"><div class="dialog-heading"><h2 id="fork-heading">Branch this mission</h2><button type="button" class="icon-button" id="close-fork" aria-label="Close dialog">×</button></div><p class="subtle">Create an independent run with a revised brief. The current run stays in your history.</p><label for="fork-task">New brief</label><textarea id="fork-task" rows="7" required maxlength="32000"></textarea><div class="dialog-actions"><button type="button" class="button button-outline" id="cancel-fork">Cancel</button><button type="submit" class="button button-dark">Create branch <span aria-hidden="true">↗</span></button></div></form></dialog>
+  </body>
+</html>
