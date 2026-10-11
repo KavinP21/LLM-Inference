@@ -1,54 +1,56 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
-    <meta name="theme-color" content="#f4f4ee">
-    <title>Forge Studio</title>
-    <link rel="stylesheet" href="/studio.css">
-    <script src="/studio.js" defer></script>
-  </head>
-  <body>
-    <a class="skip-link" href="#main">Skip to workspace</a>
-    <header class="app-header">
-      <a class="brand" href="/" aria-label="Forge Studio home">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span>forge<span class="brand-suffix"> / studio</span></span>
-      </a>
-      <div class="header-location"><span class="nav-current">Workspace</span><span class="header-divider">/</span><span id="workspace-name">Loading workspace</span></div>
-      <div class="header-status"><span class="connection-indicator" id="connection-dot"></span><span id="connection-label">Connecting</span><span class="mode-badge" id="mode-badge" hidden></span></div>
-    </header>
-    <div class="notice notice-error" id="global-error" role="alert" hidden><span id="global-error-text"></span><button class="text-button" id="retry-button" type="button">Retry</button></div>
-    <div class="notice notice-demo" id="demo-notice" hidden><span class="notice-icon" aria-hidden="true">◈</span><span><strong>Validation mode.</strong> Runs use a deterministic backend to exercise the harness. No model inference is performed.</span></div>
-    <div class="workspace-shell">
-      <aside class="mission-sidebar" aria-label="Mission navigation">
-        <div class="sidebar-heading"><span class="eyebrow">Missions</span><span class="count-label" id="run-count">0</span></div>
-        <button type="button" class="button button-dark new-mission-button" id="new-mission"><span aria-hidden="true">＋</span> New mission <kbd>N</kbd></button>
-        <div class="run-list" id="run-list" aria-live="polite"><p class="sidebar-empty">Your missions will appear here.</p></div>
-        <div class="sidebar-footer"><span class="mini-mark" aria-hidden="true">F</span><div><strong>Local by design</strong><span>Workspace-scoped execution</span></div></div>
-      </aside>
-      <main class="mission-main" id="main" tabindex="-1">
-        <div class="mission-heading"><div><div class="eyebrow" id="mission-kicker">YOUR WORKSPACE, ORCHESTRATED</div><h1 id="mission-title">Give your work a direction.</h1></div><span class="status-badge" id="mission-status" hidden></span></div>
-        <div class="tab-bar" id="tab-bar" role="tablist" aria-label="Mission views" hidden>
-          <button role="tab" type="button" id="tab-brief" aria-selected="true" aria-controls="panel-brief" data-tab="brief" tabindex="0">Brief</button>
-          <button role="tab" type="button" id="tab-agents" aria-selected="false" aria-controls="panel-agents" data-tab="agents" tabindex="-1">Agents <span class="tab-count" id="agent-count">0</span></button>
-          <button role="tab" type="button" id="tab-activity" aria-selected="false" aria-controls="panel-activity" data-tab="activity" tabindex="-1">Activity <span class="tab-count" id="event-count">0</span></button>
-          <button role="tab" type="button" id="tab-output" aria-selected="false" aria-controls="panel-output" data-tab="output" tabindex="-1">Output</button>
-        </div>
-        <section id="panel-brief" class="view-panel" role="tabpanel" aria-labelledby="tab-brief"></section>
-        <section id="panel-agents" class="view-panel" role="tabpanel" aria-labelledby="tab-agents" hidden></section>
-        <section id="panel-activity" class="view-panel" role="tabpanel" aria-labelledby="tab-activity" hidden></section>
-        <section id="panel-output" class="view-panel" role="tabpanel" aria-labelledby="tab-output" hidden></section>
-      </main>
-      <aside class="control-sidebar" aria-label="Mission controls">
-        <section class="control-section" id="controls-section"></section>
-        <section class="control-section" id="usage-section" hidden></section>
-        <section class="control-section system-section"><div class="section-heading"><span class="eyebrow">Inference backend</span><span class="small-status" id="backend-status">Checking</span></div><strong class="backend-name" id="backend-name">Loading backend</strong><p class="subtle" id="backend-description">Checking the local inference connection.</p><button type="button" class="button button-outline" id="start-backend" hidden>Start backend</button></section>
-        <section class="control-section workspace-section"><span class="eyebrow">Workspace boundary</span><p class="workspace-path" id="workspace-path">—</p><p class="subtle">Tools operate within this workspace. Changes follow the mission’s permission policy.</p></section>
-      </aside>
-    </div>
-    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    <dialog class="fork-dialog" id="fork-dialog" aria-labelledby="fork-heading"><form id="fork-form"><div class="dialog-heading"><h2 id="fork-heading">Branch this mission</h2><button type="button" class="icon-button" id="close-fork" aria-label="Close dialog">×</button></div><p class="subtle">Create an independent run with a revised brief. The current run stays in your history.</p><label for="fork-task">New brief</label><textarea id="fork-task" rows="7" required maxlength="5000"></textarea><div class="dialog-actions"><button type="button" class="button button-outline" id="cancel-fork">Cancel</button><button type="submit" class="button button-dark">Create branch <span aria-hidden="true">↗</span></button></div></form></dialog>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#182127">
+  <title>Forge</title>
+  <link rel="stylesheet" href="/studio.css">
+  <script src="/studio.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#message">Skip to message</a>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Chats" inert>
+      <div class="sidebar-heading"><a class="brand" href="/" aria-label="Forge home"><span class="brand-mark" aria-hidden="true">f</span>Forge</a><button class="icon-button" id="close-sidebar" type="button" aria-label="Close chats">×</button></div>
+      <button class="new-chat" id="new-chat" type="button"><span aria-hidden="true">＋</span> New chat <kbd>⌘ K</kbd></button>
+      <h2 class="rail-label">Chats</h2>
+      <nav class="chat-list" id="chat-list" aria-label="Chat history"><p class="sidebar-empty">Your chats will appear here.</p></nav>
+      <div class="sidebar-bottom"><span class="local-dot" aria-hidden="true"></span>Local workspace</div>
+    </aside>
+    <button class="sidebar-backdrop" id="sidebar-backdrop" type="button" tabindex="-1" aria-label="Close chats" hidden></button>
+    <main class="chat-main" id="main">
+      <header class="topbar">
+        <div class="header-left"><button class="icon-button" id="toggle-sidebar" type="button" aria-label="Open chats" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"></rect><path d="M7 4v12"></path></svg></button><button class="header-brand" id="home" type="button">Forge</button><span class="header-divider" aria-hidden="true">/</span><span class="workspace-name" id="workspace-name">Workspace</span></div>
+        <div class="header-right"><span class="model-status" id="model-status" title="Local inference"><span class="status-dot" id="model-dot" aria-hidden="true"></span><span id="model-label">Local model</span></span><span class="demo-badge" id="demo-badge" hidden>Demo</span><button class="icon-button" id="open-settings" type="button" aria-label="Open settings"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12"></path><circle cx="7" cy="5" r="2"></circle><circle cx="13" cy="10" r="2"></circle><circle cx="8" cy="15" r="2"></circle></svg></button></div>
+      </header>
+      <div class="connection-notice" id="connection-error" role="alert" hidden><span id="connection-error-text"></span><button class="text-button" id="retry" type="button">Retry</button></div>
+      <div class="transcript-pane" id="transcript-pane">
+        <section class="welcome" id="welcome" aria-labelledby="welcome-title"><span class="welcome-mark" aria-hidden="true">f</span><h1 id="welcome-title">What would you like to work on?</h1><p>Ask a question, explore your code, or make a change.</p><div class="starter-chips"><button type="button" data-starter="Explain how this repository is organized and where to start.">Explore this codebase <span aria-hidden="true">↗</span></button><button type="button" data-starter="Review this repository for the most important bugs. Explain your findings with file references.">Find a bug <span aria-hidden="true">↗</span></button></div></section>
+        <div class="transcript" id="transcript" aria-label="Conversation"></div>
+        <div class="view-loading" id="view-loading" role="status" hidden><span class="working-dot" aria-hidden="true"></span>Loading chat…</div>
+      </div>
+      <button class="jump-bottom" id="jump-bottom" type="button" aria-label="Jump to latest message" hidden>↓</button>
+      <div class="composer-area" id="composer-area">
+        <div class="composer-status" id="composer-status" role="status" aria-live="polite" hidden></div>
+        <form class="composer" id="composer">
+          <div class="command-menu" id="command-menu" role="listbox" aria-label="Commands" hidden></div>
+          <label class="sr-only" for="message">Message Forge</label>
+          <textarea id="message" rows="2" maxlength="12000" placeholder="Ask Forge to work on your code…" spellcheck="true" autofocus></textarea>
+          <div class="composer-toolbar"><button class="permission-button" id="permission-shortcut" type="button" aria-label="Change permissions in settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5 2v4c0 3-5 6-5 6s-5-3-5-6v-4z"></path><path d="M5.8 7.5l1.6 1.6 3-3"></path></svg><span id="permission-label">Review changes</span></button><span class="composer-shortcut" id="composer-hint">Enter to send · Shift + Enter for a new line</span><button class="stop-draft-button" id="stop-draft" type="button" aria-label="Stop current response" title="Stop current response" hidden>■</button><button class="send-button" id="send" type="submit" aria-label="Send message" disabled><span id="send-label">Send</span><span id="send-icon" aria-hidden="true">↑</span></button></div>
+        </form>
+        <p class="composer-footnote" id="composer-footnote">Forge works in your local workspace. You review changes before they run.</p>
+      </div>
+    </main>
+  </div>
+  <dialog class="settings-drawer" id="settings" aria-labelledby="settings-title">
+    <div class="settings-heading"><h2 id="settings-title">Settings</h2><button class="icon-button" id="close-settings" type="button" aria-label="Close settings">×</button></div>
+    <section class="settings-section"><h3>Permissions</h3><p id="policy-help">Choose how Forge can work in a new chat.</p><label class="policy-choice"><input type="radio" name="policy" value="review" checked><span><strong>Review changes</strong><small>Read freely. Ask before editing files or running commands.</small></span></label><label class="policy-choice"><input type="radio" name="policy" value="read_only"><span><strong>Read only</strong><small>Explore and answer questions without changing files.</small></span></label><p class="settings-note" id="policy-note">Applies to new chats.</p></section>
+    <section class="settings-section"><h3>Workspace</h3><p class="workspace-path" id="workspace-path">Local workspace</p><div class="settings-model"><span id="settings-model-label">Local model</span><span id="settings-model-status">Connecting</span></div><p class="settings-note" id="demo-note" hidden>Demo mode uses a deterministic test backend. No model inference is performed.</p></section>
+    <section class="settings-section" id="trace-section" hidden><h3>Conversation trace</h3><p>Download the recorded actions for this chat.</p><div class="trace-list" id="trace-list"></div></section>
+    <p class="settings-keyboard">New chat <kbd>⌘ K</kbd><br>Stop response <kbd>Esc</kbd><br>Commands <kbd>/</kbd></p>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
 </html>

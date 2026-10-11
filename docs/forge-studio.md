@@ -1,29 +1,22 @@
 # Forge Studio
 
-Forge Studio is a local mission workspace for the inference engine's durable
-task agents. Give it a brief, inspect delegated work, review proposed changes
-and collect the result and execution evidence. Its mission board, agent ledger
-and activity timeline are intentionally separate from a terminal or chat feed.
+Forge Studio is a local assistant for the inference engine. Open it, type what
+you need, and continue in the same conversation. Tools, delegated agents and
+permissions appear inline when they are relevant.
 
-![Forge Studio mission workspace](images/forge-studio.png)
+## Open and type
 
-Screenshot of the explicitly labeled deterministic UI validation fixture.
-
-## Launch
-
-From the repository root, using the existing Apple Silicon environment and
-installed Qwen3.5 checkpoint:
+From the repository root, with the existing Python environment and Qwen3.5
+checkpoint installed:
 
 ```bash
 .venv/bin/python tools/forge_studio.py
 ```
 
-On macOS, double-click `Forge Studio.command`. The launcher opens your default
-browser and authorizes that browser without printing or storing an access token.
-Press **Start backend** to load the model, then write a brief and launch a mission.
-The default profile loads one complete model replica; logical agents have separate
-contexts but model generations share that replica. For two physical replicas,
-use the existing `examples/agents-qwen35.json` worker configuration.
+On macOS, double-click `Forge Studio.command`. The launcher opens and authorizes
+your browser, and warms the model in the background. You can submit your first
+message while it loads; the prompt is saved and starts automatically when ready.
+There is no separate backend-start step or task configuration screen.
 
 After installing the package, the equivalent command is:
 
@@ -31,73 +24,56 @@ After installing the package, the equivalent command is:
 forge-studio --workspace . --config examples/agents-studio.json
 ```
 
-To check the harness without model inference:
-
-```bash
-.venv/bin/python tools/forge_studio.py --demo
-```
-
-The demo uses actual file tools, SQLite journaling, delegation and review, with
-deterministic action selection. It displays **Validation mode** throughout.
-It is not a language-model answer to your brief.
-
-The server listens on `127.0.0.1:8765`. Use `--port 8766` if that port is occupied.
-Stopping the launcher with Ctrl-C closes owned model/MCP processes and leaves
-unfinished missions recoverable. `--no-open` is intended for headless operators;
-it does not authorize a fresh browser. Keep the launcher open while using Studio.
+Use `--port 8766` if the default port is occupied. Keep the launcher open while
+using Studio. Ctrl-C closes its owned workers and preserves interrupted work.
+`--no-open` serves the app without authorizing a fresh browser.
 The earlier native chat remains available through `tools/forge_chat.py`.
 
-## Work with missions
+## Conversation controls
 
-- **Brief:** the shared objective, lineage and concrete proposed actions. Changes
-  require a decision against the displayed arguments and diff. Declining an
-  action feeds the rejection back to the agent; it may propose another action.
-- **Agents:** independent roles, dependencies, context and tool scopes. Children
-  are read-only by default. Explicit child permissions can only narrow or match
-  their parent's permissions, and every mutation still passes review.
-- **Activity:** model decisions, tool starts/results, messages, failures,
-  compaction and completion checks. Expand an event to inspect its receipt.
-- **Output:** delivered result and downloadable text artifacts. **Export trace** downloads
-  a JSON record of the run, agents, events, usage and bound configuration.
+| Action | Interaction |
+| --- | --- |
+| Send a prompt or follow-up | Enter, or Send |
+| Insert a newline | Shift+Enter |
+| Stop the current response | Escape, or Stop |
+| Start fresh | New chat; previous chats stay in history |
+| Inspect a tool or delegated agent | Expand its inline activity row |
+| Review a proposed change | Inspect the inline diff, then approve or decline |
+| Adjust permissions | Settings; technical configuration stays out of the composer |
 
-**Read only** exposes inspection and configured skill reads. **Review changes**
-adds guarded editing, artifact creation, configured tests and granted MCP tools.
-Every effect needs a one-use approval. File edits retain per-agent read versions
-and recheck the diff after review. All MCP tools require review regardless of the
-server's descriptive annotations.
+Follow-ups retain prior user messages and assistant replies in the same chat.
+The model receives bounded conversation context, with the current request pinned
+when older context is compacted. Chat history and accepted prompts persist across
+browser refreshes and server restarts. While the assistant is busy, submitted
+direction is saved and delivered without requiring a new task or a branch.
 
-Use **Send direction** to steer an active agent; a generation already in flight
-finishes with its saved input, and the next model turn receives the message.
-**Stop mission** cancels the hierarchy. **Resume** recovers an interrupted run
-within its original budget and deadline. Recovery checks workspace, model
-fingerprints, worker configuration and extension catalog. It never grants new
-permissions. A terminal mission supports a **follow-up** with a new budget and
-a bounded copy of the previous result; the original stays immutable.
-Recovery refuses uncertain mutations and interrupted completion validators.
-An interrupted approval may therefore require a follow-up rather than replay.
+Read operations run without permission prompts. Review mode asks about concrete
+edits, artifacts, test runs and selected MCP tool calls in the conversation.
+An approval grants one invocation with exactly the displayed arguments. File
+versions and proposed diffs are rechecked before editing. Read-only mode exposes
+inspection tools without mutation tools. Child agents inherit a restricted tool
+scope; their work appears inline and does not require switching to another view.
 
-The shared budget includes measured input/output, uncertain interrupted work,
-and outstanding reservations. Reservations conservatively bound the next
-generation, so a mission may reach its budget before the measured count alone
-reaches that limit. Studio allows at most four active missions, in addition to
-the configured per-mission hierarchy, turn, context and deadline limits.
+The launcher profile loads one complete model replica. Logical agents have their
+own contexts and share that replica. For two physical replicas, select the existing
+`examples/agents-qwen35.json` worker configuration. Turn, token, context, deadline
+and concurrency limits still apply internally. Failures appear in the conversation
+with the submitted message preserved.
 
-## Skills and MCP
+## Optional extensions
 
-Select skill directories explicitly; Studio does not scan your home directory:
+Select skill directories explicitly:
 
 ```bash
 .venv/bin/python tools/forge_studio.py --skills-dir ./my-skills
 ```
 
-Each skill lives in a child directory with a `SKILL.md`, a `name` and `description`
-in simple YAML frontmatter. Discovery loads only metadata. Choosing a skill loads
-its body into the mission; agents can load catalogued skills and relative text
-resources through bounded tools. No skill scripts execute automatically, and
-skill prose cannot change permissions. Large skill bodies can exceed the brief
-bound; agents can load those progressively with `skill_load`.
+Each skill is a child directory containing `SKILL.md` with simple YAML `name`
+and `description` frontmatter. Discovery loads metadata; `skill_load` and
+`skill_read` retrieve bounded text on demand. Skill scripts do not execute
+automatically and skill prose cannot grant permissions.
 
-For MCP, pass `--mcp-config ./mcp.json` with an explicit operator-owned list:
+Pass `--mcp-config ./mcp.json` to select local stdio tools:
 
 ```json
 [
@@ -111,45 +87,43 @@ For MCP, pass `--mcp-config ./mcp.json` with an explicit operator-owned list:
 ]
 ```
 
-An empty tool grant exposes no tools. These are selected executable processes,
-not model-generated commands. MCP startup occurs when the backend starts; a
-broken extension prevents ready state and is cleaned up before retry. The
-adapter supports current **2026-07-28** stdio discovery/request metadata and
-legacy **2025-11-25** initialization, with negotiated 2025-06-18/2025-03-26
-compatibility. Tests exercise both current and legacy subprocess protocols.
-Calls are bounded, namespaced and non-replayable; timeouts/cancellation terminate
-the owned process group. Only basic runtime environment values are forwarded.
+An empty grant exposes no tools. MCP startup is owned by the backend lifecycle;
+a failed extension is cleaned up before retry. The adapter supports 2026-07-28
+stdio discovery/request metadata and legacy 2025-11-25 initialization, with
+negotiated 2025-06-18/2025-03-26 compatibility. Calls are bounded, namespaced,
+reviewed and non-replayable. Basic runtime environment values are forwarded;
+credentials are not copied from the launcher's environment.
 
-For Python integrations, inject a `HookRegistry` into `StudioService(hooks=...)`.
-Register trusted async `before_tool` and `after_tool` callbacks. Before hooks
-can reject execution; after-hook failures are recorded without pretending an
-already executed tool was rolled back. Hooks are ordered and time-bounded.
-Existing worker configuration `acceptance` criteria support protected tests,
-JSON schemas, child completion and required artifacts. Acceptance test execution
-uses the same review gate and preserves the original test fingerprints.
+Python integrations can inject `HookRegistry` into `StudioService(hooks=...)`
+and register trusted async `before_tool`/`after_tool` callbacks. Worker
+configuration `acceptance` criteria support protected tests, JSON schemas,
+child completion and required artifacts. Acceptance tests use the same review
+boundary. Trace export and artifact download retain their existing endpoints.
 
-## State and verification
+## State and limits
 
-Private state lives in `.forge/studio/` (ignored by Git), with an owner-only
-SQLite journal and run-specific artifact directories. Workspace tools cannot
-read or overwrite Studio state, Git metadata or the existing private path
-classes. The local server uses exact Host/Origin checks, JSON-only mutations,
-an HttpOnly SameSite cookie and a restrictive content security policy.
+Private state is in `.forge/studio/`, ignored by Git. It stores conversations,
+turns, the agent journal and run-specific text artifacts. Workspace tools cannot
+read or overwrite this state, Git metadata or the existing private path classes.
+The server binds to loopback and uses exact Host/Origin checks, JSON-only
+mutations, an HttpOnly SameSite cookie and a restrictive content security policy.
 
-These are application controls, not an operating-system sandbox. Repository
-tests and selected MCP executables run with the launcher's OS privileges;
-choose trusted programs. The server is intended for one local operator.
+These application controls are not an OS sandbox. Repository tests and selected
+MCP executables run with the launcher's OS privileges. Interrupted uncertain
+mutations and completion validators are not automatically replayed.
 
-Portable tests cover scheduling, approval races, cancellation, recovery,
-confinement, extension lifecycle and real HTTP requests. The
-[local integration report](../benchmarks/results/forge-studio-2026-10-11/)
-records the separately executed Qwen3.5 fixture smoke. Neither deterministic
-tests nor one local fixture establishes broad agent reliability.
+Activity is updated from the durable journal at action boundaries. Token-by-token
+answer streaming, Studio media upload, remote MCP transports, OS/container
+isolation, computer-use tools, scheduled jobs and multiple human accounts remain
+outside this release. Text/image/video model execution remains available in the
+engine and earlier chat/CLI APIs.
 
-This release streams activity by polling the durable journal at action
-boundaries. Token streaming, media upload in Studio, remote MCP transports,
-containers/worktree isolation, computer-use tools, multi-user collaboration
-and scheduled background jobs are not implemented. Text/image/video model
-execution remains available through the engine and the earlier chat/CLI APIs.
+For an explicitly labeled deterministic harness exercise without inference:
 
-See the [design](harness-design.md) for architecture and public references.
+```bash
+.venv/bin/python tools/forge_studio.py --demo
+```
+
+The original mission APIs remain available for integrations, but the interactive
+UI uses conversations. The [design](harness-design.md) documents the current
+interaction model and the underlying runtime boundaries.

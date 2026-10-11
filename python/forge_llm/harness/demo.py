@@ -19,6 +19,22 @@ class DemoBackend:
         agent = self.store.agent(run_id, agent_id)
         receipts = self.store.recent_tool_results(run_id, agent_id)
         tools = {e["payload"]["name"] for e in receipts}
+        artifact_note = ""
+        if "save_artifact" in tools:
+            receipt = next(
+                e["payload"]["result"]
+                for e in receipts
+                if e["payload"]["name"] == "save_artifact"
+            )
+            try:
+                saved = json.loads(receipt)
+            except (ValueError, TypeError):
+                saved = {}
+            artifact_note = (
+                "\n\nSaved `demo-inspection.md`."
+                if isinstance(saved, dict) and saved.get("path")
+                else "\n\nThe artifact was not saved."
+            )
         if "list_files" not in tools:
             action = {"action": "list_files", "args": {"path": ".", "limit": 40}}
         elif agent_id != "root":
@@ -70,16 +86,7 @@ class DemoBackend:
                     + str(len(children))
                     + " child agents settled.\n\n"
                     + "\n\n".join(a.result or a.error or a.status for a in children)
-                    + (
-                        "\n\nArtifact request: "
-                        + next(
-                            e["payload"]["result"]
-                            for e in receipts
-                            if e["payload"]["name"] == "save_artifact"
-                        )
-                        if "save_artifact" in tools
-                        else ""
-                    ),
+                    + artifact_note,
                 }
         text = json.dumps(action)
         return Generation(

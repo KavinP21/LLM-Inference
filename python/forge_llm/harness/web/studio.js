@@ -1,473 +1,752 @@
-/* Forge Studio: a local, dependency-free view over the durable harness API. */
+/* Forge: a conversation surface over the durable local harness. */
 "use strict";
 
 (() => {
   const $ = (id) => document.getElementById(id);
+  const terminal = new Set(["completed", "completed_with_failures", "failed", "cancelled", "interrupted"]);
+  const working = new Set(["running", "loading", "queued", "waiting", "waiting_approval"]);
   const state = {
-    overview: null, detail: null, selected: null, tab: "brief", filter: "all",
-    busy: new Set(), signatures: new Map(), polling: false, connected: false,
-    config: { policy: "review", max_agents: 4, max_total_tokens: 128000, max_steps_per_agent: 16, skill: "" },
+    overview: null, detail: null, selected: null, loading: false, refreshing: false,
+    sending: false, cancelling: false, connected: false, sidebar: false,
+    policy: "review", drafts: new Map(), turns: new Map(), busyApprovals: new Set(),
+    request: null, sendError: "", signatures: new WeakMap(), commandIndex: 0,
+    draftStorage: null, acknowledged: new Map(), policyTouched: false,
   };
-  const terminal = new Set(["completed", "completed_with_failures", "failed", "cancelled"]);
-  const statusClasses = new Set(["running", "completed", "failed", "cancelled", "waiting", "waiting_approval", "paused", "pending", "ready", "stopped", "interrupted", "completed_with_failures"]);
-  let toastTimer;
   let pollTimer;
+  let toastTimer;
+  let refreshAgain = false;
 
   function escape(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
-  function pretty(value) {
-    return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "";
+  function pretty(value) { return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? ""; }
+  function safeUrl(value) {
+    const url = String(value || "").trim();
+    if (/^(?:https?:\/\/|mailto:)/i.test(url) && !/[\u0000-\u0020]/.test(url)) return url;
+    // A workspace reference must stay on this origin, never a protocol-relative URL.
+    if (/^\/(?!\/)/.test(url) && !/[\u0000-\u0020\\]/.test(url)) return url;
+    if (/^#[\w.-]+$/.test(url)) return url;
+    return null;
   }
-  function title(value) {
-    return String(value ?? "pending").replaceAll("_", " ").replace(/^./, (char) => char.toUpperCase());
+  function inline(value) {
+    const tokens = [];
+    const token = (html) => { tokens.push(html); return `\u0000${tokens.length - 1}\u0000`; };
+    let text = String(value).replaceAll("\u0000", "");
+    text = text.replace(/(`+)([\s\S]*?)\1/g, (_, marks, code) => token(`<code>${escape(code.trim())}</code>`));
+    text = text.replace(/\[([^\]\n]+)\]\(([^\s)]+)(?:\s+"[^"\n]*")?\)/g, (whole, label, url) => {
+      const href = safeUrl(url);
+      return href ? token(`<a href="${escape(href)}"${/^https?:/i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : ""}>${escape(label)}</a>`) : label;
+    });
+    text = escape(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s.,!?:;)])/g, "$1<em>$2</em>")
+      .replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s.,!?:;)])/g, "$1<em>$2</em>")
+      .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+    // Expand once: user-provided text inside a code token cannot create another token.
+    return text.replace(/\u0000(\d+)\u0000/g, (_, i) => tokens[Number(i)] || "");
   }
-  function cssStatus(value) {
-    return statusClasses.has(value) ? value : "pending";
-  }
-  function badge(value) {
-    return `<span class="status-badge ${cssStatus(value)}">${escape(title(value))}</span>`;
-  }
-  function number(value) {
-    return Number(value || 0).toLocaleString();
-  }
-  function datetime(value, full = false) {
-    if (!value) return "—";
-    const date = new Date(typeof value === "number" ? value * 1000 : value);
-    if (Number.isNaN(date.getTime())) return "—";
-    return full ? date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-  function relativeDate(value) {
-    if (!value) return "";
-    const date = new Date(typeof value === "number" ? value * 1000 : value);
-    if (Number.isNaN(date.getTime())) return "";
-    const diff = Date.now() - date.getTime();
-    if (diff < 60000) return "now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
-  function setContent(id, content) {
-    if (state.signatures.get(id) === content) return;
-    const node = $(id);
-    const detailStates = new Map(Array.from(node.querySelectorAll("details[data-key]")).map((entry) => [entry.dataset.key, entry.open]));
-    const active = document.activeElement;
-    const activeId = node.contains(active) ? active.id : null;
-    const savedInputs = new Map(Array.from(node.querySelectorAll("input,textarea,select")).filter((entry) => entry.id).map((entry) => [entry.id, entry.value]));
-    const selection = activeId && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
-    node.innerHTML = content;
-    node.querySelectorAll("details[data-key]").forEach((entry) => { if (detailStates.has(entry.dataset.key)) entry.open = detailStates.get(entry.dataset.key); });
-    savedInputs.forEach((value, key) => { const input = $(key); if (input && node.contains(input)) input.value = value; });
-    if (activeId && $(activeId)) {
-      $(activeId).focus({ preventScroll: true });
-      if (selection && $(activeId).setSelectionRange) $(activeId).setSelectionRange(...selection);
+  function markdown(value, depth = 0) {
+    const lines = String(value || "").replace(/\r\n?/g, "\n").split("\n");
+    if (depth > 6) return `<p>${inline(value)}</p>`;
+    const blocks = [];
+    const listMatch = (line) => /^(\s*)([-+*]|\d+[.)])\s+(.*)$/.exec(line);
+    const tableCells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+    const tableRule = (line) => /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line || "");
+    const special = (i) => /^\s*(?:```|~~~|#{1,6}\s|>\s?|(?:[-*_]\s*){3,}$)/.test(lines[i]) || listMatch(lines[i]) || tableRule(lines[i + 1]);
+    for (let i = 0; i < lines.length;) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      const fence = /^\s*(```+|~~~+)\s*([\w+.-]*)\s*$/.exec(line);
+      if (fence) {
+        const code = [];
+        const end = new RegExp(`^\\s*${fence[1][0]}{${fence[1].length},}\\s*$`);
+        i++;
+        while (i < lines.length && !end.test(lines[i])) code.push(lines[i++]);
+        if (i < lines.length) i++;
+        blocks.push(`<div class="code-block"><div class="code-header"><span>${escape(fence[2] || "code")}</span><button type="button" class="copy-code" data-copy-code>Copy</button></div><pre><code>${escape(code.join("\n"))}</code></pre></div>`);
+        continue;
+      }
+      const heading = /^\s*(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/.exec(line);
+      if (heading) { blocks.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`); i++; continue; }
+      if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) { blocks.push("<hr>"); i++; continue; }
+      if (/^\s*>/.test(line)) {
+        const quote = [];
+        while (i < lines.length && /^\s*>/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ""));
+        blocks.push(`<blockquote>${markdown(quote.join("\n"), depth + 1)}</blockquote>`);
+        continue;
+      }
+      if (tableRule(lines[i + 1])) {
+        const headers = tableCells(line);
+        const alignment = tableCells(lines[i + 1]);
+        const rows = [];
+        i += 2;
+        while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(tableCells(lines[i++]));
+        const alignmentClass = (j) => /^:.*:$/.test(alignment[j]) ? ' class="align-center"' : /:$/.test(alignment[j]) ? ' class="align-right"' : "";
+        blocks.push(`<div class="table-wrap"><table><thead><tr>${headers.map((cell, j) => `<th${alignmentClass(j)}>${inline(cell)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((_, j) => `<td${alignmentClass(j)}>${inline(row[j] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+        continue;
+      }
+      const first = listMatch(line);
+      if (first) {
+        const ordered = /^\d/.test(first[2]);
+        const indent = first[1].length;
+        const items = [];
+        let next;
+        while (i < lines.length && (next = listMatch(lines[i])) && next[1].length === indent && /^\d/.test(next[2]) === ordered) {
+          const content = [next[3]];
+          const padding = indent + next[2].length + 1;
+          i++;
+          while (i < lines.length) {
+            const match = listMatch(lines[i]);
+            if (match && match[1].length <= indent) break;
+            if (!lines[i].trim()) {
+              // A blank line belongs to the item only when followed by indented content or another list item.
+              let lookahead = i + 1;
+              while (lookahead < lines.length && !lines[lookahead].trim()) lookahead++;
+              if (lookahead >= lines.length || (!listMatch(lines[lookahead]) && !/^\s+\S/.test(lines[lookahead]))) break;
+              content.push(""); i++; continue;
+            }
+            const spaces = /^\s*/.exec(lines[i])[0].length;
+            if (spaces <= indent) break;
+            content.push(lines[i++].slice(Math.min(padding, spaces)));
+          }
+          items.push(`<li>${markdown(content.join("\n"), depth + 1)}</li>`);
+          while (i < lines.length && !lines[i].trim() && listMatch(lines[i + 1] || "")) i++;
+        }
+        const tag = ordered ? "ol" : "ul";
+        const start = ordered && parseInt(first[2], 10) !== 1 ? ` start="${parseInt(first[2], 10)}"` : "";
+        blocks.push(`<${tag}${start}>${items.join("")}</${tag}>`);
+        continue;
+      }
+      const paragraph = [line];
+      i++;
+      while (i < lines.length && lines[i].trim() && !special(i)) paragraph.push(lines[i++]);
+      blocks.push(`<p>${paragraph.map(inline).join("<br>")}</p>`);
     }
-    state.signatures.set(id, content);
+    return blocks.join("");
+  }
+  function outputText(value) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        try {
+          const object = JSON.parse(trimmed);
+          if (object.action === "finish" && typeof object.result === "string") return object.result;
+        } catch { /* It is ordinary prose containing braces. */ }
+      }
+      return value;
+    }
+    if (value && typeof value === "object") return value.result || value.content || value.text || value.answer || "";
+    return "";
+  }
+  function patch(node, content) {
+    if (state.signatures.get(node) === content) return;
+    const disclosures = new Map(Array.from(node.querySelectorAll("details[data-key]")).map((entry) => [entry.dataset.key, entry.open]));
+    node.innerHTML = content;
+    node.querySelectorAll("details[data-key]").forEach((entry) => { if (disclosures.has(entry.dataset.key)) entry.open = disclosures.get(entry.dataset.key); });
+    state.signatures.set(node, content);
+  }
+  function toast(message, error = false, duration = 3500) {
+    clearTimeout(toastTimer);
+    $("toast").textContent = message;
+    $("toast").classList.toggle("error", error);
+    $("toast").hidden = false;
+    toastTimer = setTimeout(() => { $("toast").hidden = true; }, duration);
   }
   async function api(path, data) {
-    const options = { credentials: "same-origin", headers: { "Accept": "application/json" } };
+    const options = { credentials: "same-origin", headers: { "Accept": "application/json" }, cache: "no-store" };
     if (data !== undefined) {
       options.method = "POST";
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(data);
     }
-    const response = await fetch(path, options);
+    let response;
+    try { response = await fetch(path, options); } catch { throw new Error("Could not reach Forge. Check that the local server is running."); }
     let body;
     try { body = await response.json(); } catch { throw new Error(`The server returned an unreadable response (${response.status}).`); }
     if (!response.ok) {
       const error = body.error || body.message || `Request failed (${response.status}).`;
-      throw new Error(typeof error === "string" ? error : error.message || pretty(error));
+      throw new Error(typeof error === "string" ? error : error.message || "The request could not be completed.");
     }
     return body;
   }
-  function notify(message, error = false) {
-    clearTimeout(toastTimer);
-    $("toast").textContent = message;
-    $("toast").classList.toggle("error", error);
-    $("toast").hidden = false;
-    toastTimer = setTimeout(() => { $("toast").hidden = true; }, error ? 8000 : 4000);
+  function currentPolicy() { return state.detail?.chat?.policy || state.policy; }
+  function active() {
+    return Boolean(state.detail?.turns?.some((turn) => turn.active || (!terminal.has(turn.status) && turn.status !== "queued" && working.has(turn.status))))
+      || (Boolean(state.selected) && !state.detail && ["loading", "running"].includes(state.overview?.chats?.find((chat) => chat.chat_id === state.selected)?.status));
   }
-  function connection(ok, error = "") {
-    state.connected = ok;
-    $("connection-dot").className = `connection-indicator ${ok ? "connected" : "error"}`;
-    $("connection-label").textContent = ok ? "Local connection" : "Connection interrupted";
-    $("global-error").hidden = ok;
-    $("global-error-text").textContent = error;
-  }
-  async function action(key, callback) {
-    if (state.busy.has(key)) return;
-    state.busy.add(key);
-    document.querySelectorAll(`[data-action="${key}"]`).forEach((button) => { button.disabled = true; });
-    try { await callback(); } catch (error) { notify(error.message || "The action could not be completed.", true); }
-    finally {
-      state.busy.delete(key);
-      document.querySelectorAll(`[data-action="${key}"]`).forEach((button) => { button.disabled = false; });
+  function draftKey(id = state.selected) { return id || "new"; }
+  function persistDrafts() {
+    if (!state.draftStorage) return;
+    try {
+      sessionStorage.setItem(state.draftStorage, JSON.stringify(Array.from(state.drafts).slice(-60)));
+      sessionStorage.setItem(`${state.draftStorage}:policy`, state.policy);
     }
+    catch { /* A full or disabled session store must never prevent sending. */ }
   }
-  function runPath(suffix = "") { return `/api/runs/${encodeURIComponent(state.selected)}${suffix}`; }
-  function runId(result) { return result.run_id || result.run?.run_id; }
-
+  function loadDrafts(workspace) {
+    if (state.draftStorage) return;
+    state.draftStorage = `forge:drafts:${typeof workspace === "string" ? workspace : workspace?.path || workspace?.root || "workspace"}`;
+    try {
+      const policy = sessionStorage.getItem(`${state.draftStorage}:policy`);
+      if (!state.policyTouched && ["review", "read_only"].includes(policy)) state.policy = policy;
+      const saved = JSON.parse(sessionStorage.getItem(state.draftStorage) || "[]");
+      if (Array.isArray(saved)) for (const pair of saved.slice(-60)) {
+        if (Array.isArray(pair) && pair.length === 2 && typeof pair[0] === "string" && typeof pair[1] === "string" && pair[1].length <= 12000 && !state.drafts.has(pair[0])) state.drafts.set(pair[0], pair[1]);
+      }
+      if (!$("message").value) $("message").value = state.drafts.get(draftKey()) || "";
+    } catch { /* Invalid saved drafts do not affect the live chat. */ }
+  }
+  function saveDraft() { state.drafts.set(draftKey(), $("message").value); persistDrafts(); }
+  function rememberSelection() {
+    const url = new URL(location.href);
+    if (state.selected) url.searchParams.set("chat", state.selected);
+    else url.searchParams.delete("chat");
+    history.replaceState(null, "", url.pathname + url.search);
+  }
+  function acceptDetail(detail) {
+    const chatId = detail.chat?.chat_id || state.selected;
+    const acknowledged = state.acknowledged.get(chatId);
+    if (acknowledged) {
+      for (const [key, turn] of acknowledged) {
+        if (detail.turns.some((entry) => entry.turn_id === key)) acknowledged.delete(key);
+        else detail.turns.push(turn);
+      }
+      if (!acknowledged.size) state.acknowledged.delete(chatId);
+    }
+    return detail;
+  }
+  function resizeComposer() {
+    const input = $("message");
+    input.style.height = "auto";
+    input.style.height = `${Math.max(78, Math.min(input.scrollHeight, 220))}px`;
+    $("jump-bottom").style.bottom = `${$("composer-area").offsetHeight + 14}px`;
+  }
+  function modelLabel(backend = state.detail?.backend || state.overview?.backend || {}) {
+    const label = String(backend.label || "Local model");
+    if (/deterministic|harness demo/i.test(label)) return "Demo backend";
+    const qwen = /qwen[-_ ]?(3\.5|3|2\.5)/i.exec(label);
+    if (qwen) return `Qwen${qwen[1]}`;
+    return /[\\/]|localhost|127\.0\.0\.1|http:|port\s*\d/i.test(label) || label.length > 45 ? "Local model" : label;
+  }
+  function statusLabel(value) {
+    return ({ ready: "Ready", running: "Working", loading: "Loading", stopped: "Ready to start", failed: "Needs attention", error: "Needs attention", connected: "Ready", unknown: "Connecting" })[value] || "Ready to start";
+  }
+  function dateLabel(value) {
+    if (!value) return "";
+    const date = new Date(typeof value === "number" ? value * 1000 : value);
+    if (Number.isNaN(date.getTime())) return "";
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    if (date >= start) return "Today";
+    if (date >= new Date(start.getTime() - 86400000)) return "Yesterday";
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
   function renderOverview() {
     const overview = state.overview;
     if (!overview) return;
-    const path = overview.workspace || "Local workspace";
-    const pathString = typeof path === "string" ? path : path.path || path.root || "Local workspace";
-    $("workspace-name").textContent = pathString.split(/[\\/]/).filter(Boolean).at(-1) || pathString;
-    $("workspace-path").textContent = pathString;
-    $("demo-notice").hidden = overview.mode !== "demo";
-    $("mode-badge").hidden = false;
-    $("mode-badge").textContent = overview.mode === "demo" ? "Validation" : "Live";
-    const backend = overview.backend || {};
-    $("backend-status").textContent = title(backend.status || "unknown");
-    $("backend-name").textContent = backend.label || "Local inference";
-    const ready = ["ready", "running", "connected"].includes(backend.status);
-    $("backend-description").textContent = backend.error || (overview.mode === "demo" ? "Deterministic harness validation. Model weights are not loaded." : ready ? "The inference backend is available for new missions." : backend.status === "loading" ? "The local model is starting. Large weights may take a moment to load." : "Start the local inference backend before launching a mission.");
-    $("start-backend").hidden = overview.mode === "demo" || ready || backend.status === "loading";
-    $("start-backend").disabled = state.busy.has("backend");
-    const runs = overview.runs || [];
-    $("run-count").textContent = runs.length;
-    setContent("run-list", runs.length ? runs.map((run) => `<button type="button" class="run-item ${run.run_id === state.selected ? "selected" : ""}" data-run="${escape(run.run_id)}" ${run.run_id === state.selected ? 'aria-current="true"' : ""}><span class="run-item-title">${escape(run.task || "Untitled mission")}</span><span class="run-item-meta"><span class="status-dot ${cssStatus(run.status)}"></span>${escape(title(run.status))}<span class="run-item-time">${escape(relativeDate(run.created))}</span></span></button>`).join("") : '<p class="sidebar-empty">Your missions will appear here.</p>');
+    const raw = overview.workspace || "Local workspace";
+    const workspace = typeof raw === "string" ? raw : raw.path || raw.root || "Local workspace";
+    $("workspace-name").textContent = workspace.split(/[\\/]/).filter(Boolean).at(-1) || workspace;
+    $("workspace-name").title = workspace;
+    $("workspace-path").textContent = workspace;
+    const backend = state.detail?.backend || overview.backend || {};
+    $("model-label").textContent = modelLabel(backend);
+    $("model-status").title = `${modelLabel(backend)} · ${statusLabel(backend.status)}`;
+    $("model-dot").className = `status-dot ${["ready", "connected", "running", "loading", "error", "failed"].includes(backend.status) ? backend.status : ""}`;
+    $("settings-model-label").textContent = modelLabel(backend);
+    $("settings-model-status").textContent = statusLabel(backend.status);
+    $("demo-badge").hidden = overview.mode !== "demo";
+    $("demo-note").hidden = overview.mode !== "demo";
+    const chats = overview.chats || [];
+    patch($("chat-list"), chats.length ? chats.map((chat) => `<button type="button" class="chat-item${chat.chat_id === state.selected ? " selected" : ""}" data-chat="${escape(chat.chat_id)}"${chat.chat_id === state.selected ? ' aria-current="true"' : ""}><span class="chat-title">${escape(chat.title || "New chat")}</span><span class="chat-meta">${working.has(chat.status) ? `<span class="status-dot ${chat.status === "loading" ? "loading" : "running"}" aria-hidden="true"></span>${chat.status === "loading" ? "Loading model" : "Working"} · ` : ""}${escape(dateLabel(chat.updated || chat.created))}</span></button>`).join("") : '<p class="sidebar-empty">Your chats will appear here.</p>');
   }
-
-  function skillsOptions() {
-    return (state.overview?.skills || []).map((skill) => {
-      const name = typeof skill === "string" ? skill : skill.name || skill.id;
-      if (!name) return "";
-      return `<option value="${escape(name)}" ${state.config.skill === name ? "selected" : ""}>${escape(name)}</option>`;
+  function disclosureSummary(text, extra = "", busy = false) {
+    return `<summary class="disclosure-summary"><span class="disclosure-chevron" aria-hidden="true">›</span>${busy ? '<span class="working-dot" aria-hidden="true"></span>' : ""}<span>${escape(text)}</span>${extra ? `<span class="disclosure-count">${escape(extra)}</span>` : ""}</summary>`;
+  }
+  function toolLabel(name, args = {}) {
+    const path = String(args.path || args.file || "");
+    const subject = path && path !== "." ? path : "workspace";
+    const query = args.query || args.pattern || args.text;
+    const names = {
+      list_files: `Explored ${subject}`, read_file: `Read ${subject}`, search_files: `Searched${query ? ` for “${String(query).slice(0, 80)}”` : ` ${subject}`}`,
+      search_text: `Searched${query ? ` for “${String(query).slice(0, 80)}”` : " the codebase"}`, write_file: `Updated ${subject}`,
+      replace_text: `Edited ${subject}`, edit_lines: `Edited ${subject}`, save_artifact: `Created ${subject}`,
+      run_tests: "Ran tests", run_command: "Ran a command", git_status: "Checked changed files", git_diff: "Reviewed changes",
+      journal_read: "Reviewed earlier work", fetch_url: "Read a web page", web_search: "Searched the web",
+    };
+    return names[name] || `Used ${String(name || "tool").replace(/^mcp__/, "").replaceAll("_", " ")}`;
+  }
+  function toolRows(turn, agentId = "root") {
+    const rows = (turn.events || []).filter((event) => event.kind === "tool_result" && (event.agent_id || "root") === agentId && event.payload?.name !== "journal_read").map((event) => ({
+      key: `tool-${event.id}`, name: event.payload.name, args: event.payload.args || {}, result: event.payload.result, pending: false,
+    }));
+    const agent = (turn.agents || []).find((entry) => entry.agent_id === agentId);
+    const pending = agent?.pending_action;
+    const pendingName = pending?.action === "tool" ? pending.name : pending?.action;
+    if (turn.active && pendingName && !["finish", "spawn", "wait", "send", "batch", "journal_read"].includes(pendingName)) {
+      const events = (turn.events || []).filter((event) => (event.agent_id || "root") === agentId);
+      const prepared = events.filter((event) => event.kind === "action_prepared").at(-1);
+      const settled = events.filter((event) => event.kind === "tool_result").at(-1);
+      if (!settled || (prepared && Number(prepared.id) > Number(settled.id))) rows.push({ key: `pending-${agentId}`, name: pendingName, args: pending.args || {}, pending: true });
+    }
+    return rows;
+  }
+  function currentToolLabel(name, args) {
+    return toolLabel(name, args).replace(/^(Read|Explored|Searched|Updated|Edited|Created|Ran|Checked|Reviewed|Used)\b/, (word) => ({
+      Read: "Reading", Explored: "Exploring", Searched: "Searching", Updated: "Updating", Edited: "Editing", Created: "Creating", Ran: "Running", Checked: "Checking", Reviewed: "Reviewing", Used: "Using",
+    })[word]);
+  }
+  function renderToolRows(rows) {
+    return rows.slice(-80).map((row) => {
+      const failed = (typeof row.result === "string" && /^Error\b/i.test(row.result)) || Boolean(row.result && typeof row.result === "object" && row.result.error);
+      const command = row.args.command || row.args.cmd;
+      return `<details class="tool-row${failed ? " failed" : ""}" data-key="${escape(row.key)}"><summary><span class="tool-icon" aria-hidden="true">${row.pending ? "•" : failed ? "!" : "✓"}</span><span class="tool-title">${escape(row.pending ? currentToolLabel(row.name, row.args) : toolLabel(row.name, row.args))}${command ? ` · ${escape(String(command).split("\n")[0].slice(0, 90))}` : ""}</span><span class="disclosure-chevron" aria-hidden="true">›</span></summary><div class="tool-detail"><h4>Request</h4><pre>${escape(pretty(row.args))}</pre>${row.result != null ? `<h4>Result</h4><pre>${escape(pretty(row.result))}</pre>` : '<p>Working…</p>'}</div></details>`;
     }).join("");
   }
-  function renderNewControls() {
-    setContent("controls-section", `<span class="eyebrow">Mission configuration</span><div class="field-group"><label for="config-policy">Permission policy</label><select id="config-policy" data-config="policy"><option value="review" ${state.config.policy === "review" ? "selected" : ""}>Review changes</option><option value="read_only" ${state.config.policy === "read_only" ? "selected" : ""}>Read only</option></select><p class="field-note">${state.config.policy === "read_only" ? "Inspect files and analyze the workspace without making changes." : "Inspect freely. Review proposed writes and commands before they execute."}</p></div><div class="two-fields"><div class="field-group"><label for="config-agents">Agent limit</label><input id="config-agents" type="number" min="1" max="16" step="1" value="${state.config.max_agents}" data-config="max_agents" inputmode="numeric"></div><div class="field-group"><label for="config-steps">Steps / agent</label><input id="config-steps" type="number" min="2" max="64" step="1" value="${state.config.max_steps_per_agent}" data-config="max_steps_per_agent" inputmode="numeric"></div></div><div class="field-group"><label for="config-tokens">Shared token budget</label><input id="config-tokens" type="number" min="4000" max="1000000" step="1" value="${state.config.max_total_tokens}" data-config="max_total_tokens" inputmode="numeric"><p class="field-note">Includes input, output, outstanding reservations, and interrupted generation across all agents.</p></div><div class="field-group"><label for="config-skill">Workspace skill</label><select id="config-skill" data-config="skill"><option value="">No additional skill</option>${skillsOptions()}</select><p class="field-note">Add instructions from a discovered workspace skill.</p></div>`);
-    $("usage-section").hidden = true;
+  function activityMarkup(turn) {
+    const rows = toolRows(turn);
+    if (!rows.length) return "";
+    const reads = rows.filter((row) => ["read_file", "list_files", "search_files", "search_text"].includes(row.name)).length;
+    const edits = rows.filter((row) => ["write_file", "replace_text", "edit_lines"].includes(row.name)).length;
+    const tests = rows.some((row) => row.name === "run_tests");
+    const descriptions = [];
+    if (reads) descriptions.push("Explored the codebase");
+    if (edits) descriptions.push(`made ${edits} ${edits === 1 ? "edit" : "edits"}`);
+    if (tests) descriptions.push("ran tests");
+    const summary = rows.at(-1).pending ? currentToolLabel(rows.at(-1).name, rows.at(-1).args) + "…" : descriptions.join(" · ") || `${rows.length} ${rows.length === 1 ? "action" : "actions"}`;
+    return `<details class="activity-group" data-key="activity-${escape(turn.turn_id || turn.run_id)}">${disclosureSummary(summary, descriptions.length ? `${rows.length} ${rows.length === 1 ? "action" : "actions"}` : "", rows.at(-1).pending)}<div class="activity-rows">${renderToolRows(rows)}${rows.length > 80 ? '<p class="settings-note">Earlier actions are available in the conversation trace.</p>' : ""}</div></details>`;
   }
-  function renderNewMission() {
-    $("mission-kicker").textContent = "YOUR WORKSPACE, ORCHESTRATED";
-    $("mission-title").textContent = "Give your work a direction.";
-    $("mission-status").hidden = true;
-    $("tab-bar").hidden = true;
-    selectTab("brief", false);
-    setContent("panel-brief", `<p class="intro-copy">A clear brief. A coordinated team. A trace of every decision.<br>Describe the outcome you want, and let Forge carry the work.</p><form id="mission-form" class="brief-composer"><label class="eyebrow" for="mission-task">Mission brief</label><textarea id="mission-task" name="task" placeholder="What would you like to accomplish? Include the context, constraints, and what a successful result looks like." rows="6" maxlength="12000" required></textarea><div class="composer-bottom"><p class="composer-note">Agents share a goal and a budget. You stay in control of workspace changes.</p><button class="button button-teal composer-submit" type="submit" data-action="create">Launch mission <span aria-hidden="true">↗</span></button></div></form><div class="starter-heading"><span class="eyebrow">A place to start</span></div><div class="starter-grid"><button class="starter-card" type="button" data-starter="review"><span class="starter-number">01</span><strong>Review this repository</strong><p>Map the architecture and find the highest-impact issues.</p><span class="starter-arrow" aria-hidden="true">↗</span></button><button class="starter-card" type="button" data-starter="tests"><span class="starter-number">02</span><strong>Build a test plan</strong><p>Identify missing coverage and define useful checks.</p><span class="starter-arrow" aria-hidden="true">↗</span></button><button class="starter-card" type="button" data-starter="docs"><span class="starter-number">03</span><strong>Clarify the documentation</strong><p>Review onboarding and propose a concise guide.</p><span class="starter-arrow" aria-hidden="true">↗</span></button></div><p class="workspace-footnote"><span class="footnote-symbol" aria-hidden="true">⌁</span><span>Durable missions · Scoped agents · Inspectable tool calls · Explicit permissions</span></p>`);
-    renderNewControls();
+  function agentsMarkup(turn) {
+    const agents = (turn.agents || []).filter((agent) => agent.parent_id || agent.agent_id !== "root");
+    if (!agents.length) return "";
+    const activeCount = agents.filter((agent) => !terminal.has(agent.status) && !["failed", "cancelled"].includes(agent.status)).length;
+    return `<details class="agents-group" data-key="agents-${escape(turn.turn_id || turn.run_id)}">${disclosureSummary(`${agents.length} ${agents.length === 1 ? "agent" : "agents"}`, activeCount ? `${activeCount} working` : "Finished", activeCount > 0 && turn.active)}<div class="agents-list">${agents.map((agent) => `<details class="agent-card" data-key="agent-${escape(agent.agent_id)}"><summary><span class="disclosure-chevron" aria-hidden="true">›</span><span class="status-dot ${terminal.has(agent.status) ? agent.status : "running"}" aria-hidden="true"></span><span class="agent-name">${escape(agent.role || "Agent")}</span><span class="agent-state">${escape(terminal.has(agent.status) ? agent.status === "completed" ? "Done" : agent.status === "cancelled" ? "Stopped" : "Needs attention" : "Working")}</span></summary><div class="agent-detail"><p class="agent-task">${escape(agent.task || "")}</p>${renderToolRows(toolRows(turn, agent.agent_id))}${agent.result ? `<div class="markdown">${markdown(outputText(agent.result))}</div>` : ""}${agent.error ? `<p class="turn-error">${escape(agent.error)}</p>` : ""}</div></details>`).join("")}</div></details>`;
   }
-  function approvalCards() {
-    const approvals = (state.detail?.approvals || []).filter((approval) => approval.status === "pending");
-    if (!approvals.length) return "";
-    return `<div class="approval-stack">${approvals.map((approval) => `<article class="approval-card"><div class="approval-heading"><h3>Review a proposed action</h3><span class="approval-label">Permission required</span></div><p class="approval-tool">${escape(approval.agent_id || "root")} → ${escape(approval.tool)}</p><p class="subtle">Inspect the exact request before allowing this action.</p>${approval.preview?.diff != null ? `<details class="approval-preview" data-key="preview-${escape(approval.id)}" open><summary>Review changes${approval.preview.path ? ` · ${escape(approval.preview.path)}` : ""}</summary><pre>${escape(approval.preview.diff || "No textual difference.")}</pre></details>` : ""}<details data-key="approval-${escape(approval.id)}"><summary>Inspect exact tool arguments</summary><pre>${escape(pretty(approval.args))}</pre></details>${approval.expires ? `<p class="field-note">This request expires at ${escape(datetime(approval.expires))}.</p>` : ""}<div class="approval-actions"><button class="button button-outline" type="button" data-approval="${escape(approval.id)}" data-approved="false" data-action="approval">Decline</button><button class="button button-dark" type="button" data-approval="${escape(approval.id)}" data-approved="true" data-action="approval">Approve action <span aria-hidden="true">↗</span></button></div></article>`).join("")}</div>`;
+  function diffMarkup(value) {
+    return String(value || "No textual changes.").split("\n").map((line) => `<span class="diff-line${line.startsWith("+++") || line.startsWith("---") ? " header" : line.startsWith("+") ? " add" : line.startsWith("-") ? " remove" : line.startsWith("@@") ? " hunk" : ""}">${escape(line) || " "}</span>`).join("");
   }
-  function renderRunControls() {
-    const detail = state.detail;
-    const run = detail.run;
-    const config = run.config || {};
-    const policy = detail.manifest?.policy || config.policy || config.permission_policy || "review";
-    const active = Boolean(detail.active);
-    const finished = terminal.has(run.status);
-    const resume = !active && ["running", "interrupted"].includes(run.status);
-    const approvals = (detail.approvals || []).filter((approval) => approval.status === "pending");
-    setContent("controls-section", `<span class="eyebrow">Run controls</span>${approvals.length ? `<button type="button" class="approval-jump" data-go-tab="brief">${approvals.length} ${approvals.length === 1 ? "action needs" : "actions need"} review <span aria-hidden="true">↗</span></button>` : ""}<div class="run-controls">${active ? '<button type="button" class="button button-danger" data-action="stop">Stop mission <span aria-hidden="true">■</span></button>' : resume ? '<button type="button" class="button button-dark" data-action="resume">Resume mission <span aria-hidden="true">↗</span></button>' : `<div class="pending-note">${finished ? "This mission has finished. Branch it to explore a new direction." : "This mission is waiting to run."}</div>`}<div class="secondary-controls"><button type="button" class="button button-outline" data-action="fork" ${!finished ? 'disabled title="Settle this mission before branching"' : ""}>Branch</button><a class="button button-outline" href="${runPath("/export")}" download>Export JSON</a></div></div><div class="control-values"><div class="control-row"><span>Permissions</span><strong>${policy === "read_only" ? "Read only" : "Review changes"}</strong></div><div class="control-row"><span>Agent limit</span><strong class="control-value">${escape(config.max_agents || "—")}</strong></div><div class="control-row"><span>Steps / agent</span><strong class="control-value">${escape(config.max_steps_per_agent || "—")}</strong></div>${(detail.manifest?.skill || config.skill) ? `<div class="control-row"><span>Skill</span><strong>${escape(detail.manifest?.skill || config.skill)}</strong></div>` : ""}</div>`);
-    const usage = detail.usage || {};
-    const limit = Number(config.max_total_tokens || 128000);
-    const reserved = Number(usage.reserved_tokens || 0);
-    const used = Number(usage.total_tokens ?? (Number(usage.input_tokens || 0) + Number(usage.output_tokens || 0) + Number(usage.uncertain_tokens || 0) + reserved));
-    $("usage-section").hidden = false;
-    setContent("usage-section", `<div class="section-heading"><span class="eyebrow">Shared budget</span><span class="small-status">Tokens</span></div><div class="usage-numeral"><strong>${number(used)}</strong><span>/ ${number(limit)}</span></div><progress max="${limit}" value="${Math.min(used, limit)}" aria-label="Shared token budget consumed or reserved">${number(used)}</progress><div class="usage-legend"><span>Consumed: ${number(Math.max(0, used - reserved))}</span><span>Reserved: ${number(reserved)}</span></div><div class="usage-breakdown"><div class="control-row"><span>Input</span><strong class="control-value">${number(usage.input_tokens)}</strong></div><div class="control-row"><span>Output</span><strong class="control-value">${number(usage.output_tokens)}</strong></div></div>${usage.uncertain_tokens ? `<p class="usage-warning">${number(usage.uncertain_tokens)} tokens remain charged for interrupted generation.</p>` : ""}`);
+  function approvalsMarkup(turn) {
+    return (turn.approvals || []).filter((entry) => !entry.status || entry.status === "pending").map((entry) => {
+      const args = entry.args || {};
+      const command = args.command || args.cmd;
+      const preview = entry.preview;
+      const hasDiff = preview?.diff != null;
+      const heading = command ? "Allow this command?" : hasDiff ? "Allow this change?" : "Allow this action?";
+      return `<article class="approval-card"><div class="approval-heading"><h3>${heading}</h3><p>${escape(command ? "Forge wants to run a command in this workspace." : hasDiff ? preview.path || args.path || "Proposed file change" : toolLabel(entry.tool, args))}</p></div>${command ? `<pre class="approval-command">${escape(command)}</pre>` : ""}${hasDiff ? `<div class="approval-preview"><div class="diff-path">${escape(preview.path || args.path || "File changes")}</div><pre class="diff">${diffMarkup(preview.diff)}</pre></div>` : ""}<details class="approval-arguments" data-key="approval-${escape(entry.id)}">${disclosureSummary("Exact action details")}<pre>${escape(entry.tool)}\n${escape(pretty(args))}</pre></details><div class="approval-actions"><button type="button" class="button" data-approval="${escape(entry.id)}" data-approved="false"${state.busyApprovals.has(entry.id) ? " disabled" : ""}>Decline</button><button type="button" class="button button-primary" data-approval="${escape(entry.id)}" data-approved="true"${state.busyApprovals.has(entry.id) ? " disabled" : ""}>${state.busyApprovals.has(entry.id) ? "Applying…" : "Approve"}</button></div></article>`;
+    }).join("");
   }
-  function renderBrief() {
-    const detail = state.detail;
-    const run = detail.run;
-    const agents = detail.agents || [];
-    const error = detail.error || run.error;
-    const lineage = detail.lineage;
-    const settled = terminal.has(run.status);
-    const parent = typeof lineage === "string" ? lineage : lineage?.parent_id || lineage?.parent_run_id || lineage?.forked_from;
-    setContent("panel-brief", `${approvalCards()}${error ? `<div class="inline-error"><strong>Run needs attention.</strong> ${escape(typeof error === "string" ? error : pretty(error))}</div>` : ""}${parent ? `<p class="lineage-note">Branched from ${escape(parent)}</p>` : ""}<div class="section-line"><h2>Mission brief</h2><span class="eyebrow">The shared objective</span></div><p class="brief-text">${escape(detail.task || "No brief is available.")}</p><div class="brief-meta"><div class="meta-cell"><span class="eyebrow">Created</span><strong>${escape(datetime(run.created, true))}</strong></div><div class="meta-cell"><span class="eyebrow">Assigned team</span><strong>${agents.length} ${agents.length === 1 ? "agent" : "agents"}</strong></div><div class="meta-cell"><span class="eyebrow">Run reference</span><strong class="control-value">${escape(run.run_id)}</strong></div></div><p class="subtle">Every agent works from this objective with its own context and tool scope. Open Agents to inspect the team, or Activity to follow decisions and execution.</p><form id="followup-form" class="followup-form"><label for="followup-message">${settled ? "Start a follow-up mission" : "Add direction to the coordinator"}</label><div class="input-row"><textarea id="followup-message" required rows="2" maxlength="${settled ? 5000 : 8000}" placeholder="${settled ? "What should the team work on next?" : "Clarify a constraint, share context, or revise the approach…"}"></textarea><button type="submit" class="button button-outline" data-action="message">${settled ? "Launch follow-up" : "Send direction"} <span aria-hidden="true">↗</span></button></div><p class="field-note">${detail.active ? "The coordinator receives your direction at its next safe checkpoint." : settled ? "The follow-up inherits this mission’s result and permission policy, with a new journal and budget." : "Direction is saved in the journal. Resume this mission to continue work."}</p></form>`);
+  function turnProgress(turn) {
+    if (turn.status === "queued") return "Queued · runs after the current response";
+    if (turn.status === "loading" || (!turn.run_id && turn.active)) return `Loading ${modelLabel()}…`;
+    if ((turn.approvals || []).some((entry) => entry.status === "pending")) return "Waiting for your approval";
+    if (turn.active) return "Working…";
+    if (turn.status === "cancelled") return "Stopped. Send a message to continue.";
+    if (turn.status === "interrupted") return "This response was interrupted. Send a message to continue.";
+    return "";
   }
-  function renderAgents() {
-    const agents = state.detail.agents || [];
-    if (!agents.length) {
-      setContent("panel-agents", emptyView("Team forming", "Agents will appear here as the coordinator delegates work.", "⌘"));
-      return;
-    }
-    const byId = new Map(agents.map((agent) => [agent.agent_id, agent]));
-    const ordered = [];
-    const seen = new Set();
-    function visit(agent) {
-      if (seen.has(agent.agent_id)) return;
-      seen.add(agent.agent_id);
-      ordered.push(agent);
-      agents.filter((entry) => entry.parent_id === agent.agent_id).forEach(visit);
-    }
-    agents.filter((agent) => !agent.parent_id || !byId.has(agent.parent_id)).forEach(visit);
-    agents.forEach(visit);
-    setContent("panel-agents", `<p class="agents-intro">A shared objective, independently scoped work. Each agent’s state and permissions are recorded below.</p>${ordered.map((agent) => `<article class="agent-card ${agent.parent_id ? "child" : ""} depth-${Math.max(0, Math.min(Number(agent.depth) || 0, 4))}"><div class="agent-top"><span class="agent-icon" aria-hidden="true">${agent.parent_id ? "↳" : "⌘"}</span><div><h3>${escape(title(agent.role || (agent.parent_id ? "Specialist" : "Coordinator")))}</h3><p class="agent-id">${escape(agent.agent_id)}${agent.parent_id ? ` · from ${escape(agent.parent_id)}` : " · mission lead"}</p></div>${badge(agent.status)}</div><p class="agent-task">${escape(agent.task)}</p><div class="agent-meta"><span>${number(agent.steps)} steps</span><span>${number(agent.backend_attempts)} inference calls</span>${agent.dependencies?.length ? `<span>Depends on ${escape(agent.dependencies.join(", "))}</span>` : ""}${agent.wait_for?.length ? `<span>Waiting for ${escape(agent.wait_for.join(", "))}</span>` : ""}<span class="tool-permission">Tools: ${agent.tools ? escape(agent.tools.length ? agent.tools.join(", ") : "None") : "Inherited workspace scope"}</span></div>${agent.pending_action ? `<details class="agent-details" data-key="pending-${escape(agent.agent_id)}"><summary>Inspect pending action${agent.action_phase ? ` · ${escape(title(agent.action_phase))}` : ""}</summary><pre>${escape(pretty(agent.pending_action))}</pre></details>` : ""}${agent.result ? `<details class="agent-details" data-key="result-${escape(agent.agent_id)}"><summary>Read agent result</summary><div class="agent-result">${escape(agent.result)}</div></details>` : ""}${agent.error ? `<div class="inline-error">${escape(agent.error)}</div>` : ""}</article>`).join("")}`);
+  function userMessages(turn) {
+    const messages = (turn.messages || turn.user_messages || []).filter((message) => (message.role || "user") === "user");
+    if (messages.length) return messages.map((message) => typeof message === "string" ? message : message.content || message.message || "").filter(Boolean);
+    return [turn.user || "", ...(turn.events || []).filter((event) => event.kind === "operator_message").map((event) => event.payload?.message || "")].filter(Boolean);
   }
-  function eventDescription(event) {
-    const payload = event.payload;
-    if (typeof payload === "string") return payload.slice(0, 280);
-    if (!payload || typeof payload !== "object") return "";
-    const content = payload.message || payload.task || payload.reason || payload.error || payload.tool || payload.result || payload.content || payload.status;
-    return (typeof content === "string" ? content : content ? pretty(content) : "").slice(0, 280);
+  function createTurn(key) {
+    const node = document.createElement("article");
+    node.className = "turn";
+    node.dataset.turn = key;
+    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark" aria-hidden="true">f</span>Forge</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
+    state.turns.set(key, node);
+    return node;
   }
-  function renderActivity() {
-    const events = state.detail.events || [];
-    const agentIds = Array.from(new Set(events.map((event) => event.agent_id).filter(Boolean)));
-    if (state.filter !== "all" && !agentIds.includes(state.filter)) state.filter = "all";
-    const filtered = state.filter === "all" ? events : events.filter((event) => event.agent_id === state.filter);
-    const visible = filtered.slice(-300);
-    setContent("panel-activity", `<div class="activity-toolbar"><span class="activity-count">${number(filtered.length)} journal ${filtered.length === 1 ? "event" : "events"}${filtered.length > 300 ? " · showing latest 300" : ""}${state.detail.events_truncated ? " · export for the full journal" : ""}</span><label for="activity-agent">Filter by agent <select id="activity-agent"><option value="all">All agents</option>${agentIds.map((id) => `<option value="${escape(id)}" ${state.filter === id ? "selected" : ""}>${escape(id)}</option>`).join("")}</select></label></div>${visible.length ? `<div class="event-list">${visible.map((event) => `<article class="event-row" data-error="${/error|fail/.test(event.kind)}"><div class="event-heading"><strong>${escape(title(event.kind))}</strong>${event.agent_id ? `<span class="event-agent">${escape(event.agent_id)}</span>` : ""}<time class="event-time">${escape(datetime(event.created))} · #${escape(event.id)}</time></div>${eventDescription(event) ? `<p class="event-summary">${escape(eventDescription(event))}</p>` : ""}<details class="event-details" data-key="event-${escape(event.id)}"><summary>Inspect event payload</summary><pre>${escape(pretty(event.payload))}</pre></details></article>`).join("")}</div>` : emptyView("The journal starts here", "Agent decisions, messages, tool arguments, and execution results appear as the mission progresses.", "⌁")}`);
+  function nearBottom() {
+    const pane = $("transcript-pane");
+    return pane.scrollHeight - pane.scrollTop - pane.clientHeight < 130;
   }
-  function emptyView(heading, description, icon = "◈") {
-    return `<div class="empty-view"><span class="empty-view-icon" aria-hidden="true">${icon}</span><h3>${escape(heading)}</h3><p>${escape(description)}</p></div>`;
+  function scrollBottom() {
+    const pane = $("transcript-pane");
+    pane.scrollTop = pane.scrollHeight;
+    $("jump-bottom").hidden = true;
   }
-  function outputMarkup(value) {
-    const parts = String(value).split(/```(?:[\w+-]+)?\n?/);
-    return parts.map((part, index) => index % 2 ? `<pre><code>${escape(part)}</code></pre>` : escape(part).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`\n]+)`/g, "<code>$1</code>")).join("");
-  }
-  function renderOutput() {
-    const detail = state.detail;
-    const output = detail.output || "";
-    const artifacts = detail.artifacts || [];
-    const heading = ["completed", "completed_with_failures"].includes(detail.run.status) ? "Mission result" : "Coordinator output";
-    const stopped = terminal.has(detail.run.status);
-    setContent("panel-output", `<div class="output-header"><h2>${heading}</h2>${output ? '<button class="button button-outline" type="button" data-action="copy">Copy output</button>' : ""}</div>${output ? `<div class="output-content">${outputMarkup(typeof output === "string" ? output : pretty(output))}</div>` : emptyView(stopped ? "No final output" : "Work is underway", stopped ? "This mission settled before producing a result. Inspect Activity for details, then branch the mission to continue." : "The coordinator’s result will appear here. You can follow the team’s progress in Agents and Activity.", "↗")}${artifacts.length ? `<section class="artifact-section"><span class="eyebrow">Mission artifacts</span><ul class="artifact-list">${artifacts.map((artifact) => `<li><span class="artifact-symbol" aria-hidden="true">▤</span><span class="artifact-path">${escape(artifact.path)}</span><span class="artifact-size">${Number(artifact.size) >= 1024 ? `${(Number(artifact.size) / 1024).toFixed(1)} KB` : `${number(artifact.size)} B`}</span><button class="button button-outline artifact-download" type="button" data-action="artifact" data-artifact="${escape(artifact.path)}" aria-label="Download ${escape(artifact.path)}">Download <span aria-hidden="true">↓</span></button></li>`).join("")}</ul><p class="field-note">Files are saved in this mission’s local artifact directory. Use the event journal to review the actions that created them.</p></section>` : ""}`);
-  }
-  function renderDetail() {
-    if (!state.selected) { renderNewMission(); return; }
-    if (!state.detail) {
-      $("mission-kicker").textContent = "MISSION WORKSPACE";
-      $("mission-title").textContent = "Loading mission…";
-      $("mission-status").hidden = true;
-      $("tab-bar").hidden = true;
-      setContent("panel-brief", '<div class="loading-view"><span class="loading-dot" aria-hidden="true"></span>Loading the mission journal.</div>');
-      selectTab("brief", false);
-      return;
-    }
-    const detail = state.detail;
-    $("mission-kicker").textContent = `MISSION / ${detail.run.run_id}`;
-    const task = detail.task || "Untitled mission";
-    const firstLine = task.split("\n")[0];
-    $("mission-title").textContent = firstLine.length > 100 ? firstLine.slice(0, 97) + "…" : firstLine;
-    $("mission-status").hidden = false;
-    $("mission-status").className = `status-badge ${cssStatus(detail.run.status)}`;
-    $("mission-status").textContent = title(detail.run.status);
-    $("tab-bar").hidden = false;
-    $("agent-count").textContent = (detail.agents || []).length;
-    $("event-count").textContent = (detail.events || []).length;
-    renderRunControls();
-    if (state.tab === "brief") renderBrief();
-    else if (state.tab === "agents") renderAgents();
-    else if (state.tab === "activity") renderActivity();
-    else renderOutput();
-  }
-  function selectTab(tab, render = true) {
-    state.tab = tab;
-    document.querySelectorAll("[data-tab]").forEach((button) => {
-      const current = button.dataset.tab === tab;
-      button.setAttribute("aria-selected", String(current));
-      button.tabIndex = current ? 0 : -1;
+  function renderTranscript() {
+    const turns = state.detail?.turns || [];
+    const follow = nearBottom();
+    $("welcome").hidden = Boolean(state.selected);
+    $("view-loading").hidden = !state.loading;
+    if (!state.detail) { renderComposer(); return; }
+    const keys = new Set();
+    turns.forEach((turn, index) => {
+      const key = String(turn.turn_id || turn.run_id || `turn-${index}`);
+      keys.add(key);
+      const node = state.turns.get(key) || createTurn(key);
+      if (!node.isConnected) $("transcript").appendChild(node);
+      const messages = userMessages(turn);
+      patch(node.querySelector(".user-messages"), messages[0] ? `<div class="user-message">${escape(messages[0])}</div>` : "");
+      patch(node.querySelector(".turn-directions"), messages.slice(1).map((message) => `<div class="user-message steering">${escape(message)}</div>`).join(""));
+      patch(node.querySelector(".turn-activity"), activityMarkup(turn));
+      patch(node.querySelector(".turn-agents"), agentsMarkup(turn));
+      patch(node.querySelector(".turn-approvals"), approvalsMarkup(turn));
+      const progress = turnProgress(turn);
+      patch(node.querySelector(".turn-progress"), progress ? `${turn.active && !turn.approvals?.length ? '<span class="working-dot" aria-hidden="true"></span>' : ""}${escape(progress)}` : "");
+      const output = outputText(turn.output);
+      patch(node.querySelector(".turn-output"), output ? `<div class="markdown">${markdown(output)}</div><div class="output-actions"><button type="button" class="copy-response" data-copy-response="${escape(key)}">Copy response</button>${turn.status === "completed_with_failures" ? "Some delegated work needs attention." : ""}</div>` : "");
+      patch(node.querySelector(".turn-error"), turn.error && !["cancelled", "interrupted"].includes(turn.status) ? `<p>${escape(turn.run_id ? "Forge couldn’t finish this request. You can send a message to continue." : "The model couldn’t start. Your message is saved; send it again to retry.")}</p><details data-key="error-${escape(key)}">${disclosureSummary("Error details")}<pre>${escape(typeof turn.error === "string" ? turn.error : pretty(turn.error))}</pre></details>` : "");
+      patch(node.querySelector(".turn-artifacts"), turn.run_id && turn.artifacts?.length ? `<div class="artifact-list">${turn.artifacts.map((artifact) => `<button type="button" class="artifact-button" data-artifact="${escape(artifact.path)}" data-run="${escape(turn.run_id)}" title="Download ${escape(artifact.path)}"><span aria-hidden="true">▤</span><span>${escape(artifact.path)}</span><span aria-hidden="true">↓</span></button>`).join("")}</div>` : "");
     });
-    ["brief", "agents", "activity", "output"].forEach((name) => { $(`panel-${name}`).hidden = name !== tab; });
-    if (render) renderDetail();
+    for (const [key, node] of state.turns) if (!keys.has(key)) { node.remove(); state.turns.delete(key); }
+    renderComposer();
+    renderSettings();
+    document.title = state.detail.chat?.title ? `${state.detail.chat.title} — Forge` : "Forge";
+    if (follow) scrollBottom();
+    else $("jump-bottom").hidden = nearBottom();
   }
-  async function selectRun(id) {
-    if (id === state.selected && state.detail) return;
+  function renderComposer() {
+    const hasDraft = Boolean($("message").value.trim());
+    const running = active();
+    const stop = running && !hasDraft;
+    $("send").disabled = state.sending || state.cancelling || (!running && !hasDraft);
+    $("send").classList.toggle("stop", stop);
+    $("send-label").textContent = state.sending ? "Sending…" : state.cancelling ? "Stopping…" : stop ? "Stop" : "Send";
+    $("send-icon").textContent = stop ? "■" : "↑";
+    $("send").setAttribute("aria-label", stop ? "Stop current response" : running ? "Send follow-up message" : "Send message");
+    $("stop-draft").hidden = !running || !hasDraft;
+    $("stop-draft").disabled = state.cancelling;
+    $("composer-hint").textContent = running && hasDraft ? "Follow-up runs after this response" : "Enter to send · Shift + Enter for a new line";
+    const policy = currentPolicy();
+    $("permission-label").textContent = policy === "read_only" ? "Read only" : "Review changes";
+    $("composer-footnote").textContent = state.overview?.mode === "demo" ? "Demo mode · no model inference is performed." : policy === "read_only" ? "Forge can read and explore this workspace. Files stay unchanged." : "Forge works in your local workspace. You review changes before they run.";
+    $("new-chat").disabled = state.sending;
+    const status = state.sendError || (state.sending ? "Sending your message…" : "");
+    $("composer-status").textContent = status;
+    $("composer-status").hidden = !status;
+    $("composer-status").classList.toggle("error", Boolean(state.sendError));
+    resizeComposer();
+  }
+  function renderSettings() {
+    const existingPolicy = state.detail?.chat?.policy;
+    $("policy-note").textContent = existingPolicy ? `This chat uses ${existingPolicy === "read_only" ? "Read only" : "Review changes"}. Changes here apply to new chats.` : "Applies to new chats.";
+    document.querySelectorAll('input[name="policy"]').forEach((input) => { input.checked = input.value === state.policy; });
+    const turns = (state.detail?.turns || []).filter((turn) => turn.run_id);
+    $("trace-section").hidden = !turns.length;
+    patch($("trace-list"), turns.map((turn, index) => `<a href="/api/runs/${encodeURIComponent(turn.run_id)}/export" download="forge-trace-${index + 1}.json">Download response ${index + 1} trace ↓</a>`).join(""));
+  }
+  function setConnection(error = "") {
+    state.connected = !error;
+    $("connection-error").hidden = !error;
+    $("connection-error-text").textContent = error;
+  }
+  function toggleSidebar(open = !state.sidebar) {
+    state.sidebar = open;
+    $("app").classList.toggle("sidebar-open", open);
+    $("sidebar").inert = !open;
+    $("toggle-sidebar").setAttribute("aria-expanded", String(open));
+    $("toggle-sidebar").setAttribute("aria-label", open ? "Close chats" : "Open chats");
+    const mobile = matchMedia("(max-width:700px)").matches;
+    $("sidebar-backdrop").hidden = !open || !mobile;
+    $("main").inert = open && mobile;
+    if (open && mobile) {
+      $("sidebar").setAttribute("role", "dialog");
+      $("sidebar").setAttribute("aria-modal", "true");
+      if (!$("sidebar").contains(document.activeElement)) $("new-chat").focus({ preventScroll: true });
+    } else {
+      $("sidebar").removeAttribute("role");
+      $("sidebar").removeAttribute("aria-modal");
+      if (!open && ($("sidebar").contains(document.activeElement) || document.activeElement === $("sidebar-backdrop"))) $("toggle-sidebar").focus({ preventScroll: true });
+    }
+  }
+  async function selectChat(id) {
+    if (state.sending) return;
+    if (id === state.selected && state.detail) { $("message").focus(); return; }
+    saveDraft();
     state.selected = id;
+    rememberSelection();
     state.detail = null;
-    state.filter = "all";
-    state.signatures.delete("panel-brief");
-    state.signatures.delete("controls-section");
-    selectTab("brief", false);
-    renderOverview();
-    renderDetail();
-    if (!id) { $("mission-task").focus({ preventScroll: true }); return; }
+    state.loading = Boolean(id);
+    state.turns.clear();
+    $("transcript").replaceChildren();
+    $("transcript-pane").scrollTop = 0;
+    $("jump-bottom").hidden = true;
+    $("message").value = state.drafts.get(draftKey()) || "";
+    state.sendError = "";
+    document.title = "Forge";
+    if (matchMedia("(max-width:700px)").matches) toggleSidebar(false);
+    $("welcome").hidden = Boolean(id);
+    $("view-loading").hidden = !state.loading;
+    renderOverview(); renderComposer(); renderSettings();
+    $("message").focus({ preventScroll: true });
+    if (!id) { clearTimeout(pollTimer); scheduleRefresh(); return; }
     try {
-      const detail = await api(`/api/runs/${encodeURIComponent(id)}`);
+      const detail = await api(`/api/chats/${encodeURIComponent(id)}`);
       if (state.selected !== id) return;
-      state.detail = detail;
-      renderDetail();
+      state.detail = acceptDetail(detail);
+      state.loading = false;
+      renderOverview(); renderTranscript(); scrollBottom();
+      scheduleRefresh();
     } catch (error) {
       if (state.selected !== id) return;
-      setContent("panel-brief", `<div class="inline-error">${escape(error.message)}</div><button type="button" class="button button-outline" data-action="reload">Reload mission</button>`);
-      $("mission-title").textContent = "Could not load this mission.";
+      state.loading = false;
+      $("view-loading").hidden = true;
+      setConnection(error.message);
+      scheduleRefresh();
     }
+  }
+  function needsPolling() {
+    return active() || state.loading || state.sending || state.overview?.chats?.some((chat) => working.has(chat.status)) || state.overview?.backend?.status === "loading";
+  }
+  function scheduleRefresh() {
+    clearTimeout(pollTimer);
+    if (needsPolling() || !state.connected) pollTimer = setTimeout(refresh, document.hidden ? 4000 : state.connected ? 800 : 3000);
   }
   async function refresh() {
-    if (state.polling) return;
-    state.polling = true;
+    if (state.refreshing) { refreshAgain = true; return; }
+    state.refreshing = true;
     const selected = state.selected;
     try {
-      const results = await Promise.allSettled([api("/api/state"), selected ? api(`/api/runs/${encodeURIComponent(selected)}`) : Promise.resolve(null)]);
-      if (results[0].status === "rejected") throw results[0].reason;
-      state.overview = results[0].value;
-      connection(true);
-      renderOverview();
-      if (selected && state.selected === selected && results[1].status === "fulfilled") state.detail = results[1].value;
-      if (selected && results[1].status === "rejected") throw results[1].reason;
-      renderDetail();
-    } catch (error) { connection(false, error.message || "Could not reach the local harness. Keep this page open and retry."); }
+      const [overview, detail] = await Promise.all([api("/api/chats"), selected ? api(`/api/chats/${encodeURIComponent(selected)}`) : Promise.resolve(null)]);
+      state.overview = overview;
+      loadDrafts(overview.workspace);
+      if (selected === state.selected && detail) { state.detail = acceptDetail(detail); state.loading = false; }
+      setConnection();
+      renderOverview(); renderTranscript(); renderSettings();
+    } catch (error) { setConnection(error.message || "Could not reach the local server."); }
     finally {
-      state.polling = false;
-      clearTimeout(pollTimer);
-      pollTimer = setTimeout(refresh, document.hidden ? 6000 : 1200);
+      state.refreshing = false;
+      if (refreshAgain) { refreshAgain = false; refresh(); }
+      else scheduleRefresh();
     }
   }
-
-  const starters = {
-    review: "Review this repository. Map the main architecture and execution paths, then identify the highest-impact correctness, reliability, and maintainability issues. Delegate independent areas where useful. Support each finding with file references and propose focused next steps. Do not change files.",
-    tests: "Build a practical test plan for this repository. Inspect the current tests and key execution paths, identify missing coverage, and prioritize tests that verify meaningful behavior. Delegate independent areas where useful. Return a concise plan with concrete cases, expected results, and how to run them. Do not change files.",
-    docs: "Review this repository's onboarding documentation. Check the installation, configuration, and example commands against the implementation. Delegate independent areas where useful. Produce a concise documentation brief with verified corrections and a proposed quick-start outline. Do not change files.",
-  };
-  document.addEventListener("click", (event) => {
-    const run = event.target.closest("[data-run]");
-    if (run) { selectRun(run.dataset.run); return; }
-    const jump = event.target.closest("[data-go-tab]");
-    if (jump) { selectTab(jump.dataset.goTab); $("main").focus({ preventScroll: true }); return; }
-    const tab = event.target.closest("[data-tab]");
-    if (tab) { selectTab(tab.dataset.tab); return; }
-    const starter = event.target.closest("[data-starter]");
-    if (starter) { $("mission-task").value = starters[starter.dataset.starter]; $("mission-task").focus(); return; }
-    const approval = event.target.closest("[data-approval]");
-    if (approval) {
-      action("approval", async () => {
-        await api(`/api/approvals/${encodeURIComponent(approval.dataset.approval)}`, { approved: approval.dataset.approved === "true" });
-        notify(approval.dataset.approved === "true" ? "Action approved." : "Action declined.");
-        await refresh();
+  function nonce() {
+    return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), (n) => n.toString(16).padStart(2, "0")).join("");
+  }
+  async function sendMessage() {
+    if (state.sending || state.cancelling) return;
+    const input = $("message");
+    const original = input.value;
+    const message = original.trim();
+    if (!message) { if (active()) await cancelResponse(); else input.focus(); return; }
+    if (runCommand(message)) return;
+    const selected = state.selected;
+    const requestKey = `${selected || "new"}\u0000${state.policy}\u0000${message}`;
+    if (state.request?.key !== requestKey) state.request = { key: requestKey, request_id: nonce() };
+    state.sending = true;
+    state.sendError = "";
+    $("command-menu").hidden = true;
+    renderComposer();
+    const request = selected ? { message, request_id: state.request.request_id } : { message, policy: state.policy, request_id: state.request.request_id };
+    try {
+      const result = await api(selected ? `/api/chats/${encodeURIComponent(selected)}/message` : "/api/chats", request);
+      const chatId = result.chat_id || selected;
+      if (!chatId) throw new Error("The server did not return a chat. Your message is still in the composer.");
+      if (input.value === original) input.value = "";
+      state.drafts.set(draftKey(selected), input.value);
+      if (!selected) {
+        state.selected = chatId;
+        rememberSelection();
+        state.detail = null;
+        state.turns.clear();
+        $("transcript").replaceChildren();
+        $("welcome").hidden = true;
+        state.drafts.set(draftKey(chatId), input.value);
+        state.drafts.set("new", "");
+      }
+      const accepted = {
+        turn_id: result.turn_id || result.run_id || state.request.request_id,
+        run_id: result.run_id || null, user: message, output: null,
+        status: result.status || (result.queued ? "queued" : "loading"),
+        active: !result.queued && ["loading", "running"].includes(result.status || "loading"),
+        events: [], agents: [], approvals: [], artifacts: [], created: Date.now() / 1000,
+        messages: [{ role: "user", content: message }],
+      };
+      if (!state.detail) state.detail = {
+        chat: { chat_id: chatId, title: message.split("\n")[0].slice(0, 100), policy: state.policy, status: accepted.status },
+        turns: [], backend: state.overview?.backend,
+      };
+      if (!state.detail.turns.some((turn) => turn.turn_id === accepted.turn_id)) state.detail.turns.push(accepted);
+      if (!state.acknowledged.has(chatId)) state.acknowledged.set(chatId, new Map());
+      state.acknowledged.get(chatId).set(accepted.turn_id, accepted);
+      persistDrafts();
+      state.loading = false;
+      if (state.overview && !state.overview.chats.some((chat) => chat.chat_id === chatId)) state.overview.chats.unshift({
+        chat_id: chatId, title: state.detail.chat.title, status: accepted.status, updated: Date.now() / 1000,
       });
-      return;
+      state.request = null;
+      // Show the acknowledged durable prompt even if the following GET loses its connection.
+      state.sending = false;
+      renderOverview(); renderTranscript(); scrollBottom();
+      await refresh();
+      scrollBottom();
+    } catch (error) {
+      state.sendError = `${error.message} Your draft is preserved. Send again to retry safely.`;
+      // Reuse request_id for the same message, so an accepted request is never duplicated.
+    } finally {
+      state.sending = false;
+      renderComposer();
+      input.focus({ preventScroll: true });
+      scheduleRefresh();
     }
-    const button = event.target.closest("[data-action]");
-    if (!button) return;
-    const name = button.dataset.action;
-    if (name === "stop") action("stop", async () => { await api(runPath("/cancel"), {}); notify("Stop requested. The journal will retain completed work."); await refresh(); });
-    else if (name === "resume") action("resume", async () => { await api(runPath("/resume"), {}); notify("Mission resumed."); await refresh(); });
-    else if (name === "fork" && terminal.has(state.detail?.run.status)) { $("fork-task").value = state.detail?.task || ""; $("fork-dialog").showModal(); $("fork-task").focus(); }
-    else if (name === "copy") action("copy", async () => {
-      const output = state.detail?.output;
-      if (!navigator.clipboard) throw new Error("Clipboard access is unavailable. Select and copy the output directly.");
-      await navigator.clipboard.writeText(typeof output === "string" ? output : pretty(output));
-      notify("Output copied.");
-    });
-    else if (name === "artifact") action("artifact", async () => {
-      const result = await api(runPath(`/artifacts/${encodeURIComponent(button.dataset.artifact)}`));
-      if (typeof result.content !== "string") throw new Error("This artifact could not be downloaded as text.");
+  }
+  async function cancelResponse() {
+    if (!state.selected || state.cancelling || !active()) return;
+    state.cancelling = true;
+    renderComposer();
+    try {
+      await api(`/api/chats/${encodeURIComponent(state.selected)}/cancel`, {});
+      await refresh();
+    } catch (error) { toast(error.message, true, 6000); }
+    finally { state.cancelling = false; renderComposer(); $("message").focus({ preventScroll: true }); }
+  }
+  async function decide(button) {
+    const id = button.dataset.approval;
+    if (state.busyApprovals.has(id)) return;
+    state.busyApprovals.add(id);
+    renderTranscript();
+    try {
+      await api(`/api/approvals/${encodeURIComponent(id)}`, { approved: button.dataset.approved === "true" });
+      await refresh();
+    } catch (error) { toast(error.message, true, 6000); }
+    finally { state.busyApprovals.delete(id); renderTranscript(); }
+  }
+  async function copy(text, button) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable. Select the text to copy it.");
+      await navigator.clipboard.writeText(text);
+      if (button) {
+        const old = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(() => { if (button.isConnected) button.textContent = old; }, 1800);
+      } else toast("Copied.");
+    } catch (error) { toast(error.message, true); }
+  }
+  async function downloadArtifact(button) {
+    button.disabled = true;
+    try {
+      const result = await api(`/api/runs/${encodeURIComponent(button.dataset.run)}/artifacts/${encodeURIComponent(button.dataset.artifact)}`);
+      if (typeof result.content !== "string") throw new Error("This file could not be downloaded.");
       const url = URL.createObjectURL(new Blob([result.content], { type: "text/plain;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = String(result.path || button.dataset.artifact).split(/[\\/]/).filter(Boolean).at(-1) || "artifact.txt";
+      link.download = String(result.path || button.dataset.artifact).split(/[\\/]/).at(-1) || "artifact.txt";
       document.body.appendChild(link);
-      try { link.click(); } finally {
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
-      notify("Artifact download started.");
-    });
-    else if (name === "reload") { state.detail = null; refresh(); }
+      link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { toast(error.message, true); }
+    finally { button.disabled = false; }
+  }
+  const commands = [
+    { name: "/new", description: "Start a fresh chat", run: () => selectChat(null) },
+    { name: "/clear", description: "Start with a fresh context", run: () => selectChat(null) },
+    { name: "/settings", description: "Permissions and workspace", run: () => $("settings").showModal() },
+    { name: "/status", description: "Model and chat status", run: () => toast(`${modelLabel()} · ${statusLabel((state.detail?.backend || state.overview?.backend)?.status)} · ${currentPolicy() === "read_only" ? "Read only" : "Review changes"}`, false, 5500) },
+    { name: "/help", description: "Keyboard shortcuts", run: () => toast("Enter sends · Shift + Enter adds a line · Esc stops · ⌘ K starts a new chat", false, 6500) },
+  ];
+  function matchingCommands() {
+    const value = $("message").value.trim();
+    if (!/^\/[a-z]*$/i.test(value)) return [];
+    return commands.filter((command) => command.name.startsWith(value.toLowerCase()));
+  }
+  function renderCommands() {
+    const list = matchingCommands();
+    state.commandIndex = Math.max(0, Math.min(state.commandIndex, list.length - 1));
+    $("command-menu").hidden = !list.length || state.sending;
+    patch($("command-menu"), list.map((command, i) => `<button type="button" class="command-option" role="option" aria-selected="${i === state.commandIndex}" data-command="${escape(command.name)}"><strong>${escape(command.name)}</strong><span>${escape(command.description)}</span></button>`).join(""));
+  }
+  function runCommand(value) {
+    const command = commands.find((entry) => entry.name === value);
+    if (!command) return false;
+    $("message").value = "";
+    saveDraft();
+    $("command-menu").hidden = true;
+    command.run();
+    renderComposer();
+    return true;
+  }
+  $("composer").addEventListener("submit", (event) => { event.preventDefault(); sendMessage(); });
+  $("message").addEventListener("input", () => {
+    saveDraft(); state.commandIndex = 0; state.sendError = ""; renderComposer(); renderCommands();
   });
-  document.addEventListener("change", (event) => {
-    const config = event.target.dataset.config;
-    if (config) {
-      if (event.target.type === "number") {
-        if (!event.target.checkValidity()) { event.target.reportValidity(); return; }
-        state.config[config] = Number(event.target.value);
-      } else state.config[config] = event.target.value;
-      if (config === "policy") renderNewControls();
+  $("message").addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
+    const menuOpen = !$("command-menu").hidden;
+    if (menuOpen && ["ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      const list = matchingCommands();
+      state.commandIndex = (state.commandIndex + (event.key === "ArrowDown" ? 1 : -1) + list.length) % list.length;
+      renderCommands(); return;
     }
-    if (event.target.id === "activity-agent") { state.filter = event.target.value; renderActivity(); }
-  });
-  document.addEventListener("submit", (event) => {
-    if (event.target.id === "mission-form") {
+    if (menuOpen && event.key === "Tab") {
       event.preventDefault();
-      action("create", async () => {
-        const task = $("mission-task").value.trim();
-        if (!task) { $("mission-task").focus(); throw new Error("Write a brief before launching a mission."); }
-        const inputs = [$("config-agents"), $("config-steps"), $("config-tokens")];
-        const invalid = inputs.find((input) => !input.checkValidity());
-        if (invalid) { invalid.reportValidity(); return; }
-        const request = { ...state.config, task, max_agents: Number($("config-agents").value), max_steps_per_agent: Number($("config-steps").value), max_total_tokens: Number($("config-tokens").value) };
-        if (!request.skill) delete request.skill;
-        const result = await api("/api/runs", request);
-        const id = runId(result);
-        if (!id) throw new Error("The server did not return a mission reference.");
-        notify("Mission launched.");
-        await selectRun(id);
-        await refresh();
-      });
-    } else if (event.target.id === "followup-form") {
+      $("message").value = matchingCommands()[state.commandIndex]?.name || $("message").value;
+      renderCommands(); return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      action("message", async () => {
-        const input = $("followup-message");
-        const message = input.value.trim();
-        if (!message) return;
-        if (terminal.has(state.detail?.run.status)) {
-          const result = await api(runPath("/fork"), { task: message });
-          const id = runId(result);
-          if (!id) throw new Error("The server did not return a follow-up reference.");
-          input.value = "";
-          notify("Follow-up mission launched.");
-          await selectRun(id);
-        } else {
-          await api(runPath("/message"), { message, agent_id: "root" });
-          input.value = "";
-          notify("Direction added to the mission journal.");
-        }
-        await refresh();
-      });
-    } else if (event.target.id === "fork-form") {
-      event.preventDefault();
-      action("fork-submit", async () => {
-        const task = $("fork-task").value.trim();
-        if (!task) return;
-        const submit = $("fork-form").querySelector('[type="submit"]');
-        submit.disabled = true;
-        try {
-          const result = await api(runPath("/fork"), { task });
-          const id = runId(result);
-          if (!id) throw new Error("The server did not return a branch reference.");
-          $("fork-dialog").close();
-          notify("Mission branched.");
-          await selectRun(id);
-          await refresh();
-        } finally { submit.disabled = false; }
-      });
+      if (menuOpen) runCommand(matchingCommands()[state.commandIndex]?.name);
+      else sendMessage();
     }
   });
-  $("new-mission").addEventListener("click", () => selectRun(null));
-  $("retry-button").addEventListener("click", refresh);
-  $("start-backend").addEventListener("click", () => action("backend", async () => { await api("/api/backend/start", {}); notify("Backend start requested."); await refresh(); }));
-  $("close-fork").addEventListener("click", () => $("fork-dialog").close());
-  $("cancel-fork").addEventListener("click", () => $("fork-dialog").close());
-  $("tab-bar").addEventListener("keydown", (event) => {
-    const tabs = Array.from($("tab-bar").querySelectorAll("[data-tab]"));
-    const index = tabs.indexOf(event.target);
-    if (index < 0) return;
-    let next;
-    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-    else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = tabs.length - 1;
-    else return;
-    event.preventDefault();
-    selectTab(tabs[next].dataset.tab);
-    tabs[next].focus();
+  document.addEventListener("click", (event) => {
+    const chat = event.target.closest("[data-chat]");
+    if (chat) { selectChat(chat.dataset.chat); return; }
+    const starter = event.target.closest("[data-starter]");
+    if (starter) { $("message").value = starter.dataset.starter; saveDraft(); renderComposer(); $("message").focus(); return; }
+    const approval = event.target.closest("[data-approval]");
+    if (approval) { decide(approval); return; }
+    const command = event.target.closest("[data-command]");
+    if (command) { runCommand(command.dataset.command); return; }
+    const code = event.target.closest("[data-copy-code]");
+    if (code) { copy(code.closest(".code-block").querySelector("code").textContent, code); return; }
+    const response = event.target.closest("[data-copy-response]");
+    if (response) {
+      const turn = state.detail?.turns?.find((entry, i) => String(entry.turn_id || entry.run_id || `turn-${i}`) === response.dataset.copyResponse);
+      copy(outputText(turn?.output), response); return;
+    }
+    const artifact = event.target.closest("[data-artifact]");
+    if (artifact) downloadArtifact(artifact);
   });
+  $("toggle-sidebar").addEventListener("click", () => toggleSidebar());
+  $("close-sidebar").addEventListener("click", () => { toggleSidebar(false); $("toggle-sidebar").focus(); });
+  $("sidebar-backdrop").addEventListener("click", () => toggleSidebar(false));
+  $("new-chat").addEventListener("click", () => selectChat(null));
+  $("home").addEventListener("click", () => selectChat(null));
+  $("open-settings").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
+  $("permission-shortcut").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
+  $("close-settings").addEventListener("click", () => $("settings").close());
+  $("settings").addEventListener("click", (event) => {
+    const bounds = $("settings").getBoundingClientRect();
+    if (event.target === $("settings") && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) $("settings").close();
+  });
+  document.querySelectorAll('input[name="policy"]').forEach((input) => input.addEventListener("change", () => { state.policy = input.value; state.policyTouched = true; persistDrafts(); renderComposer(); renderSettings(); }));
+  $("stop-draft").addEventListener("click", cancelResponse);
+  $("retry").addEventListener("click", refresh);
+  $("jump-bottom").addEventListener("click", scrollBottom);
+  $("transcript-pane").addEventListener("scroll", () => { $("jump-bottom").hidden = nearBottom(); }, { passive: true });
   document.addEventListener("keydown", (event) => {
-    if (event.key.toLowerCase() !== "n" || event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input,textarea,select,[contenteditable=true]") || $("fork-dialog").open) return;
-    event.preventDefault();
-    selectRun(null);
+    if (event.key === "Tab" && state.sidebar && matchMedia("(max-width:700px)").matches) {
+      const buttons = Array.from($("sidebar").querySelectorAll("a[href],button:not(:disabled)"));
+      const first = buttons[0]; const last = buttons.at(-1);
+      if (event.shiftKey && (document.activeElement === first || !$("sidebar").contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      if ($("settings").open) $("settings").close();
+      selectChat(null); return;
+    }
+    if (event.key === "Escape" && !$("settings").open) {
+      if (!$("command-menu").hidden) { $("command-menu").hidden = true; event.preventDefault(); }
+      else if (state.sidebar) { toggleSidebar(false); event.preventDefault(); }
+      else if (active()) { cancelResponse(); event.preventDefault(); }
+    }
   });
+  window.addEventListener("resize", () => { if (state.sidebar) toggleSidebar(true); resizeComposer(); });
+  window.addEventListener("focus", () => refresh());
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   async function boot() {
-    renderNewMission();
+    const selected = new URLSearchParams(location.search).get("chat");
+    if (selected) { state.selected = selected; state.loading = true; $("welcome").hidden = true; $("view-loading").hidden = false; }
+    renderComposer();
     const fragment = new URLSearchParams(location.hash.slice(1));
     const token = fragment.get("token");
     if (token) {
-      try {
-        await api("/api/auth", { token });
-        history.replaceState(null, "", location.pathname + location.search);
-      } catch {
-        history.replaceState(null, "", location.pathname + location.search);
-        connection(false, "The local session could not be authenticated. Open the Studio link from the harness command again.");
-        return;
-      }
+      history.replaceState(null, "", location.pathname + location.search);
+      try { await api("/api/auth", { token }); }
+      catch { setConnection("This session could not be authenticated. Reopen the Forge link from the local launcher."); return; }
     }
     await refresh();
   }

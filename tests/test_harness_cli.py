@@ -160,6 +160,10 @@ def lifecycle_fakes(monkeypatch):
         async def close(self):
             events.append("service-closed")
 
+        async def start_backend(self):
+            events.append("backend-started")
+            return {"status": "loading"}
+
     class Server:
         origin = "http://127.0.0.1:12345"
         bootstrap_token = "TEST-BOOTSTRAP-NOT-PRINTED"
@@ -265,7 +269,7 @@ def test_service_still_closes_when_server_shutdown_fails(tmp_path, lifecycle_fak
     assert lifecycle_fakes.events[-2:] == ["server-closed", "service-closed"]
 
 
-def test_live_cli_builds_mcp_clients_without_starting_them_before_backend_request(
+def test_live_cli_prewarms_backend_and_constructs_owned_mcp_clients(
     tmp_path, lifecycle_fakes, monkeypatch
 ):
     path = _write_config(tmp_path, [_definition()])
@@ -282,6 +286,7 @@ def test_live_cli_builds_mcp_clients_without_starting_them_before_backend_reques
         await asyncio.sleep(0)
         client = lifecycle_fakes.kwargs["mcp_clients"][0]
         assert client.process is None
+        assert "backend-started" in lifecycle_fakes.events
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task

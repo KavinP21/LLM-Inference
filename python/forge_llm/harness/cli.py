@@ -125,6 +125,10 @@ async def serve(args):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         thread_started = True
+        if not args.demo and config.get("workers"):
+            # Warm the model in the background while the operator starts typing.
+            # A submitted chat is durably queued if loading is still in progress.
+            await service.start_backend()
         print(
             f"Forge Studio is serving at {server.origin}. Press Ctrl-C to stop.",
             flush=True,

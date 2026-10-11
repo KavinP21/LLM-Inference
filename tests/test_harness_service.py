@@ -86,7 +86,10 @@ def test_review_requires_exact_approval_and_artifact_executes_once(tmp_path):
             await service.decide(approval["id"], {"approved": True})
             with pytest.raises(ValueError, match="no longer pending"):
                 await service.decide(approval["id"], {"approved": True})
-            assert (await settle(service, run_id))["run"]["status"] == "completed"
+            finished = await settle(service, run_id)
+            assert finished["run"]["status"] == "completed"
+            assert "Saved `demo-inspection.md`" in finished["output"]
+            assert str(service.state_dir) not in finished["output"]
             assert artifact.is_file()
             assert "No model inference" in artifact.read_text()
             downloaded = await service.dispatch(
