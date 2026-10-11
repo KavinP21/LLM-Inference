@@ -4,6 +4,10 @@ Forge Studio is a local assistant for the inference engine. Open it, type what
 you need, and continue in the same conversation. Tools, delegated agents and
 permissions appear inline when they are relevant.
 
+![Forge conversation with inline tools and persistent composer](images/forge-studio-chat.jpg)
+
+Actual HTTP-backed browser QA using the explicitly labeled deterministic demo.
+
 ## Open and type
 
 From the repository root, with the existing Python environment and Qwen3.5
@@ -127,3 +131,5 @@ For an explicitly labeled deterministic harness exercise without inference:
 The original mission APIs remain available for integrations, but the interactive
 UI uses conversations. The [design](harness-design.md) documents the current
 interaction model and the underlying runtime boundaries.
+The [conversation validation report](../benchmarks/results/forge-studio-conversation-2026-10-11/)
+records the real-model three-turn check and browser interaction scope.
