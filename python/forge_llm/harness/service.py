@@ -11,6 +11,7 @@ import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from ..agents.cli import create_pool, worker_identities
 from ..agents.profiles import CompletionProfile
@@ -18,11 +19,13 @@ from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
 from .demo import DemoBackend
+from .extensions import MCPStdioClient
 from .policy import ApprovalGate, workspace_preview
 
 MUTATING = frozenset(
     {"write_file", "replace_text", "edit_lines", "save_artifact", "run_tests"}
 )
+SETTLED_RUNS = TERMINAL | {"completed_with_failures"}
 
 
 class StudioWorkspaceTools(WorkspaceTools):
@@ -77,8 +80,8 @@ class StudioService:
         if not self.workspace.is_dir():
             raise ValueError("workspace must be a directory")
         self.state_dir = state_dir.resolve()
-        if self.state_dir == self.workspace:
-            raise ValueError("state directory must be separate from workspace root")
+        if self.workspace.is_relative_to(self.state_dir):
+            raise ValueError("state directory cannot contain the workspace root")
         self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.state_dir, 0o700)
         self.store = AgentStore(self.state_dir / "studio.sqlite")
@@ -98,8 +101,11 @@ class StudioService:
         self.runtimes: dict[str, AgentRuntime] = {}
         self.gates: dict[str, ApprovalGate] = {}
         self.mcp_clients = tuple(mcp_clients)
+        self._mcp_configs = tuple(client.config for client in self.mcp_clients)
+        self._restart_mcp = False
         self.hooks = hooks
         self.closing = False
+        self._closed = False
 
     async def start_backend(self) -> dict:
         if self.closing:
@@ -112,19 +118,35 @@ class StudioService:
             raise ValueError(
                 "Select an operator worker configuration when starting Studio"
             )
+        if self._restart_mcp:
+            self.mcp_clients = tuple(
+                MCPStdioClient(config) for config in self._mcp_configs
+            )
+            self._restart_mcp = False
         self.backend_status, self.backend_error = "loading", None
 
         async def load():
+            pool = None
             try:
-                self.backend = await create_pool(self.config)
-                self.identities = await worker_identities(self.backend)
+                pool = await create_pool(self.config)
+                identities = await worker_identities(pool)
                 for client in self.mcp_clients:
                     await client.start()
+                self.backend, self.identities = pool, identities
                 self.backend_status = "ready"
-            except Exception as exc:
-                if self.backend:
-                    await self.backend.close()
-                    self.backend = None
+            except BaseException as exc:
+                # A partially started extension and pool are both owned here.
+                # Clients are single-use; retry must construct fresh instances.
+                await asyncio.gather(
+                    *(client.close() for client in self.mcp_clients),
+                    *((pool.close(),) if pool is not None else ()),
+                    return_exceptions=True,
+                )
+                self.backend, self.identities = None, {}
+                self._restart_mcp = True
+                if not isinstance(exc, Exception):
+                    self.backend_status = "offline"
+                    raise
                 self.backend_status = "error"
                 self.backend_error = f"{type(exc).__name__}: {exc}"
 
@@ -191,6 +213,10 @@ class StudioService:
         }
         validator = None
         if self.config.get("acceptance"):
+            # Completion checks execute tools too. Use the same review and
+            # hook boundary instead of silently running operator test files.
+            if "run_tests" in wrapped:
+                tools.run_tests = wrapped["run_tests"]
             validator = CompletionProfile(self.config["acceptance"], tools, self.store)
         runtime = AgentRuntime(
             self.backend,
@@ -235,8 +261,12 @@ class StudioService:
                 raise ValueError(f"{key} must be between {low} and {high}")
             runtime_options[key] = value
         runtime_options["tool_timeout_seconds"] = max(
-            330, runtime_options.get("tool_timeout_seconds", 330)
+            390, runtime_options.get("tool_timeout_seconds", 390)
         )
+        if self.config.get("acceptance", {}).get("tests"):
+            runtime_options["completion_timeout_seconds"] = max(
+                390, runtime_options.get("completion_timeout_seconds", 390)
+            )
         config = RuntimeConfig(**runtime_options)
         skill = payload.get("skill")
         skill_body = ""
@@ -249,7 +279,7 @@ class StudioService:
         inherited = ""
         if parent_id:
             parent = self.store.agent(parent_id, "root")
-            if self.store.run(parent_id)["status"] not in TERMINAL:
+            if self.store.run(parent_id)["status"] not in SETTLED_RUNS:
                 raise ValueError(
                     "Use steering for an active mission; follow-up requires a settled mission"
                 )
@@ -330,10 +360,12 @@ class StudioService:
         self.jobs[run_id] = asyncio.create_task(drive())
 
     async def resume(self, run_id: str) -> dict:
-        if self.backend_status != "ready":
+        if self.closing or self.backend_status != "ready":
             raise ValueError("Start the model before recovery")
         if self.jobs.get(run_id) and not self.jobs[run_id].done():
             raise ValueError("mission is already active")
+        if sum(not job.done() for job in self.jobs.values()) >= 4:
+            raise ValueError("Four missions are already active; wait or stop one")
         run, manifest = self.store.run(run_id), self._manifest(run_id)
         if run["status"] not in {"running", "interrupted"}:
             raise ValueError(
@@ -357,7 +389,7 @@ class StudioService:
 
     async def cancel(self, run_id: str) -> dict:
         run = self.store.run(run_id)
-        if run["status"] in TERMINAL:
+        if run["status"] in SETTLED_RUNS:
             raise ValueError("mission has already settled")
         if run_id in self.runtimes:
             await self.runtimes[run_id].cancel(run_id)
@@ -382,7 +414,7 @@ class StudioService:
         message = _text(payload.get("message"), "message", 8000)
         agent_id = payload.get("agent_id", "root")
         if (
-            self.store.run(run_id)["status"] in TERMINAL
+            self.store.run(run_id)["status"] in SETTLED_RUNS
             or self.store.agent(run_id, agent_id).status in TERMINAL
         ):
             raise ValueError("Steering requires an active agent")
@@ -429,7 +461,7 @@ class StudioService:
                     "run_id": row[0],
                     "task": manifest["brief"],
                     "status": run["status"]
-                    if active or run["status"] in TERMINAL
+                    if active or run["status"] in SETTLED_RUNS
                     else "interrupted",
                     "created": run["created"],
                     "config": run["config"],
@@ -468,7 +500,7 @@ class StudioService:
     async def detail(self, run_id: str, *, export: bool = False) -> dict:
         run, manifest = self.store.run(run_id), self._manifest(run_id)
         active = bool(self.jobs.get(run_id) and not self.jobs[run_id].done())
-        if not active and run["status"] not in TERMINAL:
+        if not active and run["status"] not in SETTLED_RUNS:
             run = dict(run, status="interrupted")
         events = self.store.events(run_id)
         gate = self.gates.get(run_id)
@@ -515,6 +547,27 @@ class StudioService:
 
     async def dispatch(self, method: str, path: str, payload: dict) -> dict:
         parts = path.strip("/").split("/")
+        if (
+            method == "GET"
+            and len(parts) >= 5
+            and parts[:2] == ["api", "runs"]
+            and parts[3] == "artifacts"
+        ):
+            run_id = parts[2]
+            self._manifest(run_id)
+            name = _text(unquote("/".join(parts[4:])), "artifact path", 1024)
+            tools = StudioWorkspaceTools(
+                self.workspace,
+                self.state_dir / "artifacts" / run_id,
+                state_dir=self.state_dir,
+            )
+            artifact = tools._path(name, artifact=True)
+            if artifact.is_symlink():
+                raise ValueError("artifact symlinks are unavailable")
+            content = (await asyncio.to_thread(tools._safe_read, artifact)).decode(
+                "utf-8"
+            )
+            return {"path": name, "content": content}
         if method == "GET" and path == "/api/state":
             return await self.state()
         if method == "POST" and path == "/api/backend/start":
@@ -546,6 +599,8 @@ class StudioService:
         raise ValueError("unknown Studio API route")
 
     async def close(self):
+        if self._closed:
+            return
         self.closing = True
         if hasattr(self, "_loader") and not self._loader.done():
             self._loader.cancel()
@@ -554,8 +609,17 @@ class StudioService:
             if not job.done():
                 job.cancel()
         await asyncio.gather(*self.jobs.values(), return_exceptions=True)
-        for client in self.mcp_clients:
-            await client.close()
-        if self.backend:
-            await self.backend.close()
-        self.store.close()
+        try:
+            outcomes = await asyncio.gather(
+                *(client.close() for client in self.mcp_clients),
+                *((self.backend.close(),) if self.backend is not None else ()),
+                return_exceptions=True,
+            )
+        finally:
+            self.store.close()
+            self._closed = True
+        failures = [
+            outcome for outcome in outcomes if isinstance(outcome, BaseException)
+        ]
+        if failures:
+            raise RuntimeError("Studio resource cleanup failed") from failures[0]

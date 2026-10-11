@@ -89,6 +89,19 @@ def test_review_requires_exact_approval_and_artifact_executes_once(tmp_path):
             assert (await settle(service, run_id))["run"]["status"] == "completed"
             assert artifact.is_file()
             assert "No model inference" in artifact.read_text()
+            downloaded = await service.dispatch(
+                "GET", f"/api/runs/{run_id}/artifacts/demo-inspection.md", {}
+            )
+            assert downloaded["content"] == artifact.read_text()
+            with pytest.raises(ToolValidationError, match="inside"):
+                await service.dispatch(
+                    "GET", f"/api/runs/{run_id}/artifacts/%2e%2e%2fstudio.sqlite", {}
+                )
+            (artifact.parent / "escape.md").symlink_to(tmp_path / "README.md")
+            with pytest.raises(ToolValidationError, match="symlink"):
+                await service.dispatch(
+                    "GET", f"/api/runs/{run_id}/artifacts/escape.md", {}
+                )
             assert not (await service.detail(run_id))["approvals"]
         finally:
             await service.close()

@@ -6,10 +6,10 @@
   const state = {
     overview: null, detail: null, selected: null, tab: "brief", filter: "all",
     busy: new Set(), signatures: new Map(), polling: false, connected: false,
-    config: { policy: "review", max_agents: 4, max_total_tokens: 32000, max_steps_per_agent: 16, skill: "" },
+    config: { policy: "review", max_agents: 4, max_total_tokens: 128000, max_steps_per_agent: 16, skill: "" },
   };
-  const terminal = new Set(["completed", "failed", "cancelled"]);
-  const statusClasses = new Set(["running", "completed", "failed", "cancelled", "waiting", "waiting_approval", "paused", "pending", "ready", "stopped"]);
+  const terminal = new Set(["completed", "completed_with_failures", "failed", "cancelled"]);
+  const statusClasses = new Set(["running", "completed", "failed", "cancelled", "waiting", "waiting_approval", "paused", "pending", "ready", "stopped", "interrupted", "completed_with_failures"]);
   let toastTimer;
   let pollTimer;
 
@@ -50,13 +50,13 @@
   function setContent(id, content) {
     if (state.signatures.get(id) === content) return;
     const node = $(id);
-    const openDetails = new Set(Array.from(node.querySelectorAll("details[open][data-key]")).map((entry) => entry.dataset.key));
+    const detailStates = new Map(Array.from(node.querySelectorAll("details[data-key]")).map((entry) => [entry.dataset.key, entry.open]));
     const active = document.activeElement;
     const activeId = node.contains(active) ? active.id : null;
     const savedInputs = new Map(Array.from(node.querySelectorAll("input,textarea,select")).filter((entry) => entry.id).map((entry) => [entry.id, entry.value]));
     const selection = activeId && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
     node.innerHTML = content;
-    node.querySelectorAll("details[data-key]").forEach((entry) => { entry.open = openDetails.has(entry.dataset.key); });
+    node.querySelectorAll("details[data-key]").forEach((entry) => { if (detailStates.has(entry.dataset.key)) entry.open = detailStates.get(entry.dataset.key); });
     savedInputs.forEach((value, key) => { const input = $(key); if (input && node.contains(input)) input.value = value; });
     if (activeId && $(activeId)) {
       $(activeId).focus({ preventScroll: true });
@@ -121,8 +121,8 @@
     $("backend-status").textContent = title(backend.status || "unknown");
     $("backend-name").textContent = backend.label || "Local inference";
     const ready = ["ready", "running", "connected"].includes(backend.status);
-    $("backend-description").textContent = backend.error || (overview.mode === "demo" ? "Deterministic harness validation. Model weights are not loaded." : ready ? "The inference backend is available for new missions." : backend.status === "starting" ? "The local model is starting. Large weights may take a moment to load." : "Start the local inference backend before launching a mission.");
-    $("start-backend").hidden = overview.mode === "demo" || ready || backend.status === "starting";
+    $("backend-description").textContent = backend.error || (overview.mode === "demo" ? "Deterministic harness validation. Model weights are not loaded." : ready ? "The inference backend is available for new missions." : backend.status === "loading" ? "The local model is starting. Large weights may take a moment to load." : "Start the local inference backend before launching a mission.");
+    $("start-backend").hidden = overview.mode === "demo" || ready || backend.status === "loading";
     $("start-backend").disabled = state.busy.has("backend");
     const runs = overview.runs || [];
     $("run-count").textContent = runs.length;
@@ -137,7 +137,7 @@
     }).join("");
   }
   function renderNewControls() {
-    setContent("controls-section", `<span class="eyebrow">Mission configuration</span><div class="field-group"><label for="config-policy">Permission policy</label><select id="config-policy" data-config="policy"><option value="review" ${state.config.policy === "review" ? "selected" : ""}>Review changes</option><option value="read_only" ${state.config.policy === "read_only" ? "selected" : ""}>Read only</option></select><p class="field-note">${state.config.policy === "read_only" ? "Inspect files and analyze the workspace without making changes." : "Inspect freely. Review proposed writes and commands before they execute."}</p></div><div class="two-fields"><div class="field-group"><label for="config-agents">Agent limit</label><input id="config-agents" type="number" min="1" max="32" step="1" value="${state.config.max_agents}" data-config="max_agents" inputmode="numeric"></div><div class="field-group"><label for="config-steps">Steps / agent</label><input id="config-steps" type="number" min="1" max="256" step="1" value="${state.config.max_steps_per_agent}" data-config="max_steps_per_agent" inputmode="numeric"></div></div><div class="field-group"><label for="config-tokens">Shared token budget</label><input id="config-tokens" type="number" min="1024" max="1000000" step="1" value="${state.config.max_total_tokens}" data-config="max_total_tokens" inputmode="numeric"><p class="field-note">Input and output tokens are charged across all agents.</p></div><div class="field-group"><label for="config-skill">Workspace skill</label><select id="config-skill" data-config="skill"><option value="">No additional skill</option>${skillsOptions()}</select><p class="field-note">Add instructions from a discovered workspace skill.</p></div>`);
+    setContent("controls-section", `<span class="eyebrow">Mission configuration</span><div class="field-group"><label for="config-policy">Permission policy</label><select id="config-policy" data-config="policy"><option value="review" ${state.config.policy === "review" ? "selected" : ""}>Review changes</option><option value="read_only" ${state.config.policy === "read_only" ? "selected" : ""}>Read only</option></select><p class="field-note">${state.config.policy === "read_only" ? "Inspect files and analyze the workspace without making changes." : "Inspect freely. Review proposed writes and commands before they execute."}</p></div><div class="two-fields"><div class="field-group"><label for="config-agents">Agent limit</label><input id="config-agents" type="number" min="1" max="16" step="1" value="${state.config.max_agents}" data-config="max_agents" inputmode="numeric"></div><div class="field-group"><label for="config-steps">Steps / agent</label><input id="config-steps" type="number" min="2" max="64" step="1" value="${state.config.max_steps_per_agent}" data-config="max_steps_per_agent" inputmode="numeric"></div></div><div class="field-group"><label for="config-tokens">Shared token budget</label><input id="config-tokens" type="number" min="4000" max="1000000" step="1" value="${state.config.max_total_tokens}" data-config="max_total_tokens" inputmode="numeric"><p class="field-note">Includes input, output, outstanding reservations, and interrupted generation across all agents.</p></div><div class="field-group"><label for="config-skill">Workspace skill</label><select id="config-skill" data-config="skill"><option value="">No additional skill</option>${skillsOptions()}</select><p class="field-note">Add instructions from a discovered workspace skill.</p></div>`);
     $("usage-section").hidden = true;
   }
   function renderNewMission() {
@@ -146,29 +146,30 @@
     $("mission-status").hidden = true;
     $("tab-bar").hidden = true;
     selectTab("brief", false);
-    setContent("panel-brief", `<p class="intro-copy">A clear brief. A coordinated team. A trace of every decision.<br>Describe the outcome you want, and let Forge carry the work.</p><form id="mission-form" class="brief-composer"><label class="eyebrow" for="mission-task">Mission brief</label><textarea id="mission-task" name="task" placeholder="What would you like to accomplish? Include the context, constraints, and what a successful result looks like." rows="6" maxlength="32000" required></textarea><div class="composer-bottom"><p class="composer-note">Agents share a goal and a budget. You stay in control of workspace changes.</p><button class="button button-teal composer-submit" type="submit" data-action="create">Launch mission <span aria-hidden="true">↗</span></button></div></form><div class="starter-heading"><span class="eyebrow">A place to start</span></div><div class="starter-grid"><button class="starter-card" type="button" data-starter="review"><span class="starter-number">01</span><strong>Review this repository</strong><p>Map the architecture and find the highest-impact issues.</p><span class="starter-arrow" aria-hidden="true">↗</span></button><button class="starter-card" type="button" data-starter="tests"><span class="starter-number">02</span><strong>Build a test plan</strong><p>Identify missing coverage and define useful checks.</p><span class="starter-arrow" aria-hidden="true">↗</span></button><button class="starter-card" type="button" data-starter="docs"><span class="starter-number">03</span><strong>Clarify the documentation</strong><p>Review onboarding and propose a concise guide.</p><span class="starter-arrow" aria-hidden="true">↗</span></button></div><p class="workspace-footnote"><span class="footnote-symbol" aria-hidden="true">⌁</span><span>Durable missions · Scoped agents · Inspectable tool calls · Explicit permissions</span></p>`);
+    setContent("panel-brief", `<p class="intro-copy">A clear brief. A coordinated team. A trace of every decision.<br>Describe the outcome you want, and let Forge carry the work.</p><form id="mission-form" class="brief-composer"><label class="eyebrow" for="mission-task">Mission brief</label><textarea id="mission-task" name="task" placeholder="What would you like to accomplish? Include the context, constraints, and what a successful result looks like." rows="6" maxlength="12000" required></textarea><div class="composer-bottom"><p class="composer-note">Agents share a goal and a budget. You stay in control of workspace changes.</p><button class="button button-teal composer-submit" type="submit" data-action="create">Launch mission <span aria-hidden="true">↗</span></button></div></form><div class="starter-heading"><span class="eyebrow">A place to start</span></div><div class="starter-grid"><button class="starter-card" type="button" data-starter="review"><span class="starter-number">01</span><strong>Review this repository</strong><p>Map the architecture and find the highest-impact issues.</p><span class="starter-arrow" aria-hidden="true">↗</span></button><button class="starter-card" type="button" data-starter="tests"><span class="starter-number">02</span><strong>Build a test plan</strong><p>Identify missing coverage and define useful checks.</p><span class="starter-arrow" aria-hidden="true">↗</span></button><button class="starter-card" type="button" data-starter="docs"><span class="starter-number">03</span><strong>Clarify the documentation</strong><p>Review onboarding and propose a concise guide.</p><span class="starter-arrow" aria-hidden="true">↗</span></button></div><p class="workspace-footnote"><span class="footnote-symbol" aria-hidden="true">⌁</span><span>Durable missions · Scoped agents · Inspectable tool calls · Explicit permissions</span></p>`);
     renderNewControls();
   }
   function approvalCards() {
     const approvals = (state.detail?.approvals || []).filter((approval) => approval.status === "pending");
     if (!approvals.length) return "";
-    return `<div class="approval-stack">${approvals.map((approval) => `<article class="approval-card"><div class="approval-heading"><h3>Review a proposed action</h3><span class="approval-label">Permission required</span></div><p class="approval-tool">${escape(approval.agent_id || "root")} → ${escape(approval.tool)}</p><p class="subtle">Inspect the exact request before allowing this action.</p><details data-key="approval-${escape(approval.id)}"><summary>View arguments and proposed changes</summary><pre>${escape(pretty(approval.args))}</pre></details><div class="approval-actions"><button class="button button-outline" type="button" data-approval="${escape(approval.id)}" data-approved="false" data-action="approval">Decline</button><button class="button button-dark" type="button" data-approval="${escape(approval.id)}" data-approved="true" data-action="approval">Approve action <span aria-hidden="true">↗</span></button></div></article>`).join("")}</div>`;
+    return `<div class="approval-stack">${approvals.map((approval) => `<article class="approval-card"><div class="approval-heading"><h3>Review a proposed action</h3><span class="approval-label">Permission required</span></div><p class="approval-tool">${escape(approval.agent_id || "root")} → ${escape(approval.tool)}</p><p class="subtle">Inspect the exact request before allowing this action.</p>${approval.preview?.diff != null ? `<details class="approval-preview" data-key="preview-${escape(approval.id)}" open><summary>Review changes${approval.preview.path ? ` · ${escape(approval.preview.path)}` : ""}</summary><pre>${escape(approval.preview.diff || "No textual difference.")}</pre></details>` : ""}<details data-key="approval-${escape(approval.id)}"><summary>Inspect exact tool arguments</summary><pre>${escape(pretty(approval.args))}</pre></details>${approval.expires ? `<p class="field-note">This request expires at ${escape(datetime(approval.expires))}.</p>` : ""}<div class="approval-actions"><button class="button button-outline" type="button" data-approval="${escape(approval.id)}" data-approved="false" data-action="approval">Decline</button><button class="button button-dark" type="button" data-approval="${escape(approval.id)}" data-approved="true" data-action="approval">Approve action <span aria-hidden="true">↗</span></button></div></article>`).join("")}</div>`;
   }
   function renderRunControls() {
     const detail = state.detail;
     const run = detail.run;
     const config = run.config || {};
-    const policy = config.policy || config.permission_policy || "review";
+    const policy = detail.manifest?.policy || config.policy || config.permission_policy || "review";
     const active = Boolean(detail.active);
     const finished = terminal.has(run.status);
-    const resume = !active && run.status !== "completed";
-    setContent("controls-section", `<span class="eyebrow">Run controls</span><div class="run-controls">${active ? '<button type="button" class="button button-danger" data-action="stop">Stop mission <span aria-hidden="true">■</span></button>' : resume ? '<button type="button" class="button button-dark" data-action="resume">Resume mission <span aria-hidden="true">↗</span></button>' : `<div class="pending-note">${finished ? "This mission has finished. Branch it to explore a new direction." : "This mission is waiting to run."}</div>`}<div class="secondary-controls"><button type="button" class="button button-outline" data-action="fork">Branch</button><a class="button button-outline" href="${runPath("/export")}" download>Export JSON</a></div></div><div style="margin-top:19px"><div class="control-row"><span>Permissions</span><strong>${policy === "read_only" ? "Read only" : "Review changes"}</strong></div><div class="control-row"><span>Agent limit</span><strong class="control-value">${escape(config.max_agents || "—")}</strong></div><div class="control-row"><span>Steps / agent</span><strong class="control-value">${escape(config.max_steps_per_agent || "—")}</strong></div>${config.skill ? `<div class="control-row"><span>Skill</span><strong>${escape(config.skill)}</strong></div>` : ""}</div>`);
+    const resume = !active && ["running", "interrupted"].includes(run.status);
+    const approvals = (detail.approvals || []).filter((approval) => approval.status === "pending");
+    setContent("controls-section", `<span class="eyebrow">Run controls</span>${approvals.length ? `<button type="button" class="approval-jump" data-go-tab="brief">${approvals.length} ${approvals.length === 1 ? "action needs" : "actions need"} review <span aria-hidden="true">↗</span></button>` : ""}<div class="run-controls">${active ? '<button type="button" class="button button-danger" data-action="stop">Stop mission <span aria-hidden="true">■</span></button>' : resume ? '<button type="button" class="button button-dark" data-action="resume">Resume mission <span aria-hidden="true">↗</span></button>' : `<div class="pending-note">${finished ? "This mission has finished. Branch it to explore a new direction." : "This mission is waiting to run."}</div>`}<div class="secondary-controls"><button type="button" class="button button-outline" data-action="fork" ${!finished ? 'disabled title="Settle this mission before branching"' : ""}>Branch</button><a class="button button-outline" href="${runPath("/export")}" download>Export JSON</a></div></div><div class="control-values"><div class="control-row"><span>Permissions</span><strong>${policy === "read_only" ? "Read only" : "Review changes"}</strong></div><div class="control-row"><span>Agent limit</span><strong class="control-value">${escape(config.max_agents || "—")}</strong></div><div class="control-row"><span>Steps / agent</span><strong class="control-value">${escape(config.max_steps_per_agent || "—")}</strong></div>${(detail.manifest?.skill || config.skill) ? `<div class="control-row"><span>Skill</span><strong>${escape(detail.manifest?.skill || config.skill)}</strong></div>` : ""}</div>`);
     const usage = detail.usage || {};
-    const limit = Number(config.max_total_tokens || 32000);
-    const used = Number(usage.total_tokens ?? (Number(usage.input_tokens || 0) + Number(usage.output_tokens || 0) + Number(usage.uncertain_tokens || 0)));
+    const limit = Number(config.max_total_tokens || 128000);
     const reserved = Number(usage.reserved_tokens || 0);
+    const used = Number(usage.total_tokens ?? (Number(usage.input_tokens || 0) + Number(usage.output_tokens || 0) + Number(usage.uncertain_tokens || 0) + reserved));
     $("usage-section").hidden = false;
-    setContent("usage-section", `<div class="section-heading"><span class="eyebrow">Shared budget</span><span class="small-status">Tokens</span></div><div class="usage-numeral"><strong>${number(used)}</strong><span>/ ${number(limit)}</span></div><progress max="${limit}" value="${Math.min(used + reserved, limit)}" aria-label="Shared token budget consumed or reserved">${number(used)}</progress><div class="usage-legend"><span>Consumed</span><span>Reserved: ${number(reserved)}</span></div><div style="margin-top:12px"><div class="control-row"><span>Input</span><strong class="control-value">${number(usage.input_tokens)}</strong></div><div class="control-row"><span>Output</span><strong class="control-value">${number(usage.output_tokens)}</strong></div></div>${usage.uncertain_tokens ? `<p class="usage-warning">${number(usage.uncertain_tokens)} tokens remain charged for interrupted generation.</p>` : ""}`);
+    setContent("usage-section", `<div class="section-heading"><span class="eyebrow">Shared budget</span><span class="small-status">Tokens</span></div><div class="usage-numeral"><strong>${number(used)}</strong><span>/ ${number(limit)}</span></div><progress max="${limit}" value="${Math.min(used, limit)}" aria-label="Shared token budget consumed or reserved">${number(used)}</progress><div class="usage-legend"><span>Consumed: ${number(Math.max(0, used - reserved))}</span><span>Reserved: ${number(reserved)}</span></div><div class="usage-breakdown"><div class="control-row"><span>Input</span><strong class="control-value">${number(usage.input_tokens)}</strong></div><div class="control-row"><span>Output</span><strong class="control-value">${number(usage.output_tokens)}</strong></div></div>${usage.uncertain_tokens ? `<p class="usage-warning">${number(usage.uncertain_tokens)} tokens remain charged for interrupted generation.</p>` : ""}`);
   }
   function renderBrief() {
     const detail = state.detail;
@@ -176,8 +177,9 @@
     const agents = detail.agents || [];
     const error = detail.error || run.error;
     const lineage = detail.lineage;
-    const parent = typeof lineage === "string" ? lineage : lineage?.parent_run_id || lineage?.forked_from;
-    setContent("panel-brief", `${approvalCards()}${error ? `<div class="inline-error"><strong>Run needs attention.</strong> ${escape(typeof error === "string" ? error : pretty(error))}</div>` : ""}${parent ? `<p class="lineage-note">Branched from ${escape(parent)}</p>` : ""}<div class="section-line"><h2>Mission brief</h2><span class="eyebrow">The shared objective</span></div><p class="brief-text">${escape(detail.task || "No brief is available.")}</p><div class="brief-meta"><div class="meta-cell"><span class="eyebrow">Created</span><strong>${escape(datetime(run.created, true))}</strong></div><div class="meta-cell"><span class="eyebrow">Assigned team</span><strong>${agents.length} ${agents.length === 1 ? "agent" : "agents"}</strong></div><div class="meta-cell"><span class="eyebrow">Run reference</span><strong class="control-value">${escape(run.run_id)}</strong></div></div><p class="subtle">Every agent works from this objective with its own context and tool scope. Open Agents to inspect the team, or Activity to follow decisions and execution.</p><form id="followup-form" class="followup-form"><label for="followup-message">Add direction to the coordinator</label><div class="input-row"><textarea id="followup-message" required rows="2" maxlength="32000" placeholder="Clarify a constraint, share context, or revise the approach…"></textarea><button type="submit" class="button button-outline" data-action="message">Send direction <span aria-hidden="true">↗</span></button></div><p class="field-note">${detail.active ? "The coordinator receives your direction at its next safe checkpoint." : run.status === "completed" ? "This mission is complete. Branch it for new work; messages are preserved in its journal." : "Direction is saved in the journal. Resume this mission to continue work."}</p></form>`);
+    const settled = terminal.has(run.status);
+    const parent = typeof lineage === "string" ? lineage : lineage?.parent_id || lineage?.parent_run_id || lineage?.forked_from;
+    setContent("panel-brief", `${approvalCards()}${error ? `<div class="inline-error"><strong>Run needs attention.</strong> ${escape(typeof error === "string" ? error : pretty(error))}</div>` : ""}${parent ? `<p class="lineage-note">Branched from ${escape(parent)}</p>` : ""}<div class="section-line"><h2>Mission brief</h2><span class="eyebrow">The shared objective</span></div><p class="brief-text">${escape(detail.task || "No brief is available.")}</p><div class="brief-meta"><div class="meta-cell"><span class="eyebrow">Created</span><strong>${escape(datetime(run.created, true))}</strong></div><div class="meta-cell"><span class="eyebrow">Assigned team</span><strong>${agents.length} ${agents.length === 1 ? "agent" : "agents"}</strong></div><div class="meta-cell"><span class="eyebrow">Run reference</span><strong class="control-value">${escape(run.run_id)}</strong></div></div><p class="subtle">Every agent works from this objective with its own context and tool scope. Open Agents to inspect the team, or Activity to follow decisions and execution.</p><form id="followup-form" class="followup-form"><label for="followup-message">${settled ? "Start a follow-up mission" : "Add direction to the coordinator"}</label><div class="input-row"><textarea id="followup-message" required rows="2" maxlength="${settled ? 5000 : 8000}" placeholder="${settled ? "What should the team work on next?" : "Clarify a constraint, share context, or revise the approach…"}"></textarea><button type="submit" class="button button-outline" data-action="message">${settled ? "Launch follow-up" : "Send direction"} <span aria-hidden="true">↗</span></button></div><p class="field-note">${detail.active ? "The coordinator receives your direction at its next safe checkpoint." : settled ? "The follow-up inherits this mission’s result and permission policy, with a new journal and budget." : "Direction is saved in the journal. Resume this mission to continue work."}</p></form>`);
   }
   function renderAgents() {
     const agents = state.detail.agents || [];
@@ -196,7 +198,7 @@
     }
     agents.filter((agent) => !agent.parent_id || !byId.has(agent.parent_id)).forEach(visit);
     agents.forEach(visit);
-    setContent("panel-agents", `<p class="agents-intro">A shared objective, independently scoped work. Each agent’s state and permissions are recorded below.</p>${ordered.map((agent) => `<article class="agent-card ${agent.parent_id ? "child" : ""}" style="--depth:${Math.max(0, Math.min(Number(agent.depth) || 0, 4))}"><div class="agent-top"><span class="agent-icon" aria-hidden="true">${agent.parent_id ? "↳" : "⌘"}</span><div><h3>${escape(title(agent.role || (agent.parent_id ? "Specialist" : "Coordinator")))}</h3><p class="agent-id">${escape(agent.agent_id)}${agent.parent_id ? ` · from ${escape(agent.parent_id)}` : " · mission lead"}</p></div>${badge(agent.status)}</div><p class="agent-task">${escape(agent.task)}</p><div class="agent-meta"><span>${number(agent.steps)} steps</span><span>${number(agent.backend_attempts)} inference calls</span>${agent.dependencies?.length ? `<span>Depends on ${escape(agent.dependencies.join(", "))}</span>` : ""}${agent.wait_for?.length ? `<span>Waiting for ${escape(agent.wait_for.join(", "))}</span>` : ""}<span class="tool-permission">Tools: ${agent.tools ? escape(agent.tools.length ? agent.tools.join(", ") : "None") : "Inherited workspace scope"}</span></div>${agent.pending_action ? `<details class="agent-details" data-key="pending-${escape(agent.agent_id)}"><summary>Inspect pending action${agent.action_phase ? ` · ${escape(title(agent.action_phase))}` : ""}</summary><pre>${escape(pretty(agent.pending_action))}</pre></details>` : ""}${agent.result ? `<details class="agent-details" data-key="result-${escape(agent.agent_id)}"><summary>Read agent result</summary><div class="agent-result">${escape(agent.result)}</div></details>` : ""}${agent.error ? `<div class="inline-error">${escape(agent.error)}</div>` : ""}</article>`).join("")}`);
+    setContent("panel-agents", `<p class="agents-intro">A shared objective, independently scoped work. Each agent’s state and permissions are recorded below.</p>${ordered.map((agent) => `<article class="agent-card ${agent.parent_id ? "child" : ""} depth-${Math.max(0, Math.min(Number(agent.depth) || 0, 4))}"><div class="agent-top"><span class="agent-icon" aria-hidden="true">${agent.parent_id ? "↳" : "⌘"}</span><div><h3>${escape(title(agent.role || (agent.parent_id ? "Specialist" : "Coordinator")))}</h3><p class="agent-id">${escape(agent.agent_id)}${agent.parent_id ? ` · from ${escape(agent.parent_id)}` : " · mission lead"}</p></div>${badge(agent.status)}</div><p class="agent-task">${escape(agent.task)}</p><div class="agent-meta"><span>${number(agent.steps)} steps</span><span>${number(agent.backend_attempts)} inference calls</span>${agent.dependencies?.length ? `<span>Depends on ${escape(agent.dependencies.join(", "))}</span>` : ""}${agent.wait_for?.length ? `<span>Waiting for ${escape(agent.wait_for.join(", "))}</span>` : ""}<span class="tool-permission">Tools: ${agent.tools ? escape(agent.tools.length ? agent.tools.join(", ") : "None") : "Inherited workspace scope"}</span></div>${agent.pending_action ? `<details class="agent-details" data-key="pending-${escape(agent.agent_id)}"><summary>Inspect pending action${agent.action_phase ? ` · ${escape(title(agent.action_phase))}` : ""}</summary><pre>${escape(pretty(agent.pending_action))}</pre></details>` : ""}${agent.result ? `<details class="agent-details" data-key="result-${escape(agent.agent_id)}"><summary>Read agent result</summary><div class="agent-result">${escape(agent.result)}</div></details>` : ""}${agent.error ? `<div class="inline-error">${escape(agent.error)}</div>` : ""}</article>`).join("")}`);
   }
   function eventDescription(event) {
     const payload = event.payload;
@@ -211,7 +213,7 @@
     if (state.filter !== "all" && !agentIds.includes(state.filter)) state.filter = "all";
     const filtered = state.filter === "all" ? events : events.filter((event) => event.agent_id === state.filter);
     const visible = filtered.slice(-300);
-    setContent("panel-activity", `<div class="activity-toolbar"><span class="activity-count">${number(filtered.length)} journal ${filtered.length === 1 ? "event" : "events"}${filtered.length > 300 ? " · showing latest 300" : ""}</span><label for="activity-agent">Filter by agent <select id="activity-agent"><option value="all">All agents</option>${agentIds.map((id) => `<option value="${escape(id)}" ${state.filter === id ? "selected" : ""}>${escape(id)}</option>`).join("")}</select></label></div>${visible.length ? `<div class="event-list">${visible.map((event) => `<article class="event-row" data-error="${/error|fail/.test(event.kind)}"><div class="event-heading"><strong>${escape(title(event.kind))}</strong>${event.agent_id ? `<span class="event-agent">${escape(event.agent_id)}</span>` : ""}<time class="event-time">${escape(datetime(event.created))} · #${escape(event.id)}</time></div>${eventDescription(event) ? `<p class="event-summary">${escape(eventDescription(event))}</p>` : ""}<details class="event-details" data-key="event-${escape(event.id)}"><summary>Inspect event payload</summary><pre>${escape(pretty(event.payload))}</pre></details></article>`).join("")}</div>` : emptyView("The journal starts here", "Agent decisions, messages, tool arguments, and execution results appear as the mission progresses.", "⌁")}`);
+    setContent("panel-activity", `<div class="activity-toolbar"><span class="activity-count">${number(filtered.length)} journal ${filtered.length === 1 ? "event" : "events"}${filtered.length > 300 ? " · showing latest 300" : ""}${state.detail.events_truncated ? " · export for the full journal" : ""}</span><label for="activity-agent">Filter by agent <select id="activity-agent"><option value="all">All agents</option>${agentIds.map((id) => `<option value="${escape(id)}" ${state.filter === id ? "selected" : ""}>${escape(id)}</option>`).join("")}</select></label></div>${visible.length ? `<div class="event-list">${visible.map((event) => `<article class="event-row" data-error="${/error|fail/.test(event.kind)}"><div class="event-heading"><strong>${escape(title(event.kind))}</strong>${event.agent_id ? `<span class="event-agent">${escape(event.agent_id)}</span>` : ""}<time class="event-time">${escape(datetime(event.created))} · #${escape(event.id)}</time></div>${eventDescription(event) ? `<p class="event-summary">${escape(eventDescription(event))}</p>` : ""}<details class="event-details" data-key="event-${escape(event.id)}"><summary>Inspect event payload</summary><pre>${escape(pretty(event.payload))}</pre></details></article>`).join("")}</div>` : emptyView("The journal starts here", "Agent decisions, messages, tool arguments, and execution results appear as the mission progresses.", "⌁")}`);
   }
   function emptyView(heading, description, icon = "◈") {
     return `<div class="empty-view"><span class="empty-view-icon" aria-hidden="true">${icon}</span><h3>${escape(heading)}</h3><p>${escape(description)}</p></div>`;
@@ -224,8 +226,9 @@
     const detail = state.detail;
     const output = detail.output || "";
     const artifacts = detail.artifacts || [];
-    const heading = detail.run.status === "completed" ? "Mission result" : "Coordinator output";
-    setContent("panel-output", `<div class="output-header"><h2>${heading}</h2>${output ? '<button class="button button-outline" type="button" data-action="copy">Copy output</button>' : ""}</div>${output ? `<div class="output-content">${outputMarkup(typeof output === "string" ? output : pretty(output))}</div>` : emptyView(detail.run.status === "failed" ? "No final output" : "Work is underway", detail.run.status === "failed" ? "The mission stopped before producing a result. Inspect Activity for details, then resume or branch the mission." : "The coordinator’s result will appear here. You can follow the team’s progress in Agents and Activity.", "↗")}${artifacts.length ? `<section class="artifact-section"><span class="eyebrow">Workspace artifacts</span><ul class="artifact-list">${artifacts.map((artifact) => `<li><span class="artifact-symbol" aria-hidden="true">▤</span><span class="artifact-path">${escape(artifact.path)}</span><span class="artifact-size">${Number(artifact.size) >= 1024 ? `${(Number(artifact.size) / 1024).toFixed(1)} KB` : `${number(artifact.size)} B`}</span></li>`).join("")}</ul><p class="field-note">Files are stored inside your local workspace. Use the event journal to review the actions that created them.</p></section>` : ""}`);
+    const heading = ["completed", "completed_with_failures"].includes(detail.run.status) ? "Mission result" : "Coordinator output";
+    const stopped = terminal.has(detail.run.status);
+    setContent("panel-output", `<div class="output-header"><h2>${heading}</h2>${output ? '<button class="button button-outline" type="button" data-action="copy">Copy output</button>' : ""}</div>${output ? `<div class="output-content">${outputMarkup(typeof output === "string" ? output : pretty(output))}</div>` : emptyView(stopped ? "No final output" : "Work is underway", stopped ? "This mission settled before producing a result. Inspect Activity for details, then branch the mission to continue." : "The coordinator’s result will appear here. You can follow the team’s progress in Agents and Activity.", "↗")}${artifacts.length ? `<section class="artifact-section"><span class="eyebrow">Mission artifacts</span><ul class="artifact-list">${artifacts.map((artifact) => `<li><span class="artifact-symbol" aria-hidden="true">▤</span><span class="artifact-path">${escape(artifact.path)}</span><span class="artifact-size">${Number(artifact.size) >= 1024 ? `${(Number(artifact.size) / 1024).toFixed(1)} KB` : `${number(artifact.size)} B`}</span><button class="button button-outline artifact-download" type="button" data-action="artifact" data-artifact="${escape(artifact.path)}" aria-label="Download ${escape(artifact.path)}">Download <span aria-hidden="true">↓</span></button></li>`).join("")}</ul><p class="field-note">Files are saved in this mission’s local artifact directory. Use the event journal to review the actions that created them.</p></section>` : ""}`);
   }
   function renderDetail() {
     if (!state.selected) { renderNewMission(); return; }
@@ -316,6 +319,8 @@
   document.addEventListener("click", (event) => {
     const run = event.target.closest("[data-run]");
     if (run) { selectRun(run.dataset.run); return; }
+    const jump = event.target.closest("[data-go-tab]");
+    if (jump) { selectTab(jump.dataset.goTab); $("main").focus({ preventScroll: true }); return; }
     const tab = event.target.closest("[data-tab]");
     if (tab) { selectTab(tab.dataset.tab); return; }
     const starter = event.target.closest("[data-starter]");
@@ -334,12 +339,26 @@
     const name = button.dataset.action;
     if (name === "stop") action("stop", async () => { await api(runPath("/cancel"), {}); notify("Stop requested. The journal will retain completed work."); await refresh(); });
     else if (name === "resume") action("resume", async () => { await api(runPath("/resume"), {}); notify("Mission resumed."); await refresh(); });
-    else if (name === "fork") { $("fork-task").value = state.detail?.task || ""; $("fork-dialog").showModal(); $("fork-task").focus(); }
+    else if (name === "fork" && terminal.has(state.detail?.run.status)) { $("fork-task").value = state.detail?.task || ""; $("fork-dialog").showModal(); $("fork-task").focus(); }
     else if (name === "copy") action("copy", async () => {
       const output = state.detail?.output;
       if (!navigator.clipboard) throw new Error("Clipboard access is unavailable. Select and copy the output directly.");
       await navigator.clipboard.writeText(typeof output === "string" ? output : pretty(output));
       notify("Output copied.");
+    });
+    else if (name === "artifact") action("artifact", async () => {
+      const result = await api(runPath(`/artifacts/${encodeURIComponent(button.dataset.artifact)}`));
+      if (typeof result.content !== "string") throw new Error("This artifact could not be downloaded as text.");
+      const url = URL.createObjectURL(new Blob([result.content], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = String(result.path || button.dataset.artifact).split(/[\\/]/).filter(Boolean).at(-1) || "artifact.txt";
+      document.body.appendChild(link);
+      try { link.click(); } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      notify("Artifact download started.");
     });
     else if (name === "reload") { state.detail = null; refresh(); }
   });
@@ -378,9 +397,18 @@
         const input = $("followup-message");
         const message = input.value.trim();
         if (!message) return;
-        await api(runPath("/message"), { message, agent_id: "root" });
-        input.value = "";
-        notify("Direction added to the mission journal.");
+        if (terminal.has(state.detail?.run.status)) {
+          const result = await api(runPath("/fork"), { task: message });
+          const id = runId(result);
+          if (!id) throw new Error("The server did not return a follow-up reference.");
+          input.value = "";
+          notify("Follow-up mission launched.");
+          await selectRun(id);
+        } else {
+          await api(runPath("/message"), { message, agent_id: "root" });
+          input.value = "";
+          notify("Direction added to the mission journal.");
+        }
         await refresh();
       });
     } else if (event.target.id === "fork-form") {

@@ -43,6 +43,11 @@ def test_loopback_http_security_and_run_roundtrip(tmp_path):
                     "POST", "/api/auth", json.dumps({"token": "invalid"}), auth=False
                 )
             )[0] == 401
+            assert (
+                await call(
+                    "POST", "/api/auth", json.dumps({"token": "invalid-λ"}), auth=False
+                )
+            )[0] == 401
             status, _, headers = await call(
                 "POST",
                 "/api/auth",
