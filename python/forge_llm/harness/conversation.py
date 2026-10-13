@@ -8,13 +8,16 @@ bounded sequence of real user/assistant messages from the same conversation.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import inspect
 import json
 import time
 import uuid
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+from ..agents.media import MAX_MEDIA_ITEMS, MAX_TOTAL_MEDIA_BYTES, validate_media
 from ..agents.protocol import ChatMessage, conservative_input_tokens
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL
@@ -23,6 +26,62 @@ if TYPE_CHECKING:
     from .service import StudioService
 
 SETTLED = TERMINAL | {"completed_with_failures", "interrupted"}
+IMAGE_MIMES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+}
+
+
+def _image_input(payload):
+    """Validate the established bounded transport plus image MIME signatures."""
+    media = validate_media(payload.get("media", ()))
+    for item in media:
+        if item["type"] != "image" or item["mime"] not in IMAGE_MIMES:
+            raise ValueError(
+                "Studio attachments support PNG, JPEG, WebP, and BMP images"
+            )
+        data = base64.b64decode(item["data"])
+        signatures = {
+            "image/png": len(data) >= 24
+            and data.startswith(b"\x89PNG\r\n\x1a\n")
+            and data[12:16] == b"IHDR",
+            "image/jpeg": len(data) >= 4 and data.startswith(b"\xff\xd8\xff"),
+            "image/webp": len(data) >= 12
+            and data[:4] == b"RIFF"
+            and data[8:12] == b"WEBP",
+            "image/bmp": len(data) >= 26 and data.startswith(b"BM"),
+        }
+        if not signatures[item["mime"]]:
+            raise ValueError("image bytes do not match the declared MIME type")
+    names = payload.get("media_names")
+    if names is None:
+        names = [
+            f"image-{index + 1}{IMAGE_MIMES[item['mime']]}"
+            for index, item in enumerate(media)
+        ]
+    if (
+        not isinstance(names, list)
+        or len(names) != len(media)
+        or any(
+            not isinstance(name, str)
+            or not 1 <= len(name) <= 240
+            or any(ord(character) < 32 for character in name)
+            for name in names
+        )
+    ):
+        raise ValueError("media_names must contain one short filename for each image")
+    message = payload.get("message", "")
+    if media and isinstance(message, str) and not message.strip():
+        message = "Describe the attached image."
+    return media, names, ConversationController._text(message)
+
+
+def _media_size(item):
+    return len(item["data"]) // 4 * 3 - (
+        len(item["data"]) - len(item["data"].rstrip("="))
+    )
 
 
 class ConversationRuntime(AgentRuntime):
@@ -49,6 +108,14 @@ class ConversationRuntime(AgentRuntime):
             run_id, agent_id, config, schema_input_bound=schema_input_bound
         )
         task = self.store.agent(run_id, agent_id).task
+        current_media = next(
+            (
+                message.media
+                for message in reversed(self.store.messages(run_id, agent_id))
+                if message.role == "user" and message.content == task
+            ),
+            (),
+        )
         has_task = any(
             message.role == "user"
             and (message.content == task or message.content.startswith(task + "\n\n"))
@@ -57,7 +124,15 @@ class ConversationRuntime(AgentRuntime):
         limit = (
             config.max_context_tokens - config.max_output_tokens - schema_input_bound
         )
-        if has_task and conservative_input_tokens(projected) <= limit:
+        expected_media = {item["sha256"] for item in current_media}
+        projected_media = {
+            item["sha256"] for message in projected for item in message.media
+        }
+        if (
+            has_task
+            and expected_media <= projected_media
+            and conservative_input_tokens(projected) <= limit
+        ):
             return projected
         # The general runtime pins the first user message. A conversation has
         # genuine inherited roles before the new request, so pin this run's
@@ -73,7 +148,9 @@ class ConversationRuntime(AgentRuntime):
             if message.role == "user" and message.content.startswith(task + "\n\n"):
                 # The general runtime appends its current legal menu to the
                 # last user message; retain that menu without duplicating task.
-                message = ChatMessage("user", message.content[len(task) + 2 :])
+                message = ChatMessage(
+                    "user", message.content[len(task) + 2 :], message.media
+                )
             tail.append(message)
         menu = (
             self._native_state(run_id, agent_id, config)
@@ -82,7 +159,7 @@ class ConversationRuntime(AgentRuntime):
         )
         projected = [
             projected[0],
-            ChatMessage("user", task),
+            ChatMessage("user", task, current_media),
             marker,
             *tail,
             ChatMessage("user", menu),
@@ -134,6 +211,15 @@ class ConversationController:
                 kind TEXT NOT NULL, fingerprint TEXT NOT NULL
             );
         """)
+        columns = {
+            row["name"]
+            for row in self.db.execute("PRAGMA table_info(studio_chat_turns)")
+        }
+        for name in ("media", "media_names"):
+            if name not in columns:
+                self.db.execute(
+                    f"ALTER TABLE studio_chat_turns ADD COLUMN {name} TEXT NOT NULL DEFAULT '[]'"
+                )
         # There is no live controller after a process restart. Preserve pending
         # user messages and make the interruption visible instead of re-sending.
         self.db.execute(
@@ -292,9 +378,11 @@ class ConversationController:
             "message",
             "policy",
             "request_id",
+            "media",
+            "media_names",
         }:
             raise ValueError("unsupported conversation fields")
-        message = self._text(payload.get("message"))
+        media, names, message = _image_input(payload)
         policy = payload.get("policy", "review")
         if policy not in {"review", "read_only"}:
             raise ValueError("policy must be review or read_only")
@@ -316,7 +404,9 @@ class ConversationController:
                     now,
                 ),
             )
-            self._insert_turn(chat_id, turn_id, message, now)
+            self._insert_turn(
+                chat_id, turn_id, message, now, media=media, media_names=names
+            )
             self._remember(request_id, fingerprint, "create", chat_id, turn_id)
         self._launch(chat_id, turn_id)
         return self._response(chat_id, turn_id)
@@ -338,20 +428,43 @@ class ConversationController:
         if active + legacy_active >= 4:
             raise ValueError("Four conversations are active; wait or stop one")
 
-    def _insert_turn(self, chat_id, turn_id, message, now, status="loading"):
+    def _insert_turn(
+        self,
+        chat_id,
+        turn_id,
+        message,
+        now,
+        status="loading",
+        *,
+        media=(),
+        media_names=(),
+    ):
         self.db.execute(
             "INSERT INTO studio_chat_turns "
-            "(turn_id,chat_id,user,status,created) VALUES(?,?,?,?,?)",
-            (turn_id, chat_id, message, status, now),
+            "(turn_id,chat_id,user,status,created,media,media_names) VALUES(?,?,?,?,?,?,?)",
+            (
+                turn_id,
+                chat_id,
+                message,
+                status,
+                now,
+                json.dumps(self.service.store._store_media(media)),
+                json.dumps(media_names),
+            ),
         )
         self.db.execute(
             "UPDATE studio_chats SET updated=? WHERE chat_id=?", (now, chat_id)
         )
 
     async def message(self, chat_id, payload):
-        if not isinstance(payload, dict) or payload.keys() - {"message", "request_id"}:
+        if not isinstance(payload, dict) or payload.keys() - {
+            "message",
+            "request_id",
+            "media",
+            "media_names",
+        }:
             raise ValueError("unsupported message fields")
-        message = self._text(payload.get("message"))
+        media, names, message = _image_input(payload)
         chat = self._chat(chat_id)
         request_id, fingerprint, prior = self._request(
             payload, kind="message", chat_id=chat_id
@@ -386,6 +499,8 @@ class ConversationController:
                 message,
                 time.time(),
                 "queued" if active else "loading",
+                media=media,
+                media_names=names,
             )
             self._remember(request_id, fingerprint, "message", chat_id, turn_id)
         if active:
@@ -399,7 +514,12 @@ class ConversationController:
 
     def _user_messages(self, turn):
         messages = [
-            {"role": "user", "content": turn["user"], "created": turn["created"]}
+            {
+                "role": "user",
+                "content": turn["user"],
+                "created": turn["created"],
+                "media": self._media_metadata(turn),
+            }
         ]
         if turn["run_id"]:
             messages.extend(
@@ -413,6 +533,94 @@ class ConversationController:
                 )
             )
         return messages
+
+    def _turn_media(self, turn):
+        return self.service.store._load_media(json.loads(turn["media"]))
+
+    def _media_metadata(self, turn):
+        refs, names = json.loads(turn["media"]), json.loads(turn["media_names"])
+        result = []
+        for index, item in enumerate(refs):
+            row = self.db.execute(
+                "SELECT length(data) AS encoded_length,substr(data,-2) AS tail FROM media_blobs WHERE sha256=?",
+                (item["sha256"],),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("saved image is unavailable")
+            result.append(
+                dict(
+                    item,
+                    name=names[index]
+                    if index < len(names)
+                    else f"image-{index + 1}{IMAGE_MIMES[item['mime']]}",
+                    size=row["encoded_length"] // 4 * 3 - row["tail"].count("="),
+                    url=f"/api/chats/{turn['chat_id']}/media/{item['sha256']}",
+                )
+            )
+        return result
+
+    async def media(self, chat_id, sha256):
+        self._chat(chat_id)
+        if len(sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in sha256
+        ):
+            raise ValueError("invalid image fingerprint")
+        associated = any(
+            item["sha256"] == sha256
+            for row in self.db.execute(
+                "SELECT media FROM studio_chat_turns WHERE chat_id=?", (chat_id,)
+            )
+            for item in json.loads(row["media"])
+        )
+        if not associated:
+            raise ValueError("image is not part of this conversation")
+        row = self.db.execute(
+            "SELECT * FROM media_blobs WHERE sha256=?", (sha256,)
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("saved image is unavailable")
+        return {
+            "type": row["kind"],
+            "mime": row["mime"],
+            "sha256": sha256,
+            "data": row["data"],
+        }
+
+    def _require_image_backend(self):
+        def advertised(backend):
+            replicas = getattr(backend, "backends", None)
+            if isinstance(replicas, dict):
+                return bool(replicas) and all(
+                    advertised(replica) for replica in replicas.values()
+                )
+            # Resume manifests intentionally contain only stable identity
+            # fields. RemoteWorkerBackend caches the complete health response
+            # separately; LocalForgeBackend exposes it synchronously.
+            identity = getattr(backend, "identity", None)
+            if isinstance(identity, dict) and "supports_media" in identity:
+                return identity["supports_media"] is True
+            if getattr(backend, "supports_media", False) is True:
+                return True
+            health = getattr(backend, "health", None)
+            if callable(health) and not inspect.iscoroutinefunction(health):
+                result = health()
+                return isinstance(result, dict) and result.get("supports_media") is True
+            return False
+
+        supported = advertised(self.service.backend)
+        if not supported:
+            if self.service.demo:
+                raise ValueError(
+                    "This demo does not analyze images. Choose an image-capable model to describe attachments."
+                )
+            raise ValueError(
+                "The selected model does not support images. Choose an image-capable model and send a message to retry."
+            )
+        limit = getattr(self.service.backend, "max_model_length", None)
+        if type(limit) is not int or limit <= 0:
+            raise ValueError(
+                "Image inference requires a model with an advertised context limit"
+            )
 
     async def _ready(self):
         if self.service.backend_status == "ready":
@@ -435,7 +643,7 @@ class ConversationController:
                 or "The model failed to start. Send a message to retry."
             )
 
-    async def _history(self, chat_id, turn_id):
+    async def _history(self, chat_id, turn_id, *, current_media=()):
         rows = self.db.execute(
             "SELECT * FROM studio_chat_turns WHERE chat_id=? AND rowid < "
             "(SELECT rowid FROM studio_chat_turns WHERE turn_id=?) "
@@ -450,29 +658,49 @@ class ConversationController:
         budget = self.history_bytes
         selected = []
         truncated = len(rows) < total
+        media_seen = {item["sha256"] for item in current_media}
+        media_count = len(current_media)
+        media_bytes = sum(_media_size(item) for item in current_media)
         for row in rows:
-            group = [
-                (item["role"], item["content"]) for item in self._user_messages(row)
-            ]
+            attached = []
+            for item in self._turn_media(row):
+                if item["sha256"] in media_seen:
+                    continue
+                size = _media_size(item)
+                if (
+                    media_count >= MAX_MEDIA_ITEMS
+                    or media_bytes + size > MAX_TOTAL_MEDIA_BYTES
+                ):
+                    truncated = True
+                    continue
+                attached.append(item)
+                media_seen.add(item["sha256"])
+                media_count += 1
+                media_bytes += size
+            group = [ChatMessage("user", row["user"], tuple(attached))]
+            group.extend(
+                ChatMessage(item["role"], item["content"])
+                for item in self._user_messages(row)[1:]
+            )
             if row["run_id"]:
                 root = self.service.store.agent(row["run_id"], "root")
                 if root.result:
-                    group.append(("assistant", root.result))
+                    group.append(ChatMessage("assistant", root.result))
                 elif root.error:
                     group.append(
-                        (
+                        ChatMessage(
                             "assistant",
                             "[Previous reply did not complete: " + root.error + "]",
                         )
                     )
             elif row["error"]:
                 group.append(
-                    (
+                    ChatMessage(
                         "assistant",
                         "[Previous reply did not complete: " + row["error"] + "]",
                     )
                 )
-            size = sum(len(content.encode("utf-8")) + 32 for _, content in group)
+            size = sum(len(item.content.encode("utf-8")) + 32 for item in group)
             if size > budget:
                 truncated = True
                 # Retain an explicitly marked excerpt of the most recent turn
@@ -480,21 +708,22 @@ class ConversationController:
                 if not selected and budget >= 256:
                     excerpt = []
                     remaining = budget
-                    for role, content in group:
+                    for item in group:
                         allocation = max(
                             0, remaining // (len(group) - len(excerpt)) - 80
                         )
-                        text = content.encode("utf-8")[:allocation].decode(
+                        text = item.content.encode("utf-8")[:allocation].decode(
                             "utf-8", "ignore"
                         )
                         excerpt.append(
-                            (
-                                role,
+                            ChatMessage(
+                                item.role,
                                 text
                                 + "\n[Excerpt; full message remains in the conversation transcript.]",
+                                item.media,
                             )
                         )
-                        remaining -= len(excerpt[-1][1].encode("utf-8")) + 32
+                        remaining -= len(excerpt[-1].content.encode("utf-8")) + 32
                     selected.append(excerpt)
                 break
             selected.append(group)
@@ -503,9 +732,9 @@ class ConversationController:
         if truncated:
             history.insert(
                 0,
-                (
+                ChatMessage(
                     "user",
-                    "[Conversation history is bounded: older turns or long messages were omitted or excerpted. The full transcript remains saved in Studio; do not assume omitted facts.]",
+                    "[Conversation history is bounded: older turns, images, or long messages were omitted or excerpted. The full transcript remains saved in Studio; do not assume omitted facts.]",
                 ),
             )
         return history, truncated
@@ -520,12 +749,18 @@ class ConversationController:
                 if turn["status"] != "loading":
                     return
                 chat = self._chat(chat_id)
-                history, truncated = await self._history(chat_id, turn_id)
+                current_media = self._turn_media(turn)
+                history, truncated = await self._history(
+                    chat_id, turn_id, current_media=current_media
+                )
+                if current_media or any(message.media for message in history):
+                    self._require_image_backend()
                 result = await self.service.create_run(
                     {"task": turn["user"], "policy": chat["policy"]},
                     _history=history,
                     _configuration=RuntimeConfig(**json.loads(chat["configuration"])),
                     _conversation=True,
+                    _media=current_media,
                 )
                 run_id = result["run_id"]
                 self.db.execute(
@@ -663,6 +898,7 @@ class ConversationController:
                 "approvals": [],
                 "artifacts": [],
                 "messages": messages,
+                "media": self._media_metadata(row),
                 "context_truncated": bool(row["context_truncated"]),
             }
             if row["run_id"]:
@@ -681,6 +917,11 @@ class ConversationController:
                             "usage",
                         )
                     }
+                )
+                turn["context_truncated"] |= any(
+                    event["kind"]
+                    in {"context_projected", "conversation_context_projected"}
+                    for event in detail["events"]
                 )
             turns.append(turn)
             transcript.extend(
@@ -722,6 +963,8 @@ class ConversationController:
                     return await self.message(chat_id, payload)
                 if parts[3] == "cancel":
                     return await self.cancel(chat_id, payload)
+            if method == "GET" and len(parts) == 5 and parts[3] == "media":
+                return await self.media(chat_id, parts[4])
         raise ValueError("unknown conversation API route")
 
     async def close(self):
