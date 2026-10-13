@@ -44,6 +44,55 @@ The earlier native chat remains available through `tools/forge_chat.py`.
 | Inspect a tool or delegated agent | Expand its inline activity row |
 | Review a proposed change | Inspect the inline diff, then approve or decline |
 | Adjust permissions | Settings; technical configuration stays out of the composer |
+| Open developer tools | Workspace button, Cmd/Ctrl+Shift+D, or `/tasks`, `/files`, `/diff`, `/activity` |
+| Reference a source file | Files panel: search, open, then Insert @path |
+| Attach an image | Attach images, paste, or drop an image onto the composer |
+
+## Developer workspace
+
+The optional right panel has independent scrolling. On desktop it can stay open
+beside the chat; on smaller screens it becomes a dismissible drawer.
+
+- **Agents** shows assigned tasks, current tool operations, status, permissions,
+  results and errors. Select an agent to save direction for its next model step
+  or stop it. Stopping a child stops its subtree and lets the main agent handle
+  the outcome; stopping the main agent stops the response.
+- **Files** separates files created or edited by agents from the workspace
+  browser. Search and open bounded text files with line numbers and syntax
+  highlighting, copy paths, insert references, or download artifacts. A recorded
+  file version is distinguished from the current file on disk.
+- **Changes** shows exact proposed and applied diffs, their source agent and
+  approval state. Failed or unconfirmed actions are not labeled as applied.
+  Approval of an excerpt routes to the full review rather than silently granting
+  permission against an incomplete preview. Current Git changes appear separately
+  from agent receipts, including edits made outside the chat. Tracked files show
+  HEAD diffs; untracked files show their current content rather than a fake diff.
+- **Activity** shows tools, builds, tests and command output, with exit codes,
+  bounded output, failures and timeouts. Ask Forge to run a developer command
+  in chat. `run_command` executes an explicitly reviewed argv array, with no
+  implicit shell expansion; it does not provide an interactive terminal.
+
+Commands can run repository code and have the launcher's OS privileges. Review
+the exact command before approval. Their working directory is confined to the
+workspace, the inherited environment excludes credentials, and owned process
+groups are stopped on cancellation, timeout or output-limit exhaustion. This
+does not sandbox what the executable itself can access.
+
+## Image attachments
+
+PNG, JPEG, WebP and BMP images can be selected, pasted or dropped into a draft.
+Preview or remove each attachment before sending. An image-only message is
+supported. Up to eight images are accepted, with an 8 MiB per-image and 16 MiB
+combined limit. Images follow the configured inference workers; the default
+profile runs locally. They are not sent to an image-generation service.
+
+Accepted images are validated, hashed and stored once in private state. Sent
+thumbnails and full previews are authenticated and scoped to the conversation.
+Follow-ups and delegated agents receive bounded prior image context, keeping
+newer attachments when older ones exceed the limit. The default Qwen3.5 model
+supports image inference; incompatible model pools produce an explicit error.
+Draft image bytes stay in the current browser tab's memory until sent; text
+drafts continue to use session storage.
 
 Follow-ups retain prior user messages and assistant replies in the same chat.
 The model receives bounded conversation context, with the current request pinned
@@ -107,7 +156,8 @@ boundary. Trace export and artifact download retain their existing endpoints.
 ## State and limits
 
 Private state is in `.forge/studio/`, ignored by Git. It stores conversations,
-turns, the agent journal and run-specific text artifacts. Workspace tools cannot
+images, turns, the agent journal and run-specific text artifacts. File inspection
+and edit tools cannot
 read or overwrite this state, Git metadata or the existing private path classes.
 The server binds to loopback and uses exact Host/Origin checks, JSON-only
 mutations, an HttpOnly SameSite cookie and a restrictive content security policy.
@@ -117,7 +167,7 @@ MCP executables run with the launcher's OS privileges. Interrupted uncertain
 mutations and completion validators are not automatically replayed.
 
 Activity is updated from the durable journal at action boundaries. Token-by-token
-answer streaming, Studio media upload, remote MCP transports, OS/container
+answer streaming, Studio video upload, remote MCP transports, OS/container
 isolation, computer-use tools, scheduled jobs and multiple human accounts remain
 outside this release. Text/image/video model execution remains available in the
 engine and earlier chat/CLI APIs.
@@ -133,3 +183,5 @@ UI uses conversations. The [design](harness-design.md) documents the current
 interaction model and the underlying runtime boundaries.
 The [conversation validation report](../benchmarks/results/forge-studio-conversation-2026-10-11/)
 records the real-model three-turn check and browser interaction scope.
+The [developer workspace report](../benchmarks/results/forge-studio-developer-2026-10-12/)
+records image context, command execution, agent controls and panel validation.

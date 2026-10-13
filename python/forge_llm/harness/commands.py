@@ -83,7 +83,12 @@ class CommandTools:
             or ".." in Path(relative).parts
         ):
             raise ToolValidationError("command cwd must be workspace-relative")
-        cwd = (self.workspace / relative).resolve(strict=True)
+        try:
+            cwd = (self.workspace / relative).resolve(strict=True)
+        except OSError as exc:
+            raise ToolValidationError(
+                "command cwd must be an existing workspace directory"
+            ) from exc
         if not cwd.is_dir() or not cwd.is_relative_to(self.workspace):
             raise ToolValidationError("command cwd must stay inside the workspace")
         timeout = args.get("timeout_seconds", 60)

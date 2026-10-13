@@ -19,6 +19,11 @@ work. Accepted messages are durable before model startup. Request IDs prevent
 an uncertain browser retry from creating duplicate work. Follow-ups preserve
 conversation roles and context rather than asking the user to branch a mission.
 A collapsed Chats rail supplies history and a New chat action.
+An optional Workspace panel exposes assigned agent scopes/current operations,
+created and current files, exact change receipts and command output. It can be
+opened beside chat and hidden without changing the conversation workflow.
+Image attachments are validated and stored privately; model history and child
+delegation carry their actual bytes within per-request limits.
 
 ## Components and boundaries
 
@@ -28,6 +33,8 @@ A collapsed Chats rail supplies history and a New chat action.
 | `agents.AgentStore` | Existing durable SQLite journal, input snapshots, idempotent effects and token reservations |
 | `harness.service` | Operator sessions, lineage, backend lifecycle, per-run tools and live snapshots |
 | `harness.conversation` | Durable chats, ordered turns, prompt acceptance, startup queuing and conversation context |
+| `harness.developer` | Confined file views, agent controls, actual change/command receipts and read-only Git inspection |
+| `harness.commands` | Reviewed argv commands, bounded output and owned process-group cancellation |
 | `harness.policy` | Exact-invocation approval, expiry, cancellation, read-only mode and lifecycle hooks |
 | `harness.extensions` | Selected local skills and explicitly configured MCP processes |
 | `harness.server` | Loopback HTTP, authenticated mutations, static UI and trace export |
@@ -72,8 +79,9 @@ tool set. Uncertain side effects are not automatically replayed after a crash.
 The server binds only to loopback. A randomly generated browser bootstrap token
 is exchanged for an HttpOnly SameSite cookie; the UI removes the token fragment.
 Mutations require JSON, the expected Host, and a same-origin Origin if supplied.
-There are no arbitrary model-generated shell commands or automatic plugin
-installation. MCP commands come from an operator-selected local configuration.
+There is no automatic shell expansion or plugin installation. Model-proposed
+commands require approval of their exact argv, cwd and timeout; executables run
+with the operator's OS privileges. MCP commands come from an operator-selected local configuration.
 MCP tool annotations are descriptive, never an authority to bypass review.
 
 ## Extensibility and evidence

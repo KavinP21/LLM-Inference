@@ -11,6 +11,7 @@
     policy: "review", drafts: new Map(), turns: new Map(), busyApprovals: new Set(),
     requests: new Map(), sendError: "", signatures: new WeakMap(), commandIndex: 0,
     draftStorage: null, acknowledged: new Map(), policyTouched: false,
+    git: { status: null, loading: false, updated: 0, selected: null, diff: null, diffLoading: false, diffVersion: 0 },
     mediaDrafts: new Map(), imageCache: new Map(), imageRequests: new Map(), inFlightMedia: new Set(),
     dev: { open: false, tab: "agents", data: null, error: "", loading: false, loadingRequest: false, version: 0,
       refreshAgain: false, selectedAgent: null, agentScope: "latest", messageBusy: false, agentDrafts: new Map(),
@@ -537,7 +538,7 @@
       loadDrafts(overview.workspace);
       if (selected === state.selected && detail) { state.detail = acceptDetail(detail); state.loading = false; }
       setConnection();
-      renderOverview(); renderTranscript(); renderSettings(); refreshDeveloper();
+      renderOverview(); renderTranscript(); renderSettings(); refreshDeveloper(); refreshGitChanges();
     } catch (error) { setConnection(error.message || "Could not reach the local server."); }
     finally {
       state.refreshing = false;
@@ -845,6 +846,7 @@
     if (open) {
       refreshDeveloper();
       if (state.dev.tab === "files" && !state.dev.filesLoaded) loadWorkspaceFiles();
+      if (state.dev.tab === "changes") refreshGitChanges();
       if (matchMedia("(max-width:1100px)").matches) $(`dev-tab-${state.dev.tab}`).focus({ preventScroll: true });
     } else if ($("developer-pane").contains(document.activeElement)) $("toggle-developer").focus({ preventScroll: true });
     resizeComposer();
@@ -853,6 +855,7 @@
     state.dev.tab = tab;
     renderDeveloper(); persistDeveloper();
     if (tab === "files" && !state.dev.filesLoaded) loadWorkspaceFiles();
+    if (tab === "changes") refreshGitChanges();
   }
   function emptyDeveloper(title, body = "") { return `<div class="developer-empty">${escape(title)}${body ? `<p>${escape(body)}</p>` : ""}</div>`; }
   function developerAgentName(agent) { return agent.agent_id === "root" ? "Main agent" : agent.role || "Agent"; }
@@ -944,7 +947,7 @@
     if (!file) { patch($("dev-file-viewer"), ""); return; }
     const lines = String(file.content || "").replace(/\r\n?/g, "\n").split("\n");
     if (lines.at(-1) === "" && lines.length > 1) lines.pop();
-    patch($("dev-file-viewer"), `<div class="developer-detail"><div class="file-viewer-heading"><h3>${escape(file.path)}</h3><button type="button" class="icon-button" data-close-file aria-label="Close file">×</button></div><p class="file-viewer-meta">${escape(file.language || "text")} · ${typeof file.total_lines === "number" ? file.total_lines : lines.length} lines${file.origin === "artifact" ? " · agent artifact" : ""}</p><div class="file-viewer-actions"><button type="button" class="text-button" data-file-action="copy-path">Copy path</button><button type="button" class="text-button" data-file-action="mention">Insert @path</button><button type="button" class="text-button" data-file-action="download">Download</button><button type="button" class="text-button" data-file-action="reload">Reload</button></div><div class="code-viewer" aria-label="${escape(file.path)} source">${lines.map((line, index) => `<div class="code-line"><span class="code-line-number" aria-hidden="true">${index + 1}</span><code>${syntaxLine(line, file.language)}</code></div>`).join("")}</div>${file.truncated ? '<p class="developer-footnote">The preview is truncated.</p>' : ""}</div>`);
+    patch($("dev-file-viewer"), `<div class="developer-detail"><div class="file-viewer-heading"><h3>${escape(file.path)}</h3><button type="button" class="icon-button" data-close-file aria-label="Close file">×</button></div><p class="file-viewer-meta">${escape(file.language || "text")} · ${typeof file.total_lines === "number" ? file.total_lines : lines.length} lines${file.origin === "artifact" ? " · agent artifact" : ""}</p><div class="file-viewer-actions"><button type="button" class="text-button" data-file-action="copy-path">Copy path</button><button type="button" class="text-button" data-file-action="${file.origin === "artifact" ? "report" : "mention"}">${file.origin === "artifact" ? "Add report to prompt" : "Insert @path"}</button><button type="button" class="text-button" data-file-action="download">Download</button><button type="button" class="text-button" data-file-action="reload">Reload</button></div><div class="code-viewer" aria-label="${escape(file.path)} source">${lines.map((line, index) => `<div class="code-line"><span class="code-line-number" aria-hidden="true">${index + 1}</span><code>${syntaxLine(line, file.language)}</code></div>`).join("")}</div>${file.truncated ? '<p class="developer-footnote">The preview is truncated.</p>' : ""}</div>`);
   }
   async function loadWorkspaceFiles() {
     const version = ++state.dev.filesVersion;
@@ -973,6 +976,22 @@
     } catch (error) { if (version === state.dev.fileVersion) { state.dev.file = null; toast(error.message, true, 5500); } }
     finally { if (version === state.dev.fileVersion) { state.dev.fileLoading = false; renderDeveloperFiles(); } }
   }
+  function quotedReport(file, budget) {
+    const content = String(file.content || "").replace(/\r\n?/g, "\n");
+    const heading = `\n\n[Agent report excerpt: ${JSON.stringify(file.path)}]\n`;
+    const fullEnd = "\n[End of report excerpt; complete file.]\n";
+    const excerptEnd = "\n[Report excerpt truncated. Open or download the artifact for the complete file.]\n";
+    const format = (length) => heading + content.slice(0, length).split("\n").map((line) => `> ${line}`).join("\n") + (length < content.length ? excerptEnd : fullEnd);
+    if (content.length <= 4000 && format(content.length).length <= budget) return format(content.length);
+    let low = 0; let high = Math.min(4000, Math.max(0, content.length - 1)); let best = "";
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const text = format(middle);
+      if (text.length <= budget) { best = text; low = middle + 1; }
+      else high = middle - 1;
+    }
+    return best;
+  }
   function languageFromPath(path) {
     return ({ py: "python", js: "javascript", ts: "typescript", jsx: "javascript", tsx: "typescript", json: "json", sh: "bash", cpp: "cpp", cc: "cpp", h: "c", c: "c", rs: "rust", go: "go", java: "java", css: "css", html: "html", md: "markdown", yml: "yaml", yaml: "yaml" })[String(path).split(".").at(-1)] || "text";
   }
@@ -987,7 +1006,71 @@
     patch($("dev-change-list"), changes.length ? changes.map((change, index) => `<button type="button" class="change-row${changeKey(change, index) === state.dev.selectedChange ? " selected" : ""}" data-dev-change="${escape(changeKey(change, index))}"><span class="change-path">${escape(change.path || "File change")}</span><span class="change-state ${["proposed", "executed", "denied", "failed"].includes(change.status) ? change.status : ""}">${escape(({ proposed: "Proposed", executed: "Applied", denied: "Declined", failed: "Failed" })[change.status] || change.status || "Recorded")}</span></button>`).join("") : emptyDeveloper("No recorded changes", "Proposed and applied file diffs appear here as agents work."));
     const change = changes.find((entry, index) => changeKey(entry, index) === state.dev.selectedChange);
     patch($("dev-change-viewer"), change ? `<div class="change-viewer"><div class="diff-path">${escape(change.path || "File changes")}</div><div class="change-viewer-meta">${escape(({ proposed: "Proposed action — review before applying", executed: "Recorded applied change", denied: "This action was declined", failed: "This action failed" })[change.status] || "Recorded change")}${change.current_matches_receipt === false ? " · current file differs from this receipt" : ""}</div><pre class="diff">${change.diff == null ? escape("No textual diff was saved with this receipt.") : diffMarkup(change.diff)}</pre>${change.diff_truncated ? `<p class="developer-footnote diff-excerpt">Showing a diff excerpt.${change.status === "proposed" && change.approval_id ? ` <button type="button" class="text-button" data-review-approval="${escape(change.approval_id)}">Review full change in chat</button>` : ""}</p>` : ""}${change.status === "proposed" && !change.diff_truncated && change.approval_id && state.detail?.turns?.some((turn) => turn.approvals?.some((approval) => approval.id === change.approval_id && approval.status === "pending")) ? `<div class="change-review-actions"><button type="button" class="button" data-approval="${escape(change.approval_id)}" data-approved="false"${state.busyApprovals.has(change.approval_id) ? " disabled" : ""}>Decline</button><button type="button" class="button button-primary" data-approval="${escape(change.approval_id)}" data-approved="true"${state.busyApprovals.has(change.approval_id) ? " disabled" : ""}>Approve</button></div>` : ""}</div>` : "");
+    renderGitChanges();
   }
+  function gitFileStatus(file) {
+    if (file.index === "?" && file.workspace === "?") return "Untracked";
+    const codes = [file.index, file.workspace];
+    const label = codes.includes("U") ? "Conflict" : codes.includes("D") ? "Deleted" : codes.includes("A") ? "Added" : codes.includes("R") ? "Renamed" : "Modified";
+    const staged = file.index !== " " && file.index !== "?";
+    return label + (staged ? " · staged" : "");
+  }
+  function renderGitChanges() {
+    $("git-changes-section").hidden = state.git.status?.available === false;
+    if (state.git.status?.available === false) return;
+    const files = state.git.status?.files || [];
+    patch($("git-change-list"), state.git.loading && !state.git.status ? '<p class="developer-footnote">Checking the working tree…</p>' : files.length ? files.map((file) => `<button type="button" class="change-row${file.path === state.git.selected ? " selected" : ""}" data-git-file="${escape(file.path)}"><span class="change-path">${escape(file.path)}</span><span class="change-state">${escape(gitFileStatus(file))}</span></button>`).join("") + (state.git.status.truncated ? '<p class="developer-footnote">The Git status listing is truncated.</p>' : "") : '<p class="developer-footnote">No current Git changes.</p>');
+    const diff = state.git.diff;
+    if (state.git.diffLoading && (!diff || diff.path !== state.git.selected)) { patch($("git-change-viewer"), '<p class="developer-footnote">Loading current file changes…</p>'); return; }
+    if (!diff) { patch($("git-change-viewer"), ""); return; }
+    let content;
+    if (diff.error) content = `<p class="git-preview-note">${escape(diff.error)}</p>`;
+    else if (diff.directory) content = '<p class="git-preview-note">Untracked directory. Browse its files to inspect their contents.</p>';
+    else if (diff.untracked) {
+      const lines = String(diff.content || "").replace(/\r\n?/g, "\n").split("\n");
+      if (lines.at(-1) === "" && lines.length > 1) lines.pop();
+      content = `<p class="git-preview-note">Untracked file preview · no HEAD comparison exists.</p><div class="code-viewer">${lines.map((line, index) => `<div class="code-line"><span class="code-line-number" aria-hidden="true">${index + 1}</span><code>${syntaxLine(line, diff.language || languageFromPath(diff.path))}</code></div>`).join("")}</div>`;
+    } else content = diff.available ? `<pre class="diff">${diff.diff ? diffMarkup(diff.diff) : '<span class="diff-line">No textual diff from HEAD.</span>'}</pre>${diff.truncated ? '<p class="git-preview-note">Showing a Git diff excerpt.</p>' : ""}` : '<p class="git-preview-note">A HEAD comparison is unavailable for this file.</p>';
+    const viewer = $("git-change-viewer");
+    const priorScroll = viewer.dataset.gitPath === diff.path ? viewer.querySelector(".diff,.code-viewer") : null;
+    const scroll = priorScroll ? [priorScroll.scrollTop, priorScroll.scrollLeft] : null;
+    patch(viewer, `<div class="change-viewer"><div class="diff-path">${escape(diff.path)}</div><div class="change-viewer-meta">${diff.untracked || diff.directory ? "Current untracked contents" : "Current working tree compared with HEAD"} · not agent attribution</div>${content}${diff.untracked || diff.directory ? `<div class="git-preview-actions"><button type="button" class="text-button" data-git-open="${escape(diff.path)}">${diff.directory ? "Browse files" : "Open in Files"}</button></div>` : ""}</div>`);
+    viewer.dataset.gitPath = diff.path;
+    const nextScroll = viewer.querySelector(".diff,.code-viewer");
+    if (scroll && nextScroll) { nextScroll.scrollTop = scroll[0]; nextScroll.scrollLeft = scroll[1]; }
+  }
+  async function refreshGitChanges(force = false) {
+    if (!state.dev.open || state.dev.tab !== "changes" || state.git.loading || (!force && Date.now() - state.git.updated < 2000)) return;
+    state.git.loading = true;
+    $("refresh-git").disabled = true;
+    renderGitChanges();
+    try {
+      state.git.status = await api("/api/workspace/git");
+      state.git.updated = Date.now();
+      const selected = state.git.status.files?.find((file) => file.path === state.git.selected);
+      if (selected) loadGitFile(selected);
+      else { state.git.selected = null; state.git.diff = null; state.git.diffVersion++; state.git.diffLoading = false; }
+    } catch {
+      // Missing Git and transient inspection failures leave a quiet optional section.
+      if (!state.git.status) state.git.status = { available: false, files: [] };
+      state.git.updated = Date.now();
+    } finally { state.git.loading = false; $("refresh-git").disabled = false; renderGitChanges(); }
+  }
+  async function loadGitFile(file) {
+    if (state.git.selected === file.path && state.git.diffLoading) return;
+    state.git.selected = file.path;
+    const version = ++state.git.diffVersion;
+    state.git.diffLoading = true;
+    renderGitChanges();
+    const untracked = file.index === "?" && file.workspace === "?";
+    try {
+      const result = untracked && file.path.endsWith("/") ? { path: file.path, directory: true } : await api(untracked ? `/api/workspace/file/${encodeURIComponent(file.path)}` : `/api/workspace/diff/${encodeURIComponent(file.path)}`);
+      if (version !== state.git.diffVersion) return;
+      state.git.diff = { ...result, path: file.path, untracked };
+    } catch (error) { if (version === state.git.diffVersion) state.git.diff = { path: file.path, untracked, error: error.message }; }
+    finally { if (version === state.git.diffVersion) { state.git.diffLoading = false; renderGitChanges(); } }
+  }
+
   function activityRecords() {
     const commands = (state.dev.data?.commands || []).map((command, index) => ({ ...command, key: command.id || `${command.run_id}:${command.agent_id}:${command.created}:${index}`, category: "commands", name: command.tool || command.name, result: command.output }));
     const tools = (state.detail?.turns || []).flatMap((turn) => (turn.events || []).filter((event) => event.kind === "tool_result" && !["run_tests", "run_command", "journal_read"].includes(event.payload?.name)).map((event) => ({
@@ -1215,6 +1298,7 @@
     renderDeveloperFiles();
     fileSearchTimer = setTimeout(loadWorkspaceFiles, 220);
   });
+  $("refresh-git").addEventListener("click", () => refreshGitChanges(true));
   $("reload-files").addEventListener("click", () => { loadWorkspaceFiles(); refreshDeveloper(); });
   $("dev-agent-message").addEventListener("submit", (event) => { event.preventDefault(); messageAgent(); });
   $("agent-direction").addEventListener("input", () => {
@@ -1263,6 +1347,15 @@
     }
     const agent = event.target.closest("[data-dev-agent]");
     if (agent) { setSelectedDeveloperAgent(agent.dataset.devAgent); renderDeveloperAgents(); return; }
+    const gitFile = event.target.closest("[data-git-file]");
+    if (gitFile) { const file = state.git.status?.files?.find((entry) => entry.path === gitFile.dataset.gitFile); if (file) loadGitFile(file); return; }
+    const gitOpen = event.target.closest("[data-git-open]");
+    if (gitOpen) {
+      selectDevTab("files");
+      if (gitOpen.dataset.gitOpen.endsWith("/")) { state.dev.fileQuery = gitOpen.dataset.gitOpen; $("dev-file-query").value = state.dev.fileQuery; loadWorkspaceFiles(); }
+      else openFile({ path: gitOpen.dataset.gitOpen, origin: "workspace" });
+      return;
+    }
     const change = event.target.closest("[data-dev-change]");
     if (change) { state.dev.selectedChange = change.dataset.devChange; renderDeveloperChanges(); return; }
     const activity = event.target.closest("[data-dev-activity]");
@@ -1278,9 +1371,11 @@
     if (!fileAction || !state.dev.file) return;
     const opened = state.dev.file;
     if (fileAction.dataset.fileAction === "copy-path") copy(opened.path, fileAction);
-    else if (fileAction.dataset.fileAction === "mention") {
+    else if (["mention", "report"].includes(fileAction.dataset.fileAction)) {
       const input = $("message");
-      const reference = /\s/.test(opened.path) ? `@${JSON.stringify(opened.path)} ` : `@${opened.path} `;
+      const budget = input.maxLength - input.value.length + input.selectionEnd - input.selectionStart;
+      const reference = opened.origin === "artifact" ? quotedReport(opened, budget) : /\s/.test(opened.path) ? `@${JSON.stringify(opened.path)} ` : `@${opened.path} `;
+      if (!reference || reference.length > budget) { toast("Make room in your message before adding this file reference.", true); return; }
       input.setRangeText(reference, input.selectionStart, input.selectionEnd, "end");
       saveDraft(); renderComposer();
       if (matchMedia("(max-width:1100px)").matches) toggleDeveloper(false);

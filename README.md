@@ -16,7 +16,9 @@ Launch `.venv/bin/python tools/forge_studio.py` (or double-click
 `Forge Studio.command` on macOS), type a prompt, and press Enter. Studio starts
 the model automatically and keeps follow-ups in the same chat. Tool activity,
 bounded sub-agents and change approvals appear inline, with skills, hooks,
-stdio MCP, recovery and trace export available underneath.
+stdio MCP, recovery and trace export available underneath. A toggleable developer
+panel exposes agent tasks, files, diffs and command output. Image selection,
+clipboard paste and drag-and-drop feed the default Qwen3.5 vision model.
 Studio shares the existing inference workers and keeps its state in `.forge/`.
 The [Studio guide](docs/forge-studio.md) covers setup, controls and limitations;
 `--demo` exercises orchestration without model inference.
