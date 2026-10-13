@@ -53,6 +53,10 @@ The earlier native chat remains available through `tools/forge_chat.py`.
 The optional right panel has independent scrolling. On desktop it can stay open
 beside the chat; on smaller screens it becomes a dismissible drawer.
 
+![Developer workspace with created files and image attachment](images/forge-studio-developer.jpg)
+
+Actual HTTP-backed browser QA in the explicitly labeled deterministic mode.
+
 - **Agents** shows assigned tasks, current tool operations, status, permissions,
   results and errors. Select an agent to save direction for its next model step
   or stop it. Stopping a child stops its subtree and lets the main agent handle

@@ -206,6 +206,19 @@ class ApprovalGate:
             raise ToolValidationError("approval run is no longer active")
         if run["deadline"] <= time.time() or agent.status in TERMINAL:
             raise ToolValidationError("approval agent is no longer active")
+        ancestors = {agent.agent_id}
+        while agent.parent_id is not None:
+            agent = self.store.agent(actor[0], agent.parent_id)
+            if agent.status in {"failed", "cancelled"}:
+                raise ToolValidationError("approval parent agent is no longer active")
+            ancestors.add(agent.agent_id)
+        if any(
+            event["payload"].get("agent_id") in ancestors
+            for event in self.store.events(actor[0], kinds=("agent_cancel_requested",))
+        ):
+            # Stop requests precede the scheduler's task cleanup. Refuse a
+            # racing approval immediately, before it could start a mutation.
+            raise ToolValidationError("approval agent has a pending cancellation")
 
     def _check(self, row: Any, waiting: _Waiting) -> None:
         if (
