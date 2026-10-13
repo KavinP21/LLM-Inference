@@ -599,14 +599,32 @@ class AgentStore:
                 ),
             )
             self.add_message(run_id, agent_id, "system", system)
-            inherited_media = next(
-                (
-                    message.media
-                    for message in self.messages(run_id, parent_id)
-                    if message.role == "user" and message.media
-                ),
-                (),
-            )
+            # Conversations contain media on several prior user turns. Retain
+            # the newest distinct attachments first, rather than choosing only
+            # the first (and potentially obsolete) image-bearing message.
+            from .media import MAX_MEDIA_ITEMS, MAX_TOTAL_MEDIA_BYTES
+
+            inherited_media, fingerprints, media_bytes = [], set(), 0
+            media_omitted = False
+            for message in reversed(self.messages(run_id, parent_id)):
+                if message.role != "user":
+                    continue
+                for item in reversed(message.media):
+                    if item["sha256"] in fingerprints:
+                        continue
+                    size = len(item["data"]) // 4 * 3 - (
+                        len(item["data"]) - len(item["data"].rstrip("="))
+                    )
+                    if (
+                        len(inherited_media) >= MAX_MEDIA_ITEMS
+                        or media_bytes + size > MAX_TOTAL_MEDIA_BYTES
+                    ):
+                        media_omitted = True
+                        continue
+                    inherited_media.append(item)
+                    fingerprints.add(item["sha256"])
+                    media_bytes += size
+            inherited_media.reverse()
             self.add_message(
                 run_id,
                 agent_id,
@@ -615,6 +633,16 @@ class AgentStore:
                 + f"\nParent: {parent_id}\nAssigned role: {role}\nYOUR ASSIGNED SCOPE: {task}",
                 media=inherited_media,
             )
+            if inherited_media or media_omitted:
+                self.event(
+                    run_id,
+                    agent_id,
+                    "media_inherited",
+                    {
+                        "items": len(inherited_media),
+                        "older_items_omitted": media_omitted,
+                    },
+                )
             if tools is not None:
                 self.update_agent(run_id, agent_id, tools=tools)
             self.record_effect(key, {"agent_id": agent_id})

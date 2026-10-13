@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ..agents.media import MAX_MEDIA_REQUEST_BYTES
+
 WEB_ROOT = Path(__file__).with_name("web")
 MAX_BODY = 128_000
 
@@ -45,7 +47,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         )
         for key, value in headers:
             self.send_header(key, value)
@@ -78,7 +80,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         except Exception:
             return False
 
-    def _body(self):
+    def _body(self, *, limit=MAX_BODY):
         if (
             self.headers.get("Content-Type", "").split(";")[0].strip()
             != "application/json"
@@ -87,8 +89,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         if self.headers.get("Transfer-Encoding"):
             raise ValueError("chunked requests are not supported")
         size = int(self.headers.get("Content-Length", "0"))
-        if not 1 <= size <= MAX_BODY:
-            raise ValueError("request body must contain 1 to 128000 bytes")
+        if not 1 <= size <= limit:
+            raise ValueError(f"request body must contain 1 to {limit} bytes")
         self.connection.settimeout(5)
         data = self.rfile.read(size)
         if len(data) != size:
@@ -144,8 +146,17 @@ class StudioHandler(BaseHTTPRequestHandler):
         if not self._origin_ok():
             return self._json(403, {"error": "unexpected origin or host"})
         path = urlsplit(self.path).path
+        # Authorize before reading potentially large image uploads. Auth itself
+        # stays on the small-body limit and uses its existing bootstrap check.
+        if path != "/api/auth" and not self._authenticated():
+            self.close_connection = True
+            return self._json(401, {"error": "browser is not authorized"})
+        parts = path.strip("/").split("/")
+        image_send = path == "/api/chats" or (
+            len(parts) == 4 and parts[:2] == ["api", "chats"] and parts[3] == "message"
+        )
         try:
-            body = self._body()
+            body = self._body(limit=MAX_MEDIA_REQUEST_BYTES if image_send else MAX_BODY)
         except (ValueError, TypeError, OSError, RecursionError) as exc:
             return self._json(400, {"error": str(exc)})
         if path == "/api/auth":
@@ -167,8 +178,6 @@ class StudioHandler(BaseHTTPRequestHandler):
                     )
                 ],
             )
-        if not self._authenticated():
-            return self._json(401, {"error": "browser is not authorized"})
         self._dispatch("POST", path, body)
 
     def _dispatch(self, method, path, body):

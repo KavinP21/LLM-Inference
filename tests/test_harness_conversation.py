@@ -509,6 +509,46 @@ def test_legacy_followup_adopts_current_defaults_without_rewriting_historical_bu
     asyncio.run(check())
 
 
+def test_new_private_configuration_raises_tool_timeout_without_rewriting_older_run(
+    tmp_path,
+):
+    async def check():
+        service = make_service(tmp_path, backend=ChatBackend())
+        try:
+            chat = (await service.conversations.create({"message": "First"}))["chat_id"]
+            detail = await settle(service, chat)
+            original_id = detail["turns"][0]["run_id"]
+            row = service.store.connection.execute(
+                "SELECT configuration FROM studio_chats WHERE chat_id=?", (chat,)
+            ).fetchone()
+            config = json.loads(row[0])
+            config["tool_timeout_seconds"] = 390
+            service.store.connection.execute(
+                "UPDATE studio_chats SET configuration=? WHERE chat_id=?",
+                (json.dumps(config), chat),
+            )
+            original_config = service.store.run(original_id)["config"]
+            await service.conversations.message(chat, {"message": "Next"})
+            detail = await settle(service, chat)
+            assert (
+                service.store.run(detail["turns"][-1]["run_id"])["config"][
+                    "tool_timeout_seconds"
+                ]
+                == 450
+            )
+            assert service.store.run(original_id)["config"] == original_config
+            assert (
+                service.store.run(detail["turns"][-1]["run_id"])["config"][
+                    "max_total_tokens"
+                ]
+                == config["max_total_tokens"]
+            )
+        finally:
+            await service.close()
+
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize(
     "payload",
     [

@@ -8,16 +8,18 @@ import json
 import os
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
 from ..agents.cli import create_pool, worker_identities
 from ..agents.profiles import CompletionProfile
+from ..agents.protocol import ChatMessage
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
+from .commands import CommandTools
 from .conversation import ConversationController, ConversationRuntime
 from .demo import DemoBackend
 from .extensions import MCPStdioClient
@@ -193,6 +195,12 @@ class StudioService:
         schemas = {k: tools.schemas[k] for k in mapping}
         safe = set(tools.replay_safe_tools)
         mutations = set(MUTATING)
+        if review:
+            commands = CommandTools(self.workspace)
+            mapping.update(commands.mapping())
+            descriptions.update(commands.tool_descriptions())
+            schemas.update(commands.schemas)
+            mutations.add("run_command")
         if self.skills:
             mapping.update(self.skills.mapping())
             descriptions.update(self.skills.tool_descriptions())
@@ -250,7 +258,7 @@ class StudioService:
                 raise ValueError(f"{key} must be between {low} and {high}")
             runtime_options[key] = value
         runtime_options["tool_timeout_seconds"] = max(
-            390, runtime_options.get("tool_timeout_seconds", 390)
+            450, runtime_options.get("tool_timeout_seconds", 450)
         )
         if self.config.get("acceptance", {}).get("tests"):
             runtime_options["completion_timeout_seconds"] = max(
@@ -263,9 +271,10 @@ class StudioService:
         payload: dict,
         *,
         parent_id: str | None = None,
-        _history: list[tuple[str, str]] | None = None,
+        _history: list[ChatMessage] | None = None,
         _configuration: RuntimeConfig | None = None,
         _conversation: bool = False,
+        _media=(),
     ) -> dict:
         if self.closing or self.backend_status != "ready":
             raise ValueError("Start the model before creating a mission")
@@ -285,6 +294,10 @@ class StudioService:
         if policy not in {"read_only", "review"}:
             raise ValueError("policy must be read_only or review")
         config = _configuration or self._configuration(payload)
+        if config.tool_timeout_seconds < 450:
+            # New turns need room for review (300s), command execution (120s),
+            # and hooks/preview. Historical run recovery keeps its own config.
+            config = replace(config, tool_timeout_seconds=450)
         skill = payload.get("skill")
         skill_body = ""
         if skill:
@@ -340,6 +353,7 @@ class StudioService:
             runtime._system_prompt(config, task=augmented),
             tools=sorted({*runtime.tools, "journal_read"}),
             completion_required=runtime.completion_validator is not None,
+            media=_media,
         )
         if _history:
             # Install real chat roles before the new request. The conversation
@@ -349,9 +363,15 @@ class StudioService:
                     "DELETE FROM messages WHERE run_id=? AND agent_id='root' AND role='user'",
                     (run_id,),
                 )
-                for role, content in _history:
-                    self.store.add_message(run_id, "root", role, content)
-                self.store.add_message(run_id, "root", "user", augmented)
+                for message in _history:
+                    self.store.add_message(
+                        run_id,
+                        "root",
+                        message.role,
+                        message.content,
+                        media=message.media,
+                    )
+                self.store.add_message(run_id, "root", "user", augmented, media=_media)
         self.store.event(
             run_id,
             "root",
@@ -575,6 +595,13 @@ class StudioService:
         }
 
     async def dispatch(self, method: str, path: str, payload: dict) -> dict:
+        # Import lazily: DeveloperWorkspace composes Studio's confined tools.
+        from .developer import DeveloperWorkspace
+
+        if DeveloperWorkspace.handles(method, path):
+            if not hasattr(self, "developer"):
+                self.developer = DeveloperWorkspace(self)
+            return await self.developer.dispatch(method, path, payload)
         parts = path.strip("/").split("/")
         if parts[:2] == ["api", "chats"]:
             return await self.conversations.dispatch(method, parts, payload)

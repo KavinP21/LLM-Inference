@@ -9,8 +9,13 @@
     overview: null, detail: null, selected: null, loading: false, refreshing: false,
     sending: false, cancelling: false, connected: false, sidebar: false,
     policy: "review", drafts: new Map(), turns: new Map(), busyApprovals: new Set(),
-    request: null, sendError: "", signatures: new WeakMap(), commandIndex: 0,
+    requests: new Map(), sendError: "", signatures: new WeakMap(), commandIndex: 0,
     draftStorage: null, acknowledged: new Map(), policyTouched: false,
+    mediaDrafts: new Map(), imageCache: new Map(), imageRequests: new Map(), inFlightMedia: new Set(),
+    dev: { open: false, tab: "agents", data: null, error: "", loading: false, loadingRequest: false, version: 0,
+      refreshAgain: false, selectedAgent: null, agentScope: "latest", messageBusy: false, agentDrafts: new Map(),
+      files: [], filesLoaded: false, filesLoading: false, filesError: "", fileQuery: "", filesVersion: 0, filesTruncated: false,
+      selectedFile: null, file: null, fileLoading: false, fileVersion: 0, selectedChange: null, selectedActivity: null, activityFilter: "all" },
   };
   let pollTimer;
   let toastTimer;
@@ -182,12 +187,23 @@
     }
     catch { /* A full or disabled session store must never prevent sending. */ }
   }
+  function persistPendingRequests() {
+    if (!state.draftStorage) return;
+    try { sessionStorage.setItem(`${state.draftStorage}:requests`, JSON.stringify(Array.from(state.requests).slice(-60))); }
+    catch { /* The in-memory nonce still protects retries in this page. */ }
+  }
   function loadDrafts(workspace) {
     if (state.draftStorage) return;
     state.draftStorage = `forge:drafts:${typeof workspace === "string" ? workspace : workspace?.path || workspace?.root || "workspace"}`;
     try {
       const policy = sessionStorage.getItem(`${state.draftStorage}:policy`);
       if (!state.policyTouched && ["review", "read_only"].includes(policy)) state.policy = policy;
+      const pending = JSON.parse(sessionStorage.getItem(`${state.draftStorage}:requests`) || "[]");
+      if (Array.isArray(pending)) for (const entry of pending.slice(-60)) {
+        if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && entry[0].length <= 24000 && typeof entry[1] === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(entry[1]) && !state.requests.has(entry[0])) state.requests.set(entry[0], entry[1]);
+      }
+      const pane = JSON.parse(sessionStorage.getItem(`${state.draftStorage}:developer`) || "null");
+      if (pane && typeof pane.open === "boolean" && ["agents", "files", "changes", "activity"].includes(pane.tab)) toggleDeveloper(pane.open, pane.tab);
       const saved = JSON.parse(sessionStorage.getItem(state.draftStorage) || "[]");
       if (Array.isArray(saved)) for (const pair of saved.slice(-60)) {
         if (Array.isArray(pair) && pair.length === 2 && typeof pair[0] === "string" && typeof pair[1] === "string" && pair[1].length <= 12000 && !state.drafts.has(pair[0])) state.drafts.set(pair[0], pair[1]);
@@ -294,19 +310,32 @@
       Read: "Reading", Explored: "Exploring", Searched: "Searching", Updated: "Updating", Edited: "Editing", Created: "Creating", Ran: "Running", Checked: "Checking", Reviewed: "Reviewing", Used: "Using",
     })[word]);
   }
+  function failedToolLabel(name, args, status = "failed") {
+    const action = toolLabel(name, args).replace(/^(Read|Explored|Searched|Updated|Edited|Created|Ran|Checked|Reviewed|Used)\b/, (word) => ({
+      Read: "Read", Explored: "Explore", Searched: "Search", Updated: "Update", Edited: "Edit", Created: "Create", Ran: "Run", Checked: "Check", Reviewed: "Review", Used: "Use",
+    })[word]);
+    return `${action} — ${status === "denied" ? "declined" : status === "cancelled" ? "stopped" : "failed"}`;
+  }
+  function toolFailed(value) {
+    if (typeof value === "string") {
+      if (/^(?:Tool failed:|Error\b)/i.test(value.trim())) return true;
+      try { value = JSON.parse(value); } catch { return false; }
+    }
+    return Boolean(value && typeof value === "object" && (value.error != null || value.success === false || (typeof value.exit_code === "number" && value.exit_code !== 0)));
+  }
   function renderToolRows(rows) {
     return rows.slice(-80).map((row) => {
-      const failed = (typeof row.result === "string" && /^Error\b/i.test(row.result)) || Boolean(row.result && typeof row.result === "object" && row.result.error);
+      const failed = toolFailed(row.result);
       const command = row.args.command || row.args.cmd;
-      return `<details class="tool-row${failed ? " failed" : ""}" data-key="${escape(row.key)}"><summary><span class="tool-icon" aria-hidden="true">${row.pending ? "•" : failed ? "!" : "✓"}</span><span class="tool-title">${escape(row.pending ? currentToolLabel(row.name, row.args) : toolLabel(row.name, row.args))}${command ? ` · ${escape(String(command).split("\n")[0].slice(0, 90))}` : ""}</span><span class="disclosure-chevron" aria-hidden="true">›</span></summary><div class="tool-detail"><h4>Request</h4><pre>${escape(pretty(row.args))}</pre>${row.result != null ? `<h4>Result</h4><pre>${escape(pretty(row.result))}</pre>` : '<p>Working…</p>'}</div></details>`;
+      return `<details class="tool-row${failed ? " failed" : ""}" data-key="${escape(row.key)}"><summary><span class="tool-icon" aria-hidden="true">${row.pending ? "•" : failed ? "!" : "✓"}</span><span class="tool-title">${escape(failed ? failedToolLabel(row.name, row.args) : row.pending ? currentToolLabel(row.name, row.args) : toolLabel(row.name, row.args))}${command ? ` · ${escape(String(command).split("\n")[0].slice(0, 90))}` : ""}</span><span class="disclosure-chevron" aria-hidden="true">›</span></summary><div class="tool-detail"><h4>Request</h4><pre>${escape(pretty(row.args))}</pre>${row.result != null ? `<h4>Result</h4><pre>${escape(pretty(row.result))}</pre>` : '<p>Working…</p>'}</div></details>`;
     }).join("");
   }
   function activityMarkup(turn) {
     const rows = toolRows(turn);
     if (!rows.length) return "";
-    const reads = rows.filter((row) => ["read_file", "list_files", "search_files", "search_text"].includes(row.name)).length;
-    const edits = rows.filter((row) => ["write_file", "replace_text", "edit_lines"].includes(row.name)).length;
-    const tests = rows.some((row) => row.name === "run_tests");
+    const reads = rows.filter((row) => !row.pending && !toolFailed(row.result) && ["read_file", "list_files", "search_files", "search_text"].includes(row.name)).length;
+    const edits = rows.filter((row) => !row.pending && !toolFailed(row.result) && ["write_file", "replace_text", "edit_lines"].includes(row.name)).length;
+    const tests = rows.some((row) => !row.pending && row.name === "run_tests" && !(typeof row.result === "string" && /^Tool failed:/.test(row.result)));
     const descriptions = [];
     if (reads) descriptions.push("Explored the codebase");
     if (edits) descriptions.push(`made ${edits} ${edits === 1 ? "edit" : "edits"}`);
@@ -369,7 +398,7 @@
     const follow = nearBottom();
     $("welcome").hidden = Boolean(state.selected);
     $("view-loading").hidden = !state.loading;
-    if (!state.detail) { renderComposer(); return; }
+    if (!state.detail) { renderComposer(); renderDeveloper(); return; }
     const keys = new Set();
     turns.forEach((turn, index) => {
       const key = String(turn.turn_id || turn.run_id || `turn-${index}`);
@@ -377,7 +406,7 @@
       const node = state.turns.get(key) || createTurn(key);
       if (!node.isConnected) $("transcript").appendChild(node);
       const messages = userMessages(turn);
-      patch(node.querySelector(".user-messages"), messages[0] ? `<div class="user-message">${escape(messages[0])}</div>` : "");
+      patch(node.querySelector(".user-messages"), `${messages[0] ? `<div class="user-message">${escape(messages[0])}</div>` : ""}${mediaMarkup(turn.media || turn.messages?.[0]?.media)}`);
       patch(node.querySelector(".turn-directions"), messages.slice(1).map((message) => `<div class="user-message steering">${escape(message)}</div>`).join(""));
       patch(node.querySelector(".turn-activity"), activityMarkup(turn));
       patch(node.querySelector(".turn-agents"), agentsMarkup(turn));
@@ -391,16 +420,18 @@
     });
     for (const [key, node] of state.turns) if (!keys.has(key)) { node.remove(); state.turns.delete(key); }
     renderComposer();
-    renderSettings();
+    renderSettings(); renderDeveloper(); observeImages();
     document.title = state.detail.chat?.title ? `${state.detail.chat.title} — Forge` : "Forge";
     if (follow) scrollBottom();
     else $("jump-bottom").hidden = nearBottom();
   }
   function renderComposer() {
-    const hasDraft = Boolean($("message").value.trim());
+    const images = currentMedia();
+    const encoding = images.filter((image) => image.processing).length;
+    const hasDraft = Boolean($("message").value.trim()) || Boolean(images.length);
     const running = active();
     const stop = running && !hasDraft;
-    $("send").disabled = state.sending || state.cancelling || (!running && !hasDraft);
+    $("send").disabled = state.sending || state.cancelling || Boolean(encoding) || (!running && !hasDraft);
     $("send").classList.toggle("stop", stop);
     $("send-label").textContent = state.sending ? "Sending…" : state.cancelling ? "Stopping…" : stop ? "Stop" : "Send";
     $("send-icon").textContent = stop ? "■" : "↑";
@@ -412,11 +443,11 @@
     $("permission-label").textContent = policy === "read_only" ? "Read only" : "Review changes";
     $("composer-footnote").textContent = state.overview?.mode === "demo" ? "Demo mode · no model inference is performed." : policy === "read_only" ? "Forge can read and explore this workspace. Files stay unchanged." : "Forge works in your local workspace. You review changes before they run.";
     $("new-chat").disabled = state.sending;
-    const status = state.sendError || (state.sending ? "Sending your message…" : "");
+    const status = state.sendError || (encoding ? `Preparing ${encoding} ${encoding === 1 ? "image" : "images"}…` : state.sending ? "Sending your message…" : "");
     $("composer-status").textContent = status;
     $("composer-status").hidden = !status;
     $("composer-status").classList.toggle("error", Boolean(state.sendError));
-    resizeComposer();
+    renderAttachments(); resizeComposer();
   }
   function renderSettings() {
     const existingPolicy = state.detail?.chat?.policy;
@@ -432,6 +463,7 @@
     $("connection-error-text").textContent = error;
   }
   function toggleSidebar(open = !state.sidebar) {
+    if (open && state.dev.open && matchMedia("(max-width:1100px)").matches) toggleDeveloper(false);
     state.sidebar = open;
     $("app").classList.toggle("sidebar-open", open);
     $("sidebar").inert = !open;
@@ -439,7 +471,7 @@
     $("toggle-sidebar").setAttribute("aria-label", open ? "Close chats" : "Open chats");
     const mobile = matchMedia("(max-width:700px)").matches;
     $("sidebar-backdrop").hidden = !open || !mobile;
-    $("main").inert = open && mobile;
+    updateSurfaceInert();
     if (open && mobile) {
       $("sidebar").setAttribute("role", "dialog");
       $("sidebar").setAttribute("aria-modal", "true");
@@ -455,6 +487,8 @@
     if (id === state.selected && state.detail) { $("message").focus(); return; }
     saveDraft();
     state.selected = id;
+    setSelectedDeveloperAgent(null); state.dev.data = null; state.dev.error = ""; state.dev.version++;
+    if (state.dev.open && matchMedia("(max-width:1100px)").matches) toggleDeveloper(false);
     rememberSelection();
     state.detail = null;
     state.loading = Boolean(id);
@@ -477,7 +511,7 @@
       state.detail = acceptDetail(detail);
       state.loading = false;
       renderOverview(); renderTranscript(); scrollBottom();
-      scheduleRefresh();
+      scheduleRefresh(); refreshDeveloper();
     } catch (error) {
       if (state.selected !== id) return;
       state.loading = false;
@@ -503,7 +537,7 @@
       loadDrafts(overview.workspace);
       if (selected === state.selected && detail) { state.detail = acceptDetail(detail); state.loading = false; }
       setConnection();
-      renderOverview(); renderTranscript(); renderSettings();
+      renderOverview(); renderTranscript(); renderSettings(); refreshDeveloper();
     } catch (error) { setConnection(error.message || "Could not reach the local server."); }
     finally {
       state.refreshing = false;
@@ -519,24 +553,43 @@
     const input = $("message");
     const original = input.value;
     const message = original.trim();
-    if (!message) { if (active()) await cancelResponse(); else input.focus(); return; }
-    if (runCommand(message)) return;
+    const draft = mediaDraft();
+    if (draft.items.some((image) => image.processing)) return;
+    const images = draft.items.slice();
+    if (!message && !images.length) { if (active()) await cancelResponse(); else input.focus(); return; }
+    if (!images.length && runCommand(message)) return;
     const selected = state.selected;
-    const requestKey = `${selected || "new"}\u0000${state.policy}\u0000${message}`;
-    if (state.request?.key !== requestKey) state.request = { key: requestKey, request_id: nonce() };
+    const requestKey = `${selected || "new"}\u0000${selected ? "" : state.policy}\u0000${message}\u0000${JSON.stringify(images.map((image) => [image.sha256, image.name]))}`;
+    if (!state.requests.has(requestKey)) state.requests.set(requestKey, nonce());
+    const requestId = state.requests.get(requestKey);
+    persistPendingRequests();
+    for (const image of images) if (image.preview) state.inFlightMedia.add(image.preview);
     state.sending = true;
     state.sendError = "";
     $("command-menu").hidden = true;
     renderComposer();
-    const request = selected ? { message, request_id: state.request.request_id } : { message, policy: state.policy, request_id: state.request.request_id };
+    const request = selected ? { message, request_id: requestId } : { message, policy: state.policy, request_id: requestId };
+    if (images.length) {
+      request.media = images.map((image) => ({ type: "image", mime: image.mime, sha256: image.sha256, data: image.data }));
+      request.media_names = images.map((image) => image.name);
+    }
     try {
       const result = await api(selected ? `/api/chats/${encodeURIComponent(selected)}/message` : "/api/chats", request);
       const chatId = result.chat_id || selected;
       if (!chatId) throw new Error("The server did not return a chat. Your message is still in the composer.");
       if (input.value === original) input.value = "";
       state.drafts.set(draftKey(selected), input.value);
+      for (const image of images) {
+        if (!state.imageCache.get(image.sha256)?.url) state.imageCache.set(image.sha256, { url: image.preview, mime: image.mime, size: image.size, name: image.name });
+        else if (state.imageCache.get(image.sha256)?.url !== image.preview) URL.revokeObjectURL(image.preview);
+      }
+      const submitted = new Set(images.map((image) => image.id));
+      draft.items = draft.items.filter((image) => !submitted.has(image.id));
       if (!selected) {
         state.selected = chatId;
+        state.mediaDrafts.set(draftKey(chatId), draft);
+        state.mediaDrafts.set("new", { items: [] });
+        setSelectedDeveloperAgent(null); state.dev.data = null; state.dev.version++;
         rememberSelection();
         state.detail = null;
         state.turns.clear();
@@ -546,15 +599,16 @@
         state.drafts.set("new", "");
       }
       const accepted = {
-        turn_id: result.turn_id || result.run_id || state.request.request_id,
-        run_id: result.run_id || null, user: message, output: null,
+        turn_id: result.turn_id || result.run_id || requestId,
+        run_id: result.run_id || null, user: message || "Describe the attached image.", output: null,
+        media: images.map((image) => ({ type: "image", mime: image.mime, sha256: image.sha256, name: image.name, size: image.size, url: `/api/chats/${encodeURIComponent(chatId)}/media/${image.sha256}` })),
         status: result.status || (result.queued ? "queued" : "loading"),
         active: !result.queued && ["loading", "running"].includes(result.status || "loading"),
         events: [], agents: [], approvals: [], artifacts: [], created: Date.now() / 1000,
-        messages: [{ role: "user", content: message }],
+        messages: [{ role: "user", content: message || "Describe the attached image." }],
       };
       if (!state.detail) state.detail = {
-        chat: { chat_id: chatId, title: message.split("\n")[0].slice(0, 100), policy: state.policy, status: accepted.status },
+        chat: { chat_id: chatId, title: (message || "Attached image").split("\n")[0].slice(0, 100), policy: state.policy, status: accepted.status },
         turns: [], backend: state.overview?.backend,
       };
       if (!state.detail.turns.some((turn) => turn.turn_id === accepted.turn_id)) state.detail.turns.push(accepted);
@@ -565,7 +619,8 @@
       if (state.overview && !state.overview.chats.some((chat) => chat.chat_id === chatId)) state.overview.chats.unshift({
         chat_id: chatId, title: state.detail.chat.title, status: accepted.status, updated: Date.now() / 1000,
       });
-      state.request = null;
+      state.requests.delete(requestKey);
+      persistPendingRequests();
       // Show the acknowledged durable prompt even if the following GET loses its connection.
       state.sending = false;
       renderOverview(); renderTranscript(); scrollBottom();
@@ -575,6 +630,10 @@
       state.sendError = `${error.message} Your draft is preserved. Send again to retry safely.`;
       // Reuse request_id for the same message, so an accepted request is never duplicated.
     } finally {
+      for (const image of images) {
+        state.inFlightMedia.delete(image.preview);
+        if (image.preview && state.imageCache.get(image.sha256)?.url !== image.preview && !draft.items.some((remaining) => remaining.preview === image.preview)) URL.revokeObjectURL(image.preview);
+      }
       state.sending = false;
       renderComposer();
       input.focus({ preventScroll: true });
@@ -595,12 +654,12 @@
     const id = button.dataset.approval;
     if (state.busyApprovals.has(id)) return;
     state.busyApprovals.add(id);
-    renderTranscript();
+    renderTranscript(); renderDeveloper();
     try {
       await api(`/api/approvals/${encodeURIComponent(id)}`, { approved: button.dataset.approved === "true" });
       await refresh();
     } catch (error) { toast(error.message, true, 6000); }
-    finally { state.busyApprovals.delete(id); renderTranscript(); }
+    finally { state.busyApprovals.delete(id); renderTranscript(); renderDeveloper(); refreshDeveloper(); }
   }
   async function copy(text, button) {
     try {
@@ -628,16 +687,412 @@
     } catch (error) { toast(error.message, true); }
     finally { button.disabled = false; }
   }
+  function byteSize(bytes) {
+    const size = Number(bytes || 0);
+    return size >= 1048576 ? `${(size / 1048576).toFixed(1)} MB` : size >= 1024 ? `${(size / 1024).toFixed(1)} KB` : `${size} B`;
+  }
+  function mediaDraft(key = draftKey()) {
+    if (!state.mediaDrafts.has(key)) state.mediaDrafts.set(key, { items: [] });
+    return state.mediaDrafts.get(key);
+  }
+  function currentMedia() { return mediaDraft().items; }
+  function renderAttachments() {
+    const images = currentMedia();
+    $("attachment-previews").hidden = !images.length;
+    patch($("attachment-previews"), images.map((image) => `<div class="attachment-preview"><button type="button" data-preview-attachment="${escape(image.id)}" aria-label="View ${escape(image.name)}">${image.preview ? `<img src="${escape(image.preview)}" alt="${escape(image.name)}">` : '<span class="attachment-processing">Preparing…</span>'}</button><button type="button" class="attachment-remove" data-remove-attachment="${escape(image.id)}" aria-label="Remove ${escape(image.name)}">×</button><div class="attachment-preview-name" title="${escape(image.name)}">${escape(image.name)}</div></div>`).join(""));
+  }
+  function sniffImage(bytes) {
+    if (bytes.length >= 8 && [137,80,78,71,13,10,26,10].every((n, i) => bytes[i] === n)) return "image/png";
+    if (bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
+    if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
+    if (bytes.length >= 2 && bytes[0] === 66 && bytes[1] === 77) return "image/bmp";
+    return null;
+  }
+  function toBase64(bytes) {
+    const chunks = [];
+    for (let i = 0; i < bytes.length; i += 32768) chunks.push(String.fromCharCode(...bytes.subarray(i, i + 32768)));
+    return btoa(chunks.join(""));
+  }
+  async function addImages(files) {
+    const draft = mediaDraft();
+    const accepted = [];
+    const errors = [];
+    for (const file of Array.from(files || [])) {
+      if (draft.items.length >= 8) { errors.push("Attach up to 8 images per message."); break; }
+      if (!file.size || file.size > 8 * 1048576) { errors.push(`${file.name || "Image"} must be between 1 byte and 8 MB.`); continue; }
+      if (draft.items.reduce((total, image) => total + image.size, 0) + file.size > 16 * 1048576) { errors.push("Attached images must total 16 MB or less."); continue; }
+      const name = String(file.name || "pasted-image.png").split(/[\\/]/).at(-1).replace(/[\u0000-\u001f\u007f]/g, "_").slice(0, 180);
+      const image = { id: nonce(), name, size: file.size, processing: true, preview: null };
+      draft.items.push(image);
+      accepted.push({ file, image });
+    }
+    if (errors.length) toast(Array.from(new Set(errors)).join(" "), true, 6500);
+    state.sendError = "";
+    renderComposer();
+    await Promise.all(accepted.map(async ({ file, image }) => {
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const mime = sniffImage(bytes);
+        if (!mime) throw new Error(`${image.name} is not a supported PNG, JPEG, WebP or BMP image.`);
+        if (!crypto.subtle?.digest) throw new Error("Image attachments require a secure local browser connection.");
+        const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (value) => value.toString(16).padStart(2, "0")).join("");
+        if (!draft.items.includes(image)) return; // Removed while encoding, or draft discarded.
+        image.mime = mime;
+        image.sha256 = sha256;
+        image.data = toBase64(bytes);
+        image.preview = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        image.processing = false;
+      } catch (error) {
+        const index = draft.items.indexOf(image);
+        if (index !== -1) draft.items.splice(index, 1);
+        if (image.preview) URL.revokeObjectURL(image.preview);
+        toast(error.message || "Could not prepare this image.", true, 6500);
+      } finally {
+        if (mediaDraft() === draft) renderComposer();
+      }
+    }));
+  }
+  function removeImage(id) {
+    const draft = mediaDraft();
+    const index = draft.items.findIndex((image) => image.id === id);
+    if (index === -1) return;
+    const [image] = draft.items.splice(index, 1);
+    if (image.preview && !state.inFlightMedia.has(image.preview) && state.imageCache.get(image.sha256)?.url !== image.preview) URL.revokeObjectURL(image.preview);
+    state.sendError = "";
+    renderComposer();
+    $("message").focus({ preventScroll: true });
+  }
+  function mediaMarkup(images) {
+    if (!images?.length) return "";
+    return `<div class="user-image-gallery">${images.map((image) => {
+      const cached = state.imageCache.get(image.sha256);
+      return `<button type="button" class="user-image" data-media-hash="${escape(image.sha256)}" data-media-url="${escape(image.url || "")}" data-media-name="${escape(image.name || "Attached image")}" aria-label="View ${escape(image.name || "attached image")}">${cached?.url ? `<img src="${escape(cached.url)}" alt="${escape(image.name || "Attached image")}" loading="lazy">` : `<span class="user-image-loading">${cached?.error ? "Open image" : "Image"}</span>`}</button>`;
+    }).join("")}</div>`;
+  }
+  async function loadMedia(meta) {
+    if (state.imageCache.get(meta.sha256)?.url) return state.imageCache.get(meta.sha256);
+    if (state.imageRequests.has(meta.sha256)) return state.imageRequests.get(meta.sha256);
+    if (!/^\/api\/chats\/[^/]+\/media\/[a-f0-9]{64}$/.test(meta.url || "")) throw new Error("This image reference is unavailable.");
+    const promise = (async () => {
+      try {
+        const media = await api(meta.url);
+        if (media.sha256 !== meta.sha256 || !["image/png", "image/jpeg", "image/webp", "image/bmp"].includes(media.mime) || typeof media.data !== "string") throw new Error("This image could not be verified.");
+        const binary = atob(media.data);
+        const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
+        const result = { url: URL.createObjectURL(new Blob([bytes], { type: media.mime })), mime: media.mime, size: bytes.length, name: meta.name || "Attached image" };
+        state.imageCache.set(meta.sha256, result);
+        return result;
+      } catch (error) {
+        state.imageCache.set(meta.sha256, { error: error.message });
+        throw error;
+      } finally { state.imageRequests.delete(meta.sha256); }
+    })();
+    state.imageRequests.set(meta.sha256, promise);
+    return promise;
+  }
+  const imageObserver = typeof IntersectionObserver === "function" ? new IntersectionObserver((entries) => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      imageObserver.unobserve(entry.target);
+      const node = entry.target;
+      loadMedia({ sha256: node.dataset.mediaHash, url: node.dataset.mediaUrl, name: node.dataset.mediaName }).then(() => renderTranscript()).catch(() => renderTranscript());
+    }
+  }, { root: $("transcript-pane"), rootMargin: "100px" }) : null;
+  function observeImages() {
+    $("transcript").querySelectorAll("[data-media-hash]").forEach((node) => {
+      if (node.dataset.observed || state.imageCache.has(node.dataset.mediaHash)) return;
+      node.dataset.observed = "true";
+      if (imageObserver) imageObserver.observe(node);
+      else loadMedia({ sha256: node.dataset.mediaHash, url: node.dataset.mediaUrl, name: node.dataset.mediaName }).then(() => renderTranscript()).catch(() => renderTranscript());
+    });
+  }
+  async function showImage(meta) {
+    try {
+      const cached = meta.preview ? { url: meta.preview, mime: meta.mime, size: meta.size, name: meta.name } : await loadMedia(meta);
+      $("image-viewer-title").textContent = meta.name || cached.name || "Attached image";
+      $("image-viewer-image").src = cached.url;
+      $("image-viewer-image").alt = meta.name || "Attached image";
+      $("image-download").href = cached.url;
+      $("image-download").download = meta.name || "image";
+      $("image-viewer-caption").textContent = `${cached.mime || "Image"} · ${byteSize(cached.size)}`;
+      if (!$("image-viewer").open) $("image-viewer").showModal();
+    } catch (error) { toast(error.message, true, 5500); }
+  }
+  function persistDeveloper() {
+    if (!state.draftStorage) return;
+    try { sessionStorage.setItem(`${state.draftStorage}:developer`, JSON.stringify({ open: state.dev.open, tab: state.dev.tab })); }
+    catch { /* Workspace UI remains usable without browser storage. */ }
+  }
+  function updateSurfaceInert() {
+    const devModal = state.dev.open && matchMedia("(max-width:1100px)").matches;
+    const sidebarModal = state.sidebar && matchMedia("(max-width:700px)").matches;
+    $("main").inert = devModal || sidebarModal;
+    $("developer-pane").inert = !state.dev.open || sidebarModal;
+    $("developer-backdrop").hidden = !devModal;
+    if (devModal) { $("developer-pane").setAttribute("role", "dialog"); $("developer-pane").setAttribute("aria-modal", "true"); }
+    else { $("developer-pane").removeAttribute("role"); $("developer-pane").removeAttribute("aria-modal"); }
+  }
+  function toggleDeveloper(open = !state.dev.open, tab = state.dev.tab) {
+    state.dev.open = open;
+    state.dev.tab = ["agents", "files", "changes", "activity"].includes(tab) ? tab : "agents";
+    if (open && matchMedia("(max-width:1100px)").matches && state.sidebar) toggleSidebar(false);
+    $("developer-pane").hidden = !open;
+    $("app").classList.toggle("developer-open", open);
+    $("toggle-developer").setAttribute("aria-expanded", String(open));
+    $("toggle-developer").setAttribute("aria-label", open ? "Close workspace panel" : "Open workspace panel");
+    updateSurfaceInert();
+    renderDeveloper();
+    persistDeveloper();
+    if (open) {
+      refreshDeveloper();
+      if (state.dev.tab === "files" && !state.dev.filesLoaded) loadWorkspaceFiles();
+      if (matchMedia("(max-width:1100px)").matches) $(`dev-tab-${state.dev.tab}`).focus({ preventScroll: true });
+    } else if ($("developer-pane").contains(document.activeElement)) $("toggle-developer").focus({ preventScroll: true });
+    resizeComposer();
+  }
+  function selectDevTab(tab) {
+    state.dev.tab = tab;
+    renderDeveloper(); persistDeveloper();
+    if (tab === "files" && !state.dev.filesLoaded) loadWorkspaceFiles();
+  }
+  function emptyDeveloper(title, body = "") { return `<div class="developer-empty">${escape(title)}${body ? `<p>${escape(body)}</p>` : ""}</div>`; }
+  function developerAgentName(agent) { return agent.agent_id === "root" ? "Main agent" : agent.role || "Agent"; }
+  function agentKey(agent) { return `${agent.run_id}:${agent.agent_id}`; }
+  function agentStatus(status) {
+    return ({ runnable: "Working", running: "Working", queued: "Queued", waiting: "Waiting", waiting_approval: "Waiting for approval", executing: "Running tool", proposed: "Waiting for approval", approved: "Approved", completed: "Done", failed: "Failed", cancelled: "Stopped", interrupted: "Interrupted" })[status] || String(status || "Pending").replaceAll("_", " ");
+  }
+  function developerAgentStatus(agent) {
+    const approval = state.detail?.turns?.find((turn) => turn.run_id === agent.run_id)?.approvals?.some((entry) => entry.agent_id === agent.agent_id && entry.status === "pending");
+    return approval ? "Waiting for approval" : agentStatus(agent.status);
+  }
+  function agentScopeLabel(agent) {
+    const tools = agent.tools;
+    if (Array.isArray(tools) && !tools.length) return "No tool access";
+    const reads = new Set(["list_files", "read_file", "search_files", "search_text", "git_status", "git_diff", "journal_read", "fetch_url", "web_search"]);
+    if (Array.isArray(tools) && tools.every((tool) => reads.has(tool))) return "Read-only tools";
+    return currentPolicy() === "read_only" ? "Read only" : "Review changes";
+  }
+  function agentOperation(agent) {
+    const action = agent.current_action || agent.pending_action;
+    if (!action) return terminal.has(agent.status) ? `${Number(agent.steps || 0)} steps recorded` : "Preparing next step…";
+    if (typeof action === "string") return action;
+    const name = action.action === "tool" ? action.name : action.action || action.name;
+    if (name === "spawn") return `Delegating ${action.role || "a task"}`;
+    if (name === "wait") return "Waiting for delegated work";
+    if (name === "finish") return "Preparing the result";
+    if (name === "send") return "Sharing context with an agent";
+    if (name === "batch") return `Running ${action.items?.length || "multiple"} parallel actions`;
+    return currentToolLabel(name, action.args || {}) + (name === "run_command" && commandDisplay(action.args) ? ` · ${commandDisplay(action.args)}` : "");
+  }
+  function setSelectedDeveloperAgent(key) {
+    if (state.dev.selectedAgent === key) return;
+    if (state.dev.selectedAgent) state.dev.agentDrafts.set(state.dev.selectedAgent, $("agent-direction").value);
+    state.dev.selectedAgent = key;
+    $("agent-direction").value = key ? state.dev.agentDrafts.get(key) || "" : "";
+  }
+  function selectedDeveloperAgent() { return (state.dev.data?.agents || []).find((agent) => agentKey(agent) === state.dev.selectedAgent); }
+  function renderDeveloperAgents() {
+    const all = state.dev.data?.agents || [];
+    const latest = state.detail?.turns?.filter((turn) => turn.run_id).at(-1)?.run_id || all.at(-1)?.run_id;
+    const agents = state.dev.agentScope === "latest" ? all.filter((agent) => agent.run_id === latest) : all;
+    $("dev-agents-label").textContent = `${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
+    if (!agents.some((agent) => agentKey(agent) === state.dev.selectedAgent)) setSelectedDeveloperAgent(agents[0] ? agentKey(agents[0]) : null);
+    patch($("dev-agent-list"), agents.length ? agents.map((agent) => `<button type="button" class="developer-card${agentKey(agent) === state.dev.selectedAgent ? " selected" : ""}" data-dev-agent="${escape(agentKey(agent))}"><span class="developer-card-heading"><span class="status-dot ${developerAgentStatus(agent) === "Waiting for approval" ? "waiting_approval" : terminal.has(agent.status) ? agent.status : "running"}" aria-hidden="true"></span>${escape(developerAgentName(agent))}<span class="card-state">${escape(developerAgentStatus(agent))}</span></span><span class="developer-card-task">${escape(agent.task || "")}</span><span class="developer-card-operation">${escape(agentOperation(agent))}</span></button>`).join("") : emptyDeveloper(state.dev.loading ? "Loading agent tasks…" : "No agent tasks yet", state.selected ? "Tasks appear when Forge starts this response." : "Send a message to start work in this chat."));
+    const agent = selectedDeveloperAgent();
+    const turn = state.detail?.turns?.find((entry) => entry.run_id === agent?.run_id);
+    const scopes = agent?.tools || agent?.scopes || [];
+    patch($("dev-agent-detail"), agent ? `<div class="developer-detail"><h3>${escape(developerAgentName(agent))}</h3><p class="assigned-task">${escape(agent.task || "")}</p>${`<h4>Scope</h4><div class="agent-scopes"><span>${escape(agentScopeLabel(agent))}</span>${scopes.length ? scopes.map((scope) => `<span>${escape(typeof scope === "string" ? scope : scope.name || pretty(scope))}</span>`).join("") : Array.isArray(agent.tools) ? "" : "<span>Inherited workspace tools</span>"}</div>`}<h4>Current operation</h4><p>${escape(agentOperation(agent))}</p><p class="developer-footnote">${Number(agent.steps || 0)} recorded steps</p>${turn && toolRows(turn, agent.agent_id).length ? `<h4>Recorded tool output</h4>${renderToolRows(toolRows(turn, agent.agent_id))}` : ""}${agent.result ? `<h4>Result</h4><div class="markdown">${markdown(outputText(agent.result))}</div>` : ""}${agent.error ? `<p class="turn-error">${escape(agent.error)}</p>` : ""}</div>` : "");
+    const canMessage = Boolean(agent?.can_message && !terminal.has(agent.status));
+    $("dev-agent-message").hidden = !canMessage;
+    $("send-agent").disabled = state.dev.messageBusy || !$("agent-direction").value.trim();
+    $("stop-agent").hidden = !agent?.can_cancel;
+    $("stop-agent").textContent = agent?.agent_id === "root" ? "Stop response" : "Stop agent";
+    $("stop-agent").disabled = state.dev.messageBusy;
+    $("agent-direction-label").textContent = agent ? `Message ${developerAgentName(agent)}` : "Message this agent";
+  }
+  function fileKey(file) { return `${file.origin || "workspace"}:${file.origin === "artifact" ? file.run_id || "" : ""}:${file.path}`; }
+  function knownFiles() {
+    const query = state.dev.fileQuery.toLowerCase();
+    const receipts = (state.dev.data?.files || []).filter((file) => !query || file.path.toLowerCase().includes(query));
+    const created = receipts.filter((file) => file.origin === "artifact" || file.change === "created");
+    const workspace = new Map(state.dev.files.filter((file) => !query || file.path.toLowerCase().includes(query)).map((file) => [file.path, { ...file, origin: "workspace" }]));
+    receipts.filter((file) => file.origin !== "artifact" && file.change !== "created").forEach((file) => workspace.set(file.path, { ...workspace.get(file.path), ...file }));
+    created.filter((file) => file.origin !== "artifact").forEach((file) => workspace.delete(file.path));
+    return { created, workspace: Array.from(workspace.values()) };
+  }
+  function renderDeveloperFiles() {
+    const groups = knownFiles();
+    const rows = (files) => files.map((file) => `<button type="button" class="file-row${fileKey(file) === state.dev.selectedFile ? " selected" : ""}" data-dev-file="${escape(fileKey(file))}"><span aria-hidden="true">${file.origin === "artifact" ? "▤" : "⌁"}</span><span class="file-path" title="${escape(file.path)}">${escape(file.path)}</span>${file.change ? `<span class="file-badge">${escape(file.origin === "artifact" ? "artifact" : file.change)}</span>` : ""}<span class="file-size">${escape(byteSize(file.size))}</span></button>`).join("");
+    patch($("dev-file-list"), `${groups.created.length ? `<h3 class="file-group-label">Created by agents</h3>${rows(groups.created)}` : ""}<h3 class="file-group-label">Workspace</h3>${state.dev.filesLoading && !groups.workspace.length ? emptyDeveloper("Loading workspace files…") : rows(groups.workspace) || emptyDeveloper(state.dev.fileQuery ? "No matching files" : "No files to display", state.dev.filesError || "Use the search above to find a file.")}${state.dev.filesTruncated ? '<p class="developer-footnote">Showing the first 200 matches. Narrow the search to find more files.</p>' : ""}`);
+    renderFileViewer();
+  }
+  function syntaxLine(line, language) {
+    if (!["python", "javascript", "typescript", "json", "bash", "shell", "c", "cpp", "java", "rust", "go", "css"].includes(String(language).toLowerCase())) return escape(line);
+    const pattern = /(?:\/\/.*|#.*)|(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\b(?:\d+(?:\.\d+)?)\b|\b(?:def|class|import|from|return|if|else|elif|for|while|try|except|with|as|in|is|not|and|or|None|True|False|async|await|function|const|let|var|new|throw|export|default|interface|type|public|private|static|void|int|char|bool|struct|fn|use|pub|mut|impl|match|package|func|nil|true|false|null)\b/g;
+    let html = ""; let start = 0;
+    for (const match of line.matchAll(pattern)) {
+      html += escape(line.slice(start, match.index));
+      const token = match[0];
+      const type = /^\/\/|^#/.test(token) ? "comment" : /^["'`]/.test(token) ? "string" : /^\d/.test(token) ? "number" : "keyword";
+      html += `<span class="syntax-${type}">${escape(token)}</span>`;
+      start = match.index + token.length;
+    }
+    return html + escape(line.slice(start));
+  }
+  function renderFileViewer() {
+    const file = state.dev.file;
+    if (state.dev.fileLoading) { patch($("dev-file-viewer"), '<div class="developer-detail">Loading file…</div>'); return; }
+    if (!file) { patch($("dev-file-viewer"), ""); return; }
+    const lines = String(file.content || "").replace(/\r\n?/g, "\n").split("\n");
+    if (lines.at(-1) === "" && lines.length > 1) lines.pop();
+    patch($("dev-file-viewer"), `<div class="developer-detail"><div class="file-viewer-heading"><h3>${escape(file.path)}</h3><button type="button" class="icon-button" data-close-file aria-label="Close file">×</button></div><p class="file-viewer-meta">${escape(file.language || "text")} · ${typeof file.total_lines === "number" ? file.total_lines : lines.length} lines${file.origin === "artifact" ? " · agent artifact" : ""}</p><div class="file-viewer-actions"><button type="button" class="text-button" data-file-action="copy-path">Copy path</button><button type="button" class="text-button" data-file-action="mention">Insert @path</button><button type="button" class="text-button" data-file-action="download">Download</button><button type="button" class="text-button" data-file-action="reload">Reload</button></div><div class="code-viewer" aria-label="${escape(file.path)} source">${lines.map((line, index) => `<div class="code-line"><span class="code-line-number" aria-hidden="true">${index + 1}</span><code>${syntaxLine(line, file.language)}</code></div>`).join("")}</div>${file.truncated ? '<p class="developer-footnote">The preview is truncated.</p>' : ""}</div>`);
+  }
+  async function loadWorkspaceFiles() {
+    const version = ++state.dev.filesVersion;
+    const query = state.dev.fileQuery;
+    state.dev.filesLoading = true;
+    state.dev.filesError = "";
+    renderDeveloperFiles();
+    try {
+      const result = await api("/api/workspace/files", { query, limit: 200 });
+      if (version !== state.dev.filesVersion) return;
+      state.dev.files = result.files || [];
+      state.dev.filesTruncated = Boolean(result.truncated);
+      state.dev.filesLoaded = true;
+    } catch (error) { if (version === state.dev.filesVersion) { state.dev.filesError = error.message; state.dev.files = []; } }
+    finally { if (version === state.dev.filesVersion) { state.dev.filesLoading = false; renderDeveloperFiles(); } }
+  }
+  async function openFile(file) {
+    const version = ++state.dev.fileVersion;
+    state.dev.selectedFile = fileKey(file);
+    state.dev.fileLoading = true;
+    renderDeveloperFiles();
+    try {
+      const result = await api(file.origin === "artifact" ? `/api/runs/${encodeURIComponent(file.run_id)}/artifacts/${encodeURIComponent(file.path)}` : `/api/workspace/file/${encodeURIComponent(file.path)}`);
+      if (version !== state.dev.fileVersion) return;
+      state.dev.file = { ...result, origin: file.origin, run_id: file.run_id, language: result.language || file.language || languageFromPath(file.path) };
+    } catch (error) { if (version === state.dev.fileVersion) { state.dev.file = null; toast(error.message, true, 5500); } }
+    finally { if (version === state.dev.fileVersion) { state.dev.fileLoading = false; renderDeveloperFiles(); } }
+  }
+  function languageFromPath(path) {
+    return ({ py: "python", js: "javascript", ts: "typescript", jsx: "javascript", tsx: "typescript", json: "json", sh: "bash", cpp: "cpp", cc: "cpp", h: "c", c: "c", rs: "rust", go: "go", java: "java", css: "css", html: "html", md: "markdown", yml: "yaml", yaml: "yaml" })[String(path).split(".").at(-1)] || "text";
+  }
+  function changeKey(change, index) { return String(change.id || change.approval_id || `${change.run_id}:${change.agent_id}:${change.path}:${change.status}:${index}`); }
+  function renderDeveloperChanges() {
+    const changes = state.dev.data?.changes || [];
+    const paths = new Set(changes.map((change) => change.origin === "artifact" ? `artifact:${change.run_id}:${change.path}` : `workspace:${change.path}`));
+    const pending = changes.filter((change) => change.status === "proposed").length;
+    const executed = changes.filter((change) => change.status === "executed").length;
+    $("dev-changes-summary").textContent = `${paths.size} ${paths.size === 1 ? "file" : "files"} · ${executed} applied${pending ? ` · ${pending} proposed` : ""}`;
+    if (!changes.some((change, index) => changeKey(change, index) === state.dev.selectedChange)) state.dev.selectedChange = changes.length ? changeKey(changes.at(-1), changes.length - 1) : null;
+    patch($("dev-change-list"), changes.length ? changes.map((change, index) => `<button type="button" class="change-row${changeKey(change, index) === state.dev.selectedChange ? " selected" : ""}" data-dev-change="${escape(changeKey(change, index))}"><span class="change-path">${escape(change.path || "File change")}</span><span class="change-state ${["proposed", "executed", "denied", "failed"].includes(change.status) ? change.status : ""}">${escape(({ proposed: "Proposed", executed: "Applied", denied: "Declined", failed: "Failed" })[change.status] || change.status || "Recorded")}</span></button>`).join("") : emptyDeveloper("No recorded changes", "Proposed and applied file diffs appear here as agents work."));
+    const change = changes.find((entry, index) => changeKey(entry, index) === state.dev.selectedChange);
+    patch($("dev-change-viewer"), change ? `<div class="change-viewer"><div class="diff-path">${escape(change.path || "File changes")}</div><div class="change-viewer-meta">${escape(({ proposed: "Proposed action — review before applying", executed: "Recorded applied change", denied: "This action was declined", failed: "This action failed" })[change.status] || "Recorded change")}${change.current_matches_receipt === false ? " · current file differs from this receipt" : ""}</div><pre class="diff">${change.diff == null ? escape("No textual diff was saved with this receipt.") : diffMarkup(change.diff)}</pre>${change.diff_truncated ? `<p class="developer-footnote diff-excerpt">Showing a diff excerpt.${change.status === "proposed" && change.approval_id ? ` <button type="button" class="text-button" data-review-approval="${escape(change.approval_id)}">Review full change in chat</button>` : ""}</p>` : ""}${change.status === "proposed" && !change.diff_truncated && change.approval_id && state.detail?.turns?.some((turn) => turn.approvals?.some((approval) => approval.id === change.approval_id && approval.status === "pending")) ? `<div class="change-review-actions"><button type="button" class="button" data-approval="${escape(change.approval_id)}" data-approved="false"${state.busyApprovals.has(change.approval_id) ? " disabled" : ""}>Decline</button><button type="button" class="button button-primary" data-approval="${escape(change.approval_id)}" data-approved="true"${state.busyApprovals.has(change.approval_id) ? " disabled" : ""}>Approve</button></div>` : ""}</div>` : "");
+  }
+  function activityRecords() {
+    const commands = (state.dev.data?.commands || []).map((command, index) => ({ ...command, key: command.id || `${command.run_id}:${command.agent_id}:${command.created}:${index}`, category: "commands", name: command.tool || command.name, result: command.output }));
+    const tools = (state.detail?.turns || []).flatMap((turn) => (turn.events || []).filter((event) => event.kind === "tool_result" && !["run_tests", "run_command", "journal_read"].includes(event.payload?.name)).map((event) => ({
+      key: `${turn.run_id}:${event.id}`, category: "tools", name: event.payload.name, args: event.payload.args || {}, result: event.payload.result, agent_id: event.agent_id, run_id: turn.run_id, created: event.created, status: toolFailed(event.payload.result) ? "failed" : "completed",
+    })));
+    return [...commands, ...tools].filter((entry) => state.dev.activityFilter === "all" || entry.category === state.dev.activityFilter).sort((a, b) => Number(b.created || 0) - Number(a.created || 0));
+  }
+  function commandDisplay(args = {}) {
+    if (Array.isArray(args.argv)) return args.argv.map((word) => /\s/.test(word) ? JSON.stringify(word) : word).join(" ");
+    return args.command || args.cmd || args.path || "";
+  }
+  function readableOutput(value) {
+    let output = value;
+    if (typeof output === "string") { try { output = JSON.parse(output); } catch { return output; } }
+    if (output && typeof output === "object" && ("stdout" in output || "stderr" in output)) return [output.stdout || "", output.stderr ? `stderr:\n${output.stderr}` : "", output.exit_code != null ? `Exit code: ${output.exit_code}` : "", output.timed_out ? "Timed out" : ""].filter(Boolean).join("\n\n");
+    return pretty(output);
+  }
+  function renderDeveloperActivity() {
+    const records = activityRecords();
+    if (!records.some((entry) => String(entry.key) === state.dev.selectedActivity)) state.dev.selectedActivity = records[0] ? String(records[0].key) : null;
+    patch($("dev-activity-list"), records.length ? records.slice(0, 100).map((entry) => `<button type="button" class="activity-card${String(entry.key) === state.dev.selectedActivity ? " selected" : ""}" data-dev-activity="${escape(entry.key)}"><span class="activity-card-title"><span class="status-dot ${["failed", "cancelled", "interrupted"].includes(entry.status) ? "failed" : ["proposed", "approved", "running"].includes(entry.status) ? "waiting_approval" : "completed"}" aria-hidden="true"></span>${escape(entry.name === "run_tests" ? "Tests" : entry.name === "run_command" ? "Command" : ["failed", "denied", "cancelled", "expired", "stale", "interrupted"].includes(entry.status) ? failedToolLabel(entry.name, entry.args, entry.status) : toolLabel(entry.name, entry.args))}<time>${escape(entry.created ? new Date(Number(entry.created) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "")}</time></span>${commandDisplay(entry.args) ? `<div class="activity-card-command">${escape(commandDisplay(entry.args))}</div>` : ""}</button>`).join("") : emptyDeveloper("No recorded activity", "Tool calls, commands and test output appear here after they run."));
+    const record = records.find((entry) => String(entry.key) === state.dev.selectedActivity);
+    patch($("dev-activity-viewer"), record ? `<div class="developer-detail"><h3>${escape(record.name === "run_tests" ? "Test output" : record.name === "run_command" ? "Command output" : ["failed", "denied", "cancelled", "expired", "stale", "interrupted"].includes(record.status) ? failedToolLabel(record.name, record.args, record.status) : toolLabel(record.name, record.args))}</h3><p>${escape(agentStatus(record.status))}${record.exit_code != null ? ` · exit ${escape(record.exit_code)}` : ""}${record.agent_id ? ` · ${escape(record.agent_id === "root" ? "Main agent" : record.agent_id)}` : ""}</p><pre class="activity-output">${escape(readableOutput(record.result) || (record.status === "proposed" ? "Waiting for approval before execution." : record.status === "running" ? "Command is running…" : "No output was recorded."))}</pre>${record.output_truncated ? '<p class="developer-footnote">Showing an output excerpt.</p>' : ""}<details class="tool-detail" data-key="activity-request-${escape(record.key)}">${disclosureSummary("Exact request")}<pre>${escape(pretty(record.args || {}))}</pre></details></div>` : "");
+  }
+  function renderDeveloper() {
+    if (!state.dev.open) return;
+    document.querySelectorAll("[data-dev-tab]").forEach((button) => {
+      const selected = button.dataset.devTab === state.dev.tab;
+      button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1;
+      $(`dev-${button.dataset.devTab}`).hidden = !selected;
+    });
+    $("developer-error").hidden = !state.dev.error;
+    $("developer-error").textContent = state.dev.error;
+    $("developer-summary").textContent = state.detail?.chat?.title || "Tasks, files and recorded work";
+    $("dev-agent-count").textContent = state.dev.data?.agents?.length || "";
+    $("dev-change-count").textContent = state.dev.data?.changes?.length || "";
+    if (state.dev.tab === "agents") renderDeveloperAgents();
+    else if (state.dev.tab === "files") renderDeveloperFiles();
+    else if (state.dev.tab === "changes") renderDeveloperChanges();
+    else renderDeveloperActivity();
+  }
+  async function refreshDeveloper() {
+    if (!state.dev.open || !state.selected) return;
+    if (state.dev.loadingRequest) { state.dev.refreshAgain = true; return; }
+    const selected = state.selected;
+    const version = state.dev.version;
+    state.dev.loadingRequest = true;
+    state.dev.loading = !state.dev.data;
+    renderDeveloper();
+    try {
+      const detail = await api(`/api/chats/${encodeURIComponent(selected)}/developer`);
+      if (selected !== state.selected || version !== state.dev.version) return;
+      state.dev.data = detail;
+      state.dev.error = "";
+    } catch (error) { if (selected === state.selected && version === state.dev.version) state.dev.error = error.message; }
+    finally {
+      state.dev.loadingRequest = false;
+      state.dev.loading = false;
+      renderDeveloper();
+      if (state.dev.refreshAgain || selected !== state.selected || version !== state.dev.version) {
+        state.dev.refreshAgain = false;
+        refreshDeveloper();
+      }
+    }
+  }
+  async function messageAgent() {
+    const agent = selectedDeveloperAgent();
+    const input = $("agent-direction");
+    const message = input.value.trim();
+    if (!agent?.can_message || !message || state.dev.messageBusy) return;
+    const original = input.value;
+    state.dev.messageBusy = true; renderDeveloperAgents();
+    try {
+      await api(`/api/runs/${encodeURIComponent(agent.run_id)}/agents/${encodeURIComponent(agent.agent_id)}/message`, { message });
+      if (input.value === original && state.dev.selectedAgent === agentKey(agent)) { input.value = ""; state.dev.agentDrafts.set(agentKey(agent), ""); }
+      toast("Direction saved for the agent’s next step.");
+      await refreshDeveloper();
+    } catch (error) { toast(error.message, true, 5500); }
+    finally { state.dev.messageBusy = false; renderDeveloperAgents(); }
+  }
+  async function stopSelectedAgent() {
+    const agent = selectedDeveloperAgent();
+    if (!agent?.can_cancel || state.dev.messageBusy) return;
+    state.dev.messageBusy = true; renderDeveloperAgents();
+    try {
+      await api(`/api/runs/${encodeURIComponent(agent.run_id)}/agents/${encodeURIComponent(agent.agent_id)}/cancel`, {});
+      await refresh(); await refreshDeveloper();
+    } catch (error) { toast(error.message, true, 5500); }
+    finally { state.dev.messageBusy = false; renderDeveloperAgents(); }
+  }
+
   const commands = [
     { name: "/new", description: "Start a fresh chat", run: () => selectChat(null) },
     { name: "/clear", description: "Start with a fresh context", run: () => selectChat(null) },
+    { name: "/tasks", description: "Inspect agent tasks", run: () => toggleDeveloper(true, "agents") },
+    { name: "/files", description: "Browse workspace files", run: () => toggleDeveloper(true, "files") },
+    { name: "/diff", description: "Review recorded changes", run: () => toggleDeveloper(true, "changes") },
+    { name: "/activity", description: "Commands, tests and tool output", run: () => toggleDeveloper(true, "activity") },
     { name: "/settings", description: "Permissions and workspace", run: () => $("settings").showModal() },
     { name: "/status", description: "Model and chat status", run: () => toast(`${modelLabel()} · ${statusLabel((state.detail?.backend || state.overview?.backend)?.status)} · ${currentPolicy() === "read_only" ? "Read only" : "Review changes"}`, false, 5500) },
     { name: "/help", description: "Keyboard shortcuts", run: () => toast("Enter sends · Shift + Enter adds a line · Esc stops · ⌘ K starts a new chat", false, 6500) },
   ];
   function matchingCommands() {
     const value = $("message").value.trim();
-    if (!/^\/[a-z]*$/i.test(value)) return [];
+    if (currentMedia().length || !/^\/[a-z]*$/i.test(value)) return [];
     return commands.filter((command) => command.name.startsWith(value.toLowerCase()));
   }
   function renderCommands() {
@@ -717,6 +1172,13 @@
   $("jump-bottom").addEventListener("click", scrollBottom);
   $("transcript-pane").addEventListener("scroll", () => { $("jump-bottom").hidden = nearBottom(); }, { passive: true });
   document.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "d") { event.preventDefault(); toggleDeveloper(); return; }
+    if (event.key === "Tab" && state.dev.open && matchMedia("(max-width:1100px)").matches && !$("settings").open && !$("image-viewer").open) {
+      const buttons = Array.from($("developer-pane").querySelectorAll('button:not(:disabled),input,textarea,select,a[href]')).filter((element) => element.getClientRects().length && element.tabIndex !== -1);
+      const first = buttons[0]; const last = buttons.at(-1);
+      if (event.shiftKey && (document.activeElement === first || !$("developer-pane").contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
     if (event.key === "Tab" && state.sidebar && matchMedia("(max-width:700px)").matches) {
       const buttons = Array.from($("sidebar").querySelectorAll("a[href],button:not(:disabled)"));
       const first = buttons[0]; const last = buttons.at(-1);
@@ -726,17 +1188,118 @@
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       if ($("settings").open) $("settings").close();
+      if ($("image-viewer").open) $("image-viewer").close();
       selectChat(null); return;
     }
-    if (event.key === "Escape" && !$("settings").open) {
+    if (event.key === "Escape" && !$("settings").open && !$("image-viewer").open) {
       if (!$("command-menu").hidden) { $("command-menu").hidden = true; event.preventDefault(); }
       else if (state.sidebar) { toggleSidebar(false); event.preventDefault(); }
+      else if (state.dev.open && matchMedia("(max-width:1100px)").matches) { toggleDeveloper(false); event.preventDefault(); }
       else if (active()) { cancelResponse(); event.preventDefault(); }
+      else if (state.dev.open) { toggleDeveloper(false); event.preventDefault(); }
     }
   });
-  window.addEventListener("resize", () => { if (state.sidebar) toggleSidebar(true); resizeComposer(); });
+  window.addEventListener("resize", () => { if (state.sidebar) toggleSidebar(true); if (state.dev.open) { updateSurfaceInert(); if (matchMedia("(max-width:1100px)").matches && !$("developer-pane").contains(document.activeElement)) $(`dev-tab-${state.dev.tab}`).focus(); } resizeComposer(); });
   window.addEventListener("focus", () => refresh());
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+  $("toggle-developer").addEventListener("click", () => toggleDeveloper());
+  $("close-developer").addEventListener("click", () => toggleDeveloper(false));
+  $("developer-backdrop").addEventListener("click", () => toggleDeveloper(false));
+  document.querySelectorAll("[data-dev-tab]").forEach((button) => button.addEventListener("click", () => selectDevTab(button.dataset.devTab)));
+  $("dev-response-filter").addEventListener("change", () => { state.dev.agentScope = $("dev-response-filter").value; renderDeveloperAgents(); });
+  $("dev-activity-filter").addEventListener("change", () => { state.dev.activityFilter = $("dev-activity-filter").value; renderDeveloperActivity(); });
+  let fileSearchTimer;
+  $("dev-file-query").addEventListener("input", () => {
+    state.dev.fileQuery = $("dev-file-query").value.trim();
+    clearTimeout(fileSearchTimer);
+    renderDeveloperFiles();
+    fileSearchTimer = setTimeout(loadWorkspaceFiles, 220);
+  });
+  $("reload-files").addEventListener("click", () => { loadWorkspaceFiles(); refreshDeveloper(); });
+  $("dev-agent-message").addEventListener("submit", (event) => { event.preventDefault(); messageAgent(); });
+  $("agent-direction").addEventListener("input", () => {
+    if (state.dev.selectedAgent) state.dev.agentDrafts.set(state.dev.selectedAgent, $("agent-direction").value);
+    $("send-agent").disabled = state.dev.messageBusy || !$("agent-direction").value.trim();
+  });
+  $("agent-direction").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); messageAgent(); } });
+  $("stop-agent").addEventListener("click", stopSelectedAgent);
+  $("attach-images").addEventListener("click", () => $("image-input").click());
+  $("image-input").addEventListener("change", () => { const files = Array.from($("image-input").files || []); $("image-input").value = ""; addImages(files); });
+  $("message").addEventListener("paste", (event) => {
+    const files = Array.from(event.clipboardData?.items || []).filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
+    if (!files.length) return;
+    event.preventDefault(); addImages(files);
+  });
+  let dragDepth = 0;
+  document.addEventListener("dragenter", (event) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault(); dragDepth++; $("composer").classList.add("drop-target");
+  });
+  document.addEventListener("dragover", (event) => { if (Array.from(event.dataTransfer?.types || []).includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
+  document.addEventListener("dragleave", (event) => { if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("composer").classList.remove("drop-target"); });
+  document.addEventListener("drop", (event) => {
+    if (!event.dataTransfer?.files?.length) return;
+    event.preventDefault(); dragDepth = 0; $("composer").classList.remove("drop-target"); addImages(event.dataTransfer.files);
+  });
+  $("close-image-viewer").addEventListener("click", () => $("image-viewer").close());
+  $("image-viewer").addEventListener("click", (event) => {
+    const bounds = $("image-viewer").getBoundingClientRect();
+    if (event.target === $("image-viewer") && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) $("image-viewer").close();
+  });
+  document.addEventListener("click", (event) => {
+    const attachmentRemove = event.target.closest("[data-remove-attachment]");
+    if (attachmentRemove) { removeImage(attachmentRemove.dataset.removeAttachment); return; }
+    const attachmentView = event.target.closest("[data-preview-attachment]");
+    if (attachmentView) { const image = currentMedia().find((entry) => entry.id === attachmentView.dataset.previewAttachment); if (image?.preview) showImage(image); return; }
+    const media = event.target.closest("[data-media-hash]");
+    if (media) { showImage({ sha256: media.dataset.mediaHash, url: media.dataset.mediaUrl, name: media.dataset.mediaName }); return; }
+    const review = event.target.closest("[data-review-approval]");
+    if (review) {
+      const button = Array.from($("transcript").querySelectorAll("[data-approval]")).find((entry) => entry.dataset.approval === review.dataset.reviewApproval);
+      const card = button?.closest(".approval-card");
+      if (card) { if (matchMedia("(max-width:1100px)").matches) toggleDeveloper(false); card.setAttribute("tabindex", "-1"); card.scrollIntoView({ block: "center" }); card.focus({ preventScroll: true }); }
+      else toast("This action is no longer waiting for approval.");
+      return;
+    }
+    const agent = event.target.closest("[data-dev-agent]");
+    if (agent) { setSelectedDeveloperAgent(agent.dataset.devAgent); renderDeveloperAgents(); return; }
+    const change = event.target.closest("[data-dev-change]");
+    if (change) { state.dev.selectedChange = change.dataset.devChange; renderDeveloperChanges(); return; }
+    const activity = event.target.closest("[data-dev-activity]");
+    if (activity) { state.dev.selectedActivity = activity.dataset.devActivity; renderDeveloperActivity(); return; }
+    const file = event.target.closest("[data-dev-file]");
+    if (file) {
+      const groups = knownFiles();
+      const match = [...groups.created, ...groups.workspace].find((entry) => fileKey(entry) === file.dataset.devFile);
+      if (match) openFile(match); return;
+    }
+    if (event.target.closest("[data-close-file]")) { state.dev.file = null; state.dev.selectedFile = null; state.dev.fileVersion++; state.dev.fileLoading = false; renderDeveloperFiles(); return; }
+    const fileAction = event.target.closest("[data-file-action]");
+    if (!fileAction || !state.dev.file) return;
+    const opened = state.dev.file;
+    if (fileAction.dataset.fileAction === "copy-path") copy(opened.path, fileAction);
+    else if (fileAction.dataset.fileAction === "mention") {
+      const input = $("message");
+      const reference = /\s/.test(opened.path) ? `@${JSON.stringify(opened.path)} ` : `@${opened.path} `;
+      input.setRangeText(reference, input.selectionStart, input.selectionEnd, "end");
+      saveDraft(); renderComposer();
+      if (matchMedia("(max-width:1100px)").matches) toggleDeveloper(false);
+      input.focus({ preventScroll: true });
+    } else if (fileAction.dataset.fileAction === "reload") openFile(opened);
+    else if (fileAction.dataset.fileAction === "download") {
+      const url = URL.createObjectURL(new Blob([opened.content || ""], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a"); link.href = url; link.download = opened.path.split(/[\\/]/).at(-1); document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  });
+  $("developer-pane").addEventListener("keydown", (event) => {
+    if (event.target.matches("[data-dev-tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      const tabs = Array.from(document.querySelectorAll("[data-dev-tab]"));
+      const current = tabs.indexOf(event.target);
+      const index = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      event.preventDefault(); selectDevTab(tabs[index].dataset.devTab); tabs[index].focus();
+    }
+  });
+
   async function boot() {
     const selected = new URLSearchParams(location.search).get("chat");
     if (selected) { state.selected = selected; state.loading = true; $("welcome").hidden = true; $("view-loading").hidden = false; }
