@@ -65,6 +65,37 @@ def test_reads_bypass_approval_and_read_only_rejects_mutations(store):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("stop_mode", ["requested", "parent_failed"])
+def test_agent_stop_request_invalidates_review_before_scheduler_cleanup(
+    store, stop_mode
+):
+    async def scenario():
+        child = store.spawn(
+            "one", "root", "test-child", "child task", "reviewer", [], "system"
+        )
+        calls = []
+
+        async def tool(args):
+            calls.append(args)
+            return "must not execute"
+
+        gate = ApprovalGate(store, run_id="one")
+        with actor(agent_id=child):
+            task = asyncio.create_task(gate.wrap("write", tool, mutating=True)({}))
+            row = await requested(gate)
+            if stop_mode == "requested":
+                store.event("one", child, "agent_cancel_requested", {"agent_id": child})
+            else:
+                store.update_agent("one", "root", status="failed")
+            with pytest.raises(ToolValidationError, match="cancellation|parent"):
+                gate.decide(row["id"], True)
+            with pytest.raises(ToolValidationError, match="cancellation|parent"):
+                await asyncio.wait_for(task, 2)
+        assert not calls
+
+    asyncio.run(scenario())
+
+
 def test_approval_is_exact_one_shot_and_durable(store):
     calls = []
 
