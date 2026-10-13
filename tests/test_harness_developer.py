@@ -362,10 +362,12 @@ def test_git_inspection_filters_private_paths_and_disables_configured_programs(
     git("config", "user.email", "fixture@example.invalid")
     (tmp_path / "example.txt").write_text("old\n")
     (tmp_path / ".env").write_text("private old\n")
+    (tmp_path / "*.py").write_text("literal old\n")
+    (tmp_path / "other.py").write_text("other old\n")
     (tmp_path / ".gitattributes").write_text(
         "example.txt diff=fixture filter=fixture\n"
     )
-    git("add", "example.txt", ".env", ".gitattributes")
+    git("add", "example.txt", ".env", ".gitattributes", "*.py", "other.py")
     git("commit", "-m", "fixture")
     marker = tmp_path / "configured-program-executed"
     program = tmp_path / "git-helper.sh"
@@ -378,6 +380,8 @@ def test_git_inspection_filters_private_paths_and_disables_configured_programs(
     git("config", "filter.fixture.required", "true")
     (tmp_path / "example.txt").write_text("new\n")
     (tmp_path / ".env").write_text("private new\n")
+    (tmp_path / "*.py").write_text("literal new\n")
+    (tmp_path / "other.py").write_text("other new\n")
 
     async def scenario():
         service = service_for(tmp_path)
@@ -393,6 +397,10 @@ def test_git_inspection_filters_private_paths_and_disables_configured_programs(
             )
             assert diff["available"] and "-old\n+new\n" in diff["diff"]
             assert not marker.exists()
+            literal = await developer.dispatch("GET", "/api/workspace/diff/%2A.py", {})
+            assert (
+                "literal new" in literal["diff"] and "other new" not in literal["diff"]
+            )
             with pytest.raises(ToolValidationError):
                 await developer.dispatch("GET", "/api/workspace/diff/.env", {})
         finally:

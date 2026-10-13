@@ -79,6 +79,7 @@ def test_output_and_deadline_are_bounded(tmp_path):
         {"argv": "echo hi"},
         {"argv": []},
         {"argv": ["echo"], "cwd": "../"},
+        {"argv": ["echo"], "cwd": "missing-directory"},
         {"argv": ["echo"], "timeout_seconds": True},
         {"argv": ["echo"], "shell": True},
         {"argv": ["echo", "\x00"]},

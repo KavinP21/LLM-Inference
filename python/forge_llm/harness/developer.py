@@ -627,6 +627,7 @@ class DeveloperWorkspace:
         try:
             process = await asyncio.create_subprocess_exec(
                 "git",
+                "--literal-pathspecs",
                 "--no-pager",
                 "--no-optional-locks",
                 "-c",
