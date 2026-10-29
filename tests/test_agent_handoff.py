@@ -5,9 +5,9 @@ import json
 from dataclasses import replace
 
 import pytest
-from forge_llm.agents.protocol import Generation, conservative_input_tokens
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
-from forge_llm.agents.store import AgentStore
+from instinct.agents.protocol import Generation, conservative_input_tokens
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.store import AgentStore
 
 
 def response(native, name, **args):

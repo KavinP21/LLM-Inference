@@ -7,9 +7,9 @@ import pytest
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
-from forge_llm.export import export_model
-from forge_llm.model_contract import validate_model_weights
-from forge_llm.model_file import ModelFile
+from instinct.export import export_model
+from instinct.model_contract import validate_model_weights
+from instinct.model_file import ModelFile
 
 
 def test_local_qwen2_checkpoint_still_exports_and_validates(tmp_path: Path) -> None:

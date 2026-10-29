@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 
 import pytest
-from forge_llm.agents.native_tools import (
+from instinct.agents.native_tools import (
     NoNativeCall,
     build_tool_specs,
     parse_native_actions,
 )
-from forge_llm.chat_formats import (
+from instinct.chat_formats import (
     GEMMA4,
     QWEN35,
     GemmaSyntaxError,

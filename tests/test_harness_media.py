@@ -12,14 +12,14 @@ import zlib
 from dataclasses import asdict
 
 import pytest
-from forge_llm.agents import media as media_module
-from forge_llm.agents.backends import WorkerPool
-from forge_llm.agents.media import MAX_MEDIA_REQUEST_BYTES
-from forge_llm.agents.protocol import Generation
-from forge_llm.agents.runtime import RuntimeConfig
-from forge_llm.agents.store import AgentStore
-from forge_llm.harness.server import MAX_BODY, StudioHandler, StudioHTTPServer
-from forge_llm.harness.service import StudioService
+from instinct.agents import media as media_module
+from instinct.agents.backends import WorkerPool
+from instinct.agents.media import MAX_MEDIA_REQUEST_BYTES
+from instinct.agents.protocol import Generation
+from instinct.agents.runtime import RuntimeConfig
+from instinct.agents.store import AgentStore
+from instinct.harness.server import MAX_BODY, StudioHandler, StudioHTTPServer
+from instinct.harness.service import StudioService
 
 
 def png_bytes(width=2, height=2, *, noisy=False):
@@ -84,7 +84,7 @@ class ImageBackend:
 
 def make_service(tmp_path, *, backend=None):
     return StudioService(
-        tmp_path, tmp_path / ".forge", demo=True, backend=backend or ImageBackend()
+        tmp_path, tmp_path / ".instinct", demo=True, backend=backend or ImageBackend()
     )
 
 
@@ -121,7 +121,7 @@ def test_image_only_send_persists_metadata_and_private_preview_before_reply(tmp_
                 await service.dispatch("GET", turn["media"][0]["url"], {}) == attached
             )
             assert (
-                tmp_path / ".forge" / "studio.sqlite"
+                tmp_path / ".instinct" / "studio.sqlite"
             ).stat().st_mode & 0o777 == 0o600
             detail = await settle(service, sent["chat_id"])
             assert detail["turns"][0]["status"] == "completed", detail["turns"][0][
@@ -262,7 +262,7 @@ def test_unsupported_model_fails_visibly_before_run_launch_but_preserves_image(
     tmp_path,
 ):
     async def check():
-        service = StudioService(tmp_path, tmp_path / ".forge", demo=True)
+        service = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
         try:
             attached = image()
             chat = (
@@ -540,7 +540,7 @@ def test_http_large_image_send_authenticated_preview_and_body_bounds(tmp_path):
             )
             headers = {"Origin": server.origin, "Content-Type": "application/json"}
             if auth:
-                headers["Cookie"] = "forge_studio=" + server.session_token
+                headers["Cookie"] = "instinct_session=" + server.session_token
             if declared_size is not None:
                 headers["Content-Length"] = str(declared_size)
             connection.request(method, path, body=body, headers=headers)

@@ -5,10 +5,10 @@ import json
 import time
 
 import pytest
-from forge_llm.agents.context import tool_actor
-from forge_llm.agents.protocol import Generation, ProtocolError, parse_action
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
-from forge_llm.agents.store import AgentStore, BudgetError, LeaseError
+from instinct.agents.context import tool_actor
+from instinct.agents.protocol import Generation, ProtocolError, parse_action
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.store import AgentStore, BudgetError, LeaseError
 
 
 def action(kind, **kwargs):
@@ -616,7 +616,7 @@ def test_context_projection_preserves_task_bounds_and_recall():
     assert len(runtime.store.messages(result.run_id, "root")) == 9
     projected = runtime.store.events(result.run_id)
     assert any(event["kind"] == "context_projected" for event in projected)
-    from forge_llm.agents.protocol import conservative_input_tokens
+    from instinct.agents.protocol import conservative_input_tokens
 
     for _, messages in backend.calls:
         assert messages[1].content == "Original task must survive every projection"

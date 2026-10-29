@@ -1,11 +1,11 @@
-#include "forge/kv_cache.h"
+#include "instinct/kv_cache.h"
 
-#include "forge/error.h"
+#include "instinct/error.h"
 
 #include <algorithm>
 #include <limits>
 
-namespace forge {
+namespace instinct {
 namespace {
 
 std::uint32_t blocks_for(std::uint32_t tokens, std::uint32_t block_tokens) {
@@ -109,4 +109,4 @@ KVCacheStats KVBlockPool::stats() const {
   return result;
 }
 
-}  // namespace forge
+}  // namespace instinct

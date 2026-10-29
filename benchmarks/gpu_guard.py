@@ -1,6 +1,6 @@
 """File lock that stops two of the project's GPU benchmark scripts running at once.
 
-Child processes inherit the lock through FORGE_GPU_EVIDENCE_FD. It doesn't stop
+Child processes inherit the lock through INSTINCT_GPU_EVIDENCE_FD. It doesn't stop
 unrelated applications from using the GPU, and it isn't part of the engine.
 """
 
@@ -17,8 +17,8 @@ from pathlib import Path
 def exclusive_gpu_workflow():
     import fcntl
 
-    path = Path(tempfile.gettempdir()) / f"forge-gpu-evidence-{os.getuid()}.lock"
-    inherited = os.environ.get("FORGE_GPU_EVIDENCE_FD")
+    path = Path(tempfile.gettempdir()) / f"instinct-gpu-evidence-{os.getuid()}.lock"
+    inherited = os.environ.get("INSTINCT_GPU_EVIDENCE_FD")
     owned = inherited is None
     descriptor = None
     try:
@@ -35,12 +35,12 @@ def exclusive_gpu_workflow():
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise RuntimeError(
-                "Another Forge benchmark holds the GPU lock; wait for it to finish."
+                "Another Instinct benchmark holds the GPU lock; wait for it to finish."
             ) from exc
 
         def run(command, **kwargs):
             environment = dict(kwargs.pop("env", os.environ))
-            environment["FORGE_GPU_EVIDENCE_FD"] = str(descriptor)
+            environment["INSTINCT_GPU_EVIDENCE_FD"] = str(descriptor)
             passed = set(kwargs.pop("pass_fds", ())) | {descriptor}
             return subprocess.run(
                 command,

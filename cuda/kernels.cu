@@ -1,12 +1,12 @@
-#include "forge/kernels.h"
+#include "instinct/kernels.h"
 
-#include "forge/cuda_utils.h"
-#include "forge/error.h"
+#include "instinct/cuda_utils.h"
+#include "instinct/error.h"
 
 #include <cfloat>
 #include <cmath>
 
-namespace forge {
+namespace instinct {
 namespace {
 
 constexpr int kThreads = 256;
@@ -347,7 +347,7 @@ __global__ void argmax_kernel(const half* logits, std::int32_t* tokens, int voca
   if (threadIdx.x == 0) tokens[blockIdx.x] = candidates[0].index;
 }
 
-void check_launch() { FORGE_CUDA(cudaGetLastError()); }
+void check_launch() { INSTINCT_CUDA(cudaGetLastError()); }
 
 }  // namespace
 
@@ -442,4 +442,4 @@ void launch_argmax(const half* logits, std::int32_t* tokens, int batch, int voca
   check_launch();
 }
 
-}  // namespace forge
+}  // namespace instinct

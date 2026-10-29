@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 
 import numpy as np
-from forge_llm.benchmark import model_provenance, percentile, run_once
-from forge_llm.format import ModelConfig, write_engine
+from instinct.benchmark import model_provenance, percentile, run_once
+from instinct.format import ModelConfig, write_engine
 
 
 class DummyEngine:

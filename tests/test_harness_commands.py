@@ -4,8 +4,8 @@ import os
 import sys
 
 import pytest
-from forge_llm.agents.tools import ToolValidationError
-from forge_llm.harness.commands import CommandTools
+from instinct.agents.tools import ToolValidationError
+from instinct.harness.commands import CommandTools
 
 
 def test_real_command_output_exit_code_cwd_and_no_shell_expansion(tmp_path):
@@ -32,7 +32,7 @@ def test_real_command_output_exit_code_cwd_and_no_shell_expansion(tmp_path):
 
 
 def test_command_does_not_inherit_credential_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv("FORGE_TEST_PRIVATE_KEY", "test-fixture-not-a-secret")
+    monkeypatch.setenv("INSTINCT_TEST_PRIVATE_KEY", "test-fixture-not-a-secret")
 
     async def check():
         result = json.loads(
@@ -41,7 +41,7 @@ def test_command_does_not_inherit_credential_environment(tmp_path, monkeypatch):
                     "argv": [
                         sys.executable,
                         "-c",
-                        "import os; print('FORGE_TEST_PRIVATE_KEY' in os.environ)",
+                        "import os; print('INSTINCT_TEST_PRIVATE_KEY' in os.environ)",
                     ]
                 }
             )

@@ -10,18 +10,18 @@ import weakref
 from types import SimpleNamespace
 
 import pytest
-from forge_llm.agents.backends import (
+from instinct.agents.backends import (
     BackendError,
-    LocalForgeBackend,
+    LocalModelBackend,
     RemoteWorkerBackend,
     RequestValidationError,
     WorkerConfig,
     WorkerPool,
 )
-from forge_llm.agents.media import media_from_file
-from forge_llm.agents.protocol import ChatMessage, Generation
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
-from forge_llm.agents.store import AgentStore, StoreError
+from instinct.agents.media import media_from_file
+from instinct.agents.protocol import ChatMessage, Generation
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.store import AgentStore, StoreError
 from test_agent_media import Runner
 from test_agent_workers import TOKEN, serving
 
@@ -34,7 +34,7 @@ def media(tmp_path):
 
 
 def actor(tmp_path, engine):
-    return LocalForgeBackend(
+    return LocalModelBackend(
         WorkerConfig(
             str(tmp_path),
             str(tmp_path),
@@ -241,7 +241,7 @@ def test_invalid_context_health_capability_is_not_coerced(monkeypatch):
         client,
         "_http",
         lambda *args: {
-            "schema": "forge_worker_v1",
+            "schema": "instinct_worker_v1",
             "ready": True,
             "supports_context_limits": "true",
         },
@@ -252,7 +252,7 @@ def test_invalid_context_health_capability_is_not_coerced(monkeypatch):
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_worker_settled_future_and_exception_payload_are_not_retained(fail):
-    from forge_llm.agents.worker import WorkerService
+    from instinct.agents.worker import WorkerService
 
     entered, release = threading.Event(), threading.Event()
 

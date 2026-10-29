@@ -4,8 +4,8 @@ import random
 
 import numpy as np
 import pytest
-from forge_llm.prefix_cache import PrefixCache, SharedKVBlockPool
-from forge_llm.runtime import IterationScheduler
+from instinct.prefix_cache import PrefixCache, SharedKVBlockPool
+from instinct.runtime import IterationScheduler
 
 
 class Store:

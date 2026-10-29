@@ -62,7 +62,7 @@ run, so it's a check that long context works and doesn't leak, not a latency
 number. Gemma 3 1B passes the same check.
 
 ```bash
-forge-validate-long-context --model models/qwen2.5-0.5b.engine \
+instinct-validate-long-context --model models/qwen2.5-0.5b.engine \
   --output benchmark-results/long-context.json
 ```
 
@@ -79,7 +79,7 @@ the same FP16 weights, using greedy decoding with the repetition penalty off:
   an FP16 near-tie between the top two logits.
 
 ```bash
-forge-correctness --engine-model models/qwen2.5-0.5b.engine \
+instinct-correctness --engine-model models/qwen2.5-0.5b.engine \
   --model Qwen/Qwen2.5-0.5B-Instruct --output benchmark-results/qwen-correctness.json
 ```
 
@@ -94,7 +94,7 @@ tests cover cancellation mid-prefill and check that pages are always reclaimed.
 - Don't run GPU tests while benchmarking. `benchmarks/gpu_guard.py` stops two of
   the project's own drivers from overlapping.
 - Keep Mac and NVIDIA results in separate tables.
-- Metal captures (`MTL_CAPTURE_ENABLED=1 forge-bench ... --capture out.gputrace`)
+- Metal captures (`MTL_CAPTURE_ENABLED=1 instinct-bench ... --capture out.gputrace`)
   slow everything down, so don't mix captured timings with normal runs.
 - On CUDA, `nsys profile --trace=cuda,nvtx,cublas` picks up the NVTX ranges
   around prefill and decode.

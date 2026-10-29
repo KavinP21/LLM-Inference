@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import time
 
-from forge_llm.agents.backends import LazyBackend, WorkerConfig, WorkerPool
-from forge_llm.agents.protocol import ChatMessage, Generation
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.backends import LazyBackend, WorkerConfig, WorkerPool
+from instinct.agents.protocol import ChatMessage, Generation
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
 
 CHAT = [ChatMessage("user", "hello")]
 

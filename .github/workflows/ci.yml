@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF
+      - run: cmake -S . -B build -G Ninja -DINSTINCT_ENABLE_CUDA=OFF -DINSTINCT_BUILD_PYTHON=OFF
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
       # No MLX or model weights here; Metal and model tests skip themselves.
@@ -42,7 +42,7 @@ jobs:
       - run: python -m pytest -q
         env:
           PYTHONPATH: python
-          FORGE_INSPECT_MODEL: build/forge-inspect-model
+          INSTINCT_INSPECT_MODEL: build/instinct-inspect-model
       - run: bash -n tools/*.sh
 
   sanitizers:
@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: >-
-          cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF
+          cmake -S . -B build -G Ninja -DINSTINCT_ENABLE_CUDA=OFF -DINSTINCT_BUILD_PYTHON=OFF
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
       - run: cmake --build build
@@ -62,7 +62,7 @@ jobs:
       - run: python -m pytest -q tests/test_quantization.py tests/test_model_file_reader.py
         env:
           PYTHONPATH: python
-          FORGE_INSPECT_MODEL: build/forge-inspect-model
+          INSTINCT_INSPECT_MODEL: build/instinct-inspect-model
 
   cuda-build:
     # Compile only. Hosted runners have no NVIDIA GPU, so the CUDA tests are
@@ -74,5 +74,5 @@ jobs:
       - run: >-
           apt-get update && apt-get install -y --no-install-recommends
           cmake ninja-build python3-dev pybind11-dev
-      - run: cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=ON -DFORGE_BUILD_PYTHON=ON
+      - run: cmake -S . -B build -G Ninja -DINSTINCT_ENABLE_CUDA=ON -DINSTINCT_BUILD_PYTHON=ON
       - run: cmake --build build

@@ -20,11 +20,11 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
-from forge_llm.agents import AgentRuntime, AgentStore, RuntimeConfig, WorkspaceTools
-from forge_llm.agents.cli import create_pool, load_config, worker_identities
-from forge_llm.agents.runtime import CompletionCheck
-from forge_llm.benchmark import model_provenance, source_provenance
 from gpu_guard import exclusive_gpu_workflow
+from instinct.agents import AgentRuntime, AgentStore, RuntimeConfig, WorkspaceTools
+from instinct.agents.cli import create_pool, load_config, worker_identities
+from instinct.agents.runtime import CompletionCheck
+from instinct.benchmark import model_provenance, source_provenance
 
 CASES = {
     "coding": {
@@ -53,7 +53,7 @@ def grade(case: str, workspace: Path, result, *, extra_cases: bool = True) -> di
         # Grade against a fresh, operator-owned test copy outside the agent's
         # workspace. Editing the visible tests cannot manufacture a pass.
         with tempfile.TemporaryDirectory(
-            prefix="forge-independent-grader-"
+            prefix="instinct-independent-grader-"
         ) as temporary:
             environment["PYTHONPYCACHEPREFIX"] = str(Path(temporary) / "pycache")
             test = Path(temporary) / "test_acceptance.py"
@@ -189,7 +189,7 @@ async def evaluate(args):
     config = load_config(args.config)
     sources = {
         str(path): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in Path("python/forge_llm/agents").glob("*.py")
+        for path in Path("python/instinct/agents").glob("*.py")
     }
     started = time.monotonic()
     pool = await create_pool(config)
@@ -206,7 +206,7 @@ async def evaluate(args):
             for case in args.cases:
                 for mode in modes:
                     with tempfile.TemporaryDirectory(
-                        prefix="forge-task-evaluation-"
+                        prefix="instinct-task-evaluation-"
                     ) as temporary:
                         workspace = Path(temporary)
                         for name, content in CASES[case]["files"].items():
@@ -302,10 +302,10 @@ async def evaluate(args):
             identities.append(model_provenance(Path(worker["model"])))
     current_sources = {
         str(path): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in Path("python/forge_llm/agents").glob("*.py")
+        for path in Path("python/instinct/agents").glob("*.py")
     }
     return {
-        "schema": "forge_agent_task_evaluation_v1",
+        "schema": "instinct_agent_task_evaluation_v1",
         "configuration": config,
         "startup_seconds": startup,
         "environment": source_provenance(),

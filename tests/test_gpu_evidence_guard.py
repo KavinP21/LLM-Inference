@@ -9,7 +9,7 @@ from pathlib import Path
 def test_gpu_workflow_lease_blocks_competing_driver_but_allows_children(monkeypatch):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.syspath_prepend(str(root / "benchmarks"))
-    monkeypatch.delenv("FORGE_GPU_EVIDENCE_FD", raising=False)
+    monkeypatch.delenv("INSTINCT_GPU_EVIDENCE_FD", raising=False)
     from gpu_guard import exclusive_gpu_workflow
 
     command = [
@@ -31,7 +31,7 @@ def test_gpu_workflow_lease_blocks_competing_driver_but_allows_children(monkeypa
             command, env=environment, capture_output=True, text=True, check=False
         )
         assert competitor.returncode != 0
-        assert "Another Forge benchmark holds the GPU lock" in competitor.stderr
+        assert "Another Instinct benchmark holds the GPU lock" in competitor.stderr
     # Closing the owning workflow really releases the lease; no busy loop/retry.
     subsequent = subprocess.run(
         command, env=environment, capture_output=True, text=True, check=False
@@ -46,6 +46,6 @@ def test_invalid_inherited_gpu_lease_fails_closed(monkeypatch):
     monkeypatch.syspath_prepend(str(root / "benchmarks"))
     from gpu_guard import exclusive_gpu_workflow
 
-    monkeypatch.setenv("FORGE_GPU_EVIDENCE_FD", "-1")
+    monkeypatch.setenv("INSTINCT_GPU_EVIDENCE_FD", "-1")
     with pytest.raises((OSError, ValueError)), exclusive_gpu_workflow():
         raise AssertionError("invalid lease was accepted")

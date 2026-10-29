@@ -1,4 +1,4 @@
-# Forge LLM
+# Instinct
 
 An LLM inference engine written from scratch in Python and C++, with an Apple
 MLX/Metal backend and a CUDA backend. It runs Qwen2 and Gemma 3 with a paged KV
@@ -7,7 +7,7 @@ only used to export weights, tokenize and check outputs; they're never in the
 generation loop.
 
 The repo also has a few things built on top of it: speculative decoding, a
-multi-agent task runtime, and a local web UI (Forge Studio) where Gemma 4 26B A4B
+multi-agent task runtime, and a local web UI (Instinct) where Gemma 4 26B A4B
 works in a directory and hands work to Qwen3.5-4B sub-agents.
 
 ## What the engine does
@@ -74,15 +74,15 @@ You need native arm64 Python 3.11+ and the Xcode command-line tools.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-CMAKE_ARGS="-DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF" \
+CMAKE_ARGS="-DINSTINCT_ENABLE_CUDA=OFF -DINSTINCT_BUILD_PYTHON=OFF" \
   pip install -e '.[mlx,export,test]'
 
-forge-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine
+instinct-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine
 ```
 
 ```python
 from transformers import AutoTokenizer
-from forge_llm import create_engine
+from instinct import create_engine
 
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
 prompt = tokenizer.apply_chat_template(
@@ -111,24 +111,24 @@ covers building the CUDA backend under WSL2.
 
 **Gemma 4 and Qwen3.5 (text, images).** The default setup uses Gemma 4 26B A4B
 (QAT 4-bit) as the main model and Qwen3.5-4B for sub-agents. Both run through
-[mlx-vlm](https://github.com/Blaizzy/mlx-vlm) inside Forge's [VLM runner](docs/vlm-runner.md),
+[mlx-vlm](https://github.com/Blaizzy/mlx-vlm) inside Instinct's [VLM runner](docs/vlm-runner.md),
 which reuses prompts across turns: a follow-up message starts generating in
 57 ms on Qwen3.5 and 84 ms on Gemma, against ~1 s or more for a cold prompt. See
 [docs/models.md](docs/models.md).
 
 ```bash
 pip install -e '.[mlx,vlm,agents]'
-python -m forge_llm.prepare_models       # ~18 GB into models/
+python -m instinct.prepare_models       # ~18 GB into models/
 ```
 
-**Forge Studio.** A local web UI (`python tools/forge_studio.py`, or double-click
-`Forge Studio.command`) for chatting with the model and letting it work in a
+**Instinct.** A local web UI (`python tools/instinct.py`, or double-click
+`Instinct.command`) for chatting with the model and letting it work in a
 directory. Replies stream in, and tool calls, sub-agents and approval prompts for
 edits and commands show up inline. Each chat picks its model and reasoning effort,
 a meter shows how full the context is, and a developer panel shows files,
 diffs, every model call's timing and cache use, and the state of each worker.
 It also takes image attachments, skills and stdio MCP servers. `--demo` runs the
-UI without loading a model. See [docs/forge-studio.md](docs/forge-studio.md).
+UI without loading a model. See [docs/app.md](docs/app.md).
 
 **Agent runtime.** Logical agents share a pool of model worker processes (local
 or remote over authenticated HTTP), spawn bounded child agents, and journal
@@ -144,11 +144,11 @@ On Qwen2.5-0.5B it's up to 4× faster when the output repeats earlier text, and
 
 ```bash
 # C++ host components (CMake 3.24+, Ninja)
-cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF
+cmake -S . -B build -G Ninja -DINSTINCT_ENABLE_CUDA=OFF -DINSTINCT_BUILD_PYTHON=OFF
 cmake --build build && ctest --test-dir build --output-on-failure
 
 # Python. Metal tests run when mlx is installed and skip otherwise.
-FORGE_INSPECT_MODEL=build/forge-inspect-model PYTHONPATH=python python -m pytest -q
+INSTINCT_INSPECT_MODEL=build/instinct-inspect-model PYTHONPATH=python python -m pytest -q
 ```
 
 The Metal tests check tiny random Qwen and Gemma models against independent
@@ -161,9 +161,9 @@ compile in the `nvidia/cuda` image.
 
 | Path | |
 | --- | --- |
-| [python/forge_llm/](python/forge_llm/) | MLX engine, scheduler, paged KV store, model adapters, Metal kernels, quantization |
-| [python/forge_llm/agents/](python/forge_llm/agents/), [harness/](python/forge_llm/harness/) | Agent runtime and workers; Forge Studio |
-| [src/](src/), [include/forge/](include/forge/) | C++ model file reader, KV block pool, scheduler |
+| [python/instinct/](python/instinct/) | MLX engine, scheduler, paged KV store, model adapters, Metal kernels, quantization |
+| [python/instinct/agents/](python/instinct/agents/), [harness/](python/instinct/harness/) | Agent runtime and workers; Instinct |
+| [src/](src/), [include/instinct/](include/instinct/) | C++ model file reader, KV block pool, scheduler |
 | [cuda/](cuda/) | CUDA Qwen graph, kernels, cuBLASLt wrapper, memory arenas |
 | [benchmarks/](benchmarks/) | Benchmark drivers, prompt sets, saved FP16 results |
 | [tests/](tests/) | Python and C++ tests |

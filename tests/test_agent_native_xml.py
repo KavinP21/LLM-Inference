@@ -3,12 +3,12 @@
 import json
 
 import pytest
-from forge_llm.agents.native_tools import (
+from instinct.agents.native_tools import (
     build_tool_specs,
     parse_native_action,
     parse_native_actions,
 )
-from forge_llm.agents.protocol import ProtocolError
+from instinct.agents.protocol import ProtocolError
 
 
 @pytest.fixture

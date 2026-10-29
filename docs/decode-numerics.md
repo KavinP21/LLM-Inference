@@ -14,7 +14,7 @@ are still batched, and prefill still uses the normal multi-token GEMM. A request
 decode output then doesn't depend on what else is running.
 
 ```python
-from forge_llm import create_engine
+from instinct import create_engine
 
 engine = create_engine("models/gemma-3-1b-it.engine", backend="mlx",
                        decode_mode="rowwise")

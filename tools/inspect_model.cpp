@@ -1,22 +1,22 @@
-#include "forge/model_file.h"
-#include "forge/model_validation.h"
+#include "instinct/model_file.h"
+#include "instinct/model_validation.h"
 
 #include <iomanip>
 #include <iostream>
 
 int main(int argc, char** argv) {
   if (argc != 2) {
-    std::cerr << "usage: forge-inspect-model MODEL.engine\n";
+    std::cerr << "usage: instinct-inspect-model MODEL.engine\n";
     return 2;
   }
   try {
-    const forge::ModelFile model(argv[1]);
-    forge::validate_model_weights(model);
+    const instinct::ModelFile model(argv[1]);
+    instinct::validate_model_weights(model);
     const auto& config = model.config();
-    const auto model_type = config.model_type == forge::ModelType::qwen2
+    const auto model_type = config.model_type == instinct::ModelType::qwen2
                                 ? "qwen2"
                                 : "gemma3_text";
-    std::cout << "format: Forge LLM v" << model.format_version() << '\n'
+    std::cout << "format: Instinct v" << model.format_version() << '\n'
               << "model_type: " << model_type << '\n'
               << "vocab_size: " << config.vocab_size << '\n'
               << "hidden_size: " << config.hidden_size << '\n'

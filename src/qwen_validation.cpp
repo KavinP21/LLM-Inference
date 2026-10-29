@@ -1,12 +1,12 @@
-#include "forge/qwen_validation.h"
+#include "instinct/qwen_validation.h"
 
-#include "forge/error.h"
+#include "instinct/error.h"
 
 #include <initializer_list>
 #include <string>
 #include <vector>
 
-namespace forge {
+namespace instinct {
 
 void validate_qwen2_weights(const ModelFile& file, bool allow_int8) {
   check(allow_int8 || file.quantization().empty(),
@@ -45,4 +45,4 @@ void validate_qwen2_weights(const ModelFile& file, bool allow_int8) {
   }
 }
 
-}  // namespace forge
+}  // namespace instinct

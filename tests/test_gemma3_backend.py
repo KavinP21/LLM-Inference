@@ -9,9 +9,9 @@ mx = pytest.importorskip("mlx.core")
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
-from forge_llm.backends.gemma3 import MlxGemma3Model
-from forge_llm.format import ModelConfig, write_engine
-from forge_llm.mlx_engine import MlxEngine
+from instinct.backends.gemma3 import MlxGemma3Model
+from instinct.format import ModelConfig, write_engine
+from instinct.mlx_engine import MlxEngine
 
 
 def _tiny_gemma3_artifact(path: Path):
