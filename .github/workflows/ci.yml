@@ -63,3 +63,16 @@ jobs:
         env:
           PYTHONPATH: python
           FORGE_INSPECT_MODEL: build/forge-inspect-model
+
+  cuda-build:
+    # Compile only. Hosted runners have no NVIDIA GPU, so the CUDA tests are
+    # built here but not run.
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:12.6.3-devel-ubuntu24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          apt-get update && apt-get install -y --no-install-recommends
+          cmake ninja-build python3-dev pybind11-dev
+      - run: cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=ON -DFORGE_BUILD_PYTHON=ON
+      - run: cmake --build build
