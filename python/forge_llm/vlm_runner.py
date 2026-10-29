@@ -86,7 +86,10 @@ def _identity(message: dict) -> dict:
     return {
         "role": message["role"],
         "content": message.get("content", ""),
-        "media": [(item["type"], item["key"]) for item in message.get("media", ())],
+        "media": [
+            (item["type"], item.get("key") or item["path"])
+            for item in message.get("media", ())
+        ],
     }
 
 

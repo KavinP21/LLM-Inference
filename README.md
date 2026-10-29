@@ -109,22 +109,17 @@ covers building the CUDA backend under WSL2.
 
 ## Also in this repo
 
-**Qwen3.5-4B (text, images, video).** `create_engine()` with no arguments loads a
-local 4-bit Qwen3.5-4B. This model uses a hybrid recurrent/attention
-architecture, and its forward pass runs through [MLX-VLM](https://github.com/Blaizzy/mlx-vlm)
-rather than Forge's own graph. Forge handles request admission, memory
-accounting for the recurrent state and KV, cancellation, thinking/answer
-splitting, and the agent and UI integration. One request runs per replica. See
-[docs/qwen35.md](docs/qwen35.md).
+**Gemma 4 and Qwen3.5 (text, images).** The default setup uses Gemma 4 26B A4B
+(QAT 4-bit) as the main model and Qwen3.5-4B for sub-agents. Both run through
+[mlx-vlm](https://github.com/Blaizzy/mlx-vlm) inside Forge's [VLM runner](docs/vlm-runner.md),
+which reuses prompts across turns: a follow-up message starts generating in
+57 ms on Qwen3.5 and 84 ms on Gemma, against ~1 s or more for a cold prompt. See
+[docs/models.md](docs/models.md).
 
 ```bash
-pip install -e '.[mlx,qwen35,agents]'
-python -m forge_llm.prepare_qwen35       # downloads the checkpoint into models/
-python tools/forge_chat.py               # simple desktop chat (Tk)
+pip install -e '.[mlx,vlm,agents]'
+python -m forge_llm.prepare_models       # ~18 GB into models/
 ```
-
-`tools/build_launcher.sh` builds a double-clickable `Forge LLM.app` for that chat
-window.
 
 **Forge Studio.** A local web UI (`python tools/forge_studio.py`, or double-click
 `Forge Studio.command`) for chatting with the model and letting it work in a

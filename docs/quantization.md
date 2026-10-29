@@ -55,32 +55,19 @@ keeps a second permanent copy of the weights.
 
 ## Mixed precision
 
-Most of the quality loss comes from a handful of projections. The calibration tools
-keep the most sensitive ones in FP16 and quantize the rest, down to a floor of 25%
-of the eligible projection bytes in INT8:
+Most of the quality loss comes from a handful of projections. `--retain-fp16`
+(repeatable) keeps named projections in FP16:
 
 ```bash
-PYTHONPATH=python python -m forge_llm.calibrate_int8 \
-  --source models/qwen2.5-0.5b.engine --tokenizer Qwen/Qwen2.5-0.5B-Instruct \
-  --output benchmark-results/qwen-policy.json
-
 PYTHONPATH=python python -m forge_llm.quantization \
   models/qwen2.5-0.5b.engine models/qwen2.5-0.5b-int8-mixed.engine \
-  --policy benchmark-results/qwen-policy.json
+  --retain-fp16 model.layers.0.mlp.down_proj.weight
 
 PYTHONPATH=python python -m forge_llm.validate_int8 \
   --source models/qwen2.5-0.5b.engine --model models/qwen2.5-0.5b-int8-mixed.engine \
   --tokenizer Qwen/Qwen2.5-0.5B-Instruct --int8-mode reconstruct \
   --output benchmark-results/qwen-mixed-quality.json
 ```
-
-`--retain-fp16 NAME` (repeatable) picks the FP16 projections by hand instead of
-`--policy`. A policy is tied to the source artifact's data checksum, and the
-converter records which projections it kept. `forge-calibrate-second-order` and
-`forge-calibrate-cached` (with `--weight-method fixed-scale|scale-aware|coordinate-refined`)
-run the fancier fitting methods described below. Calibration prompts live in
-`benchmarks/*-calibration-prompts.json`. The calibration and evaluation sets are
-checked for overlap after normalization and tokenization.
 
 `validate_int8` compares against the same FP16 artifact: 25 prompts, 32 greedy
 tokens each, plus teacher-forced logit cosine at fixed positions. It exits nonzero
@@ -127,9 +114,11 @@ requests, but FP16 is still faster, especially with concurrent requests where
 MLX's FP16 GEMM wins.
 On this model size, INT8 only buys memory.
 
-The scripts that ran these experiments, and their raw JSON output, were removed
-from the tree to keep it manageable. They're still in git history:
-`git checkout 2bd1005 -- benchmarks/` brings them back.
+The calibration code behind these experiments (sensitivity ranking, second-order
+fitting, cached-decode calibration, scale search, refinement), the scripts that
+ran them and their raw output have been removed since none of it made it past
+the experiment stage. It's all in git history: `git checkout 2bd1005 -- python
+benchmarks tests` brings it back.
 
 ## Artifact format v3
 
