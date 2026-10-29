@@ -225,6 +225,13 @@ class AgentStore:
             for row in self.connection.execute(sql, values)
         ]
 
+    def last_event(self, run_id: str, agent_id: str, kind: str) -> dict | None:
+        row = self.connection.execute(
+            "SELECT * FROM events WHERE run_id=? AND agent_id=? AND kind=? ORDER BY id DESC LIMIT 1",
+            (run_id, agent_id, kind),
+        ).fetchone()
+        return dict(row, payload=json.loads(row["payload"])) if row else None
+
     def recent_events(
         self, run_id: str, agent_id: str, *, limit: int = 12
     ) -> list[dict[str, Any]]:

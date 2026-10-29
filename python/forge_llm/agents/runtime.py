@@ -921,6 +921,39 @@ class AgentRuntime:
             + (data[-tail:].decode("utf-8", errors="ignore") if tail else "")
         )
 
+    def _input_bound(
+        self, run_id: str, agent_id: str, messages: list[ChatMessage]
+    ) -> int:
+        """Upper bound on the prompt tokens ``messages`` will take.
+
+        UTF-8 bytes are a safe bound but overcount code about 3.5x, which made
+        agents drop history they had room for. When the backend has measured
+        an earlier request of this agent whose messages are a prefix of these,
+        only what was appended since needs the byte bound.
+        """
+        bound = conservative_input_tokens(messages)
+        if not self.native_mode:
+            return bound
+        event = self.store.last_event(run_id, agent_id, "generation")
+        saved = event and self.store.generation_input(
+            run_id, event["payload"]["request_id"]
+        )
+        if not saved:
+            return bound
+        sent = saved[0]
+        if len(sent) > len(messages) or any(
+            old.role != new.role
+            or old.content != new.content
+            or [item["sha256"] for item in old.media]
+            != [item["sha256"] for item in new.media]
+            for old, new in zip(sent, messages)
+        ):
+            return bound
+        measured = event["payload"]["input_tokens"] + conservative_input_tokens(
+            messages[len(sent) :]
+        )
+        return min(bound, measured)
+
     def _model_context(
         self,
         run_id: str,
@@ -965,7 +998,10 @@ class AgentRuntime:
             - len(menu.encode("utf-8"))
             - 34
         )
-        if conservative_input_tokens(history) <= target or not config.compact_history:
+        if (
+            self._input_bound(run_id, agent_id, history) <= target
+            or not config.compact_history
+        ):
             return with_menu(history)
         base = history[
             :2
@@ -1497,9 +1533,9 @@ class AgentRuntime:
             raise ValueError(
                 "resume requires a native backend matching the persisted function catalog"
             )
-        input_bound = conservative_input_tokens(messages) + self._schema_input_bound(
-            tool_specs
-        )
+        input_bound = self._input_bound(
+            run_id, agent_id, messages
+        ) + self._schema_input_bound(tool_specs)
         if input_bound + config.max_output_tokens > config.max_context_tokens:
             self._fail(
                 run_id,
