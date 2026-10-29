@@ -1846,6 +1846,7 @@ class AgentRuntime:
                         config.max_output_tokens, len(generation.text.encode("utf-8"))
                     )
                     self.store.settle(run_id, reservation, input_tokens, output_tokens)
+                    self.store.prune_generation_inputs(run_id, agent_id, request_id)
                     self.store.event(
                         run_id,
                         agent_id,
