@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import signal
 import stat
 import sys
@@ -57,6 +58,31 @@ def _arguments(
         )
 
 
+# A group with a quantifier inside that is itself repeated, like (a+)+, can
+# backtrack exponentially; such queries are matched literally instead.
+_NESTED_QUANTIFIER = re.compile(r"\([^)]*[+*}][^)]*\)[+*{]")
+
+
+def _line_matcher(query: str):
+    """Match a search query the way models expect: literally, or as a regex.
+
+    Small models write ``def .*gemma`` whatever the tool description says, so a
+    query that compiles is also tried as a regular expression. Like ripgrep's
+    smart case, a query without capitals ignores case.
+    """
+    flags = 0 if any(char.isupper() for char in query) else re.IGNORECASE
+    literal = re.compile(re.escape(query), flags)
+    pattern = None
+    if re.escape(query) != query and not _NESTED_QUANTIFIER.search(query):
+        try:
+            pattern = re.compile(query, flags)
+        except re.error:
+            pass
+    if pattern is None:
+        return literal.search
+    return lambda line: literal.search(line) or pattern.search(line)
+
+
 def _integer(value: Any, low: int, high: int, name: str) -> int:
     if type(value) is not int or not low <= value <= high:
         raise ToolValidationError(f"{name} must be an integer between {low} and {high}")
@@ -69,7 +95,7 @@ class WorkspaceTools:
     descriptions: ClassVar[dict[str, str]] = {
         "list_files": 'List workspace files. Arguments: {"path":".","limit":100}.',
         "read_file": 'Read UTF-8 lines and SHA256. Arguments: {"path":"file","start_line":1,"max_lines":120}.',
-        "search": 'Search literal text in workspace files. Arguments: {"query":"text","path":".","limit":30}.',
+        "search": 'Search workspace files for text or a regular expression; lowercase queries ignore case. Arguments: {"query":"text","path":".","limit":30}.',
         "save_artifact": 'Save a new reviewable artifact. Arguments: {"path":"report.md","content":"..."}. Existing files cannot be overwritten.',
         "write_file": 'Replace a COMPLETE file after read_file. Last read version is checked automatically; omit hashes and receipts. Never write partial excerpts. Arguments: {"path":"file","content":"..."}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
         "replace_text": 'Replace one unique substring after read_file. Include leading spaces in code matches and indent EVERY replacement line; whitespace is never added. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","old_text":"exact unique text","new_text":"replacement"}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
@@ -452,6 +478,7 @@ class WorkspaceTools:
         if not isinstance(query, str) or not query or len(query) > 1000:
             raise ToolValidationError("query must contain 1 to 1000 characters")
         limit = _integer(args.get("limit", 30), 1, 200, "limit")
+        matches_line = _line_matcher(query)
         matches = []
         scanned_bytes = 0
         for path in self._files(self._path(args.get("path", "."))):
@@ -469,7 +496,7 @@ class WorkspaceTools:
             if "\x00" in data:
                 continue
             for line, content in enumerate(data.splitlines(), 1):
-                if query in content:
+                if matches_line(content):
                     if len(matches) == limit:
                         return _json({"matches": matches, "truncated": True})
                     matches.append(
