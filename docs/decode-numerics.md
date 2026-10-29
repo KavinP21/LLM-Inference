@@ -1,80 +1,64 @@
-# Decode numerical policy
+# Batch size and greedy output
 
-MLX has two explicit decode projection policies. Neither changes the artifact, dtypes, greedy
-argmax, prefill chunk size, context limit, admission policy, or cache layout.
+With the default `decode_mode="batched"`, all running requests share one GEMM per
+projection. FP16 reductions in MLX can come out slightly differently depending on
+matrix shape, so the same prompt can produce different logits when it decodes
+alone vs. next to seven other requests. The differences are tiny (the first ones
+show up around 1e-5 in layer 0), but when two logits are nearly tied, greedy
+decoding can pick a different token.
+
+`decode_mode="rowwise"` sends each decode projection, including the LM head,
+through the same single-row operation a lone request would use, then concatenates
+the rows. Embeddings, norms, activations, RoPE/page writes and paged attention
+are still batched, and prefill still uses the normal multi-token GEMM. A request's
+decode output then doesn't depend on what else is running.
 
 ```python
 from forge_llm import create_engine
 
-engine = create_engine(
-    "models/gemma-3-1b-it.engine",
-    backend="mlx",
-    max_num_sequences=16,
-    max_model_length=32768,
-    kv_cache_bytes=1024 << 20,
-    decode_mode="rowwise",  # default is "batched"
-)
+engine = create_engine("models/gemma-3-1b-it.engine", backend="mlx",
+                       decode_mode="rowwise")
 ```
 
-`batched` shares native matrix multiplications across all runnable requests, preserving the original
-throughput-oriented path. Native FP16 reductions can differ slightly with matrix shape. The saved
-stage replay isolates differences with **identical** projection inputs and weights at batch widths
-1 and 8; it also replays each operation on the same materialized input to distinguish a local
-shape effect from propagated upstream error. Tied or nearly tied logits can therefore select
-different greedy tokens, even when cosine similarity is extremely high. This is not resolved by
-loosening a cosine threshold or adding a prompt-specific tie rule.
+It works the same way for INT8 artifacts. The direct Metal kernel is called once
+per row, and the reconstruct modes build the dense FP16 matrix once and reuse it
+across rows.
 
-`rowwise` sends each decode projection, including the LM head, through the same single-row operation
-used by an independent request, concatenating the resulting rows in scheduler order. Embedding,
-normalization, activation, RoPE/page writes, and paged attention still execute as a batch. It does
-**not** serialize complete decoders, disable continuous batching, or silently change defaults.
-Prefill continues to use native multi-token GEMM. A single-request decode graph is unchanged.
+## Results
 
-For INT8, this policy is independent of `int8_mode`. Direct Metal projections use single-row kernel
-calls. Reconstruction modes build one temporary dense matrix per projection and share it among
-the row GEMVs; there is no persistent second model or repeated reconstruction per row. Biases,
-norms, embeddings, activations, and K/V retain their original precision.
+Qwen2.5-0.5B and Gemma 3 1B, 25 prompts × 32 tokens, decoded at concurrency 2, 8
+and 16 and with staggered arrivals, compared with each prompt run alone:
 
-The policy is an accuracy/throughput tradeoff, **not a speed optimization**. Splitting native GEMMs
-loses cross-request weight reuse and adds dispatches/intermediate row outputs. Memory and latency
-must be measured on the intended workload. It also does not undo lossy weight quantization, make
-FP16 match FP32, or certify parity with Transformers.
+| Model | Exact matches, `batched` (c2 / c8 / c16 / staggered) | `rowwise` |
+| --- | --- | --- |
+| Qwen FP16 | 23 / 21 / 23 / 25 | 25/25 everywhere, all logits bit-identical |
+| Gemma FP16 | 24 / 25 / 23 / 23 | 25/25 everywhere, all logits bit-identical |
 
-## Reproducible gates
+The mixed-precision INT8 artifacts behave the same way. Note that this is about
+consistency across batch shapes for one artifact. It doesn't make INT8 match FP16
+([quantization.md](quantization.md)), and it doesn't make FP16 match FP32.
+
+The cost is throughput once several requests are decoding:
+
+| Model, prompt × requests | `batched` tok/s | `rowwise` tok/s |
+| --- | ---: | ---: |
+| Qwen FP16, 128 × 1 | 122.8 | 122.4 |
+| Qwen FP16, 128 × 8 | 426.3 | 231.5 |
+| Qwen FP16, 1024 × 8 | 61.0 | 71.5 |
+| Gemma FP16, 128 × 8 | 196.3 | 130.0 |
+| Gemma FP16, 1024 × 8 | 53.8 | 48.3 |
+
+Single requests are unaffected, and short concurrent prompts lose 34–46%.
+`batched` stays the default.
+
+## Tests
 
 ```bash
-PYTHONPATH=python .venv/bin/pytest -q tests/test_decode_policy.py tests/test_batch_numerics_driver.py
-# Requires real Metal access:
-PYTHONPATH=python .venv/bin/pytest -q tests/test_batch_numerics_metal.py
-
-.venv/bin/python benchmarks/run_batch_numerics_checkpoint.py \
-  --output-dir benchmarks/results/batch-numerics-new-run
-
-# Audit the saved, split development checkpoint without using the GPU:
-.venv/bin/python benchmarks/audit_batch_checkpoint.py \
-  --result-dir benchmarks/results/batch-invariant-m3-max-2026-10-01 \
-  --output /tmp/forge-batch-evidence-audit-new.json
+PYTHONPATH=python python -m pytest -q tests/test_decode_policy.py \
+  tests/test_batch_numerics_driver.py tests/test_batch_numerics_metal.py
 ```
 
-The checkpoint driver uses the inherited exclusive GPU workflow lease and isolated child
-processes. It refuses existing output directories, rotates A/B order, runs five full warmups and
-three measured trials per configuration, and records source/artifact/workload checksums. Do not
-run unrelated GPU jobs or the desktop chat app during measurement; the lease only excludes
-cooperating Forge evidence drivers. Benchmark and context CLIs accept `--decode-mode` explicitly.
-
-Correctness uses freshly generated independent outputs and per-token FP32 logit-byte hashes from
-the **same current source**. Historical reports are separately checked for default-token regression,
-never treated as fresh references. The older INT8 checker still refuses stale source hashes.
-Saturated arrivals cover concurrency 2/8/16 with 32 outputs per request; staggered arrivals use
-1/4/8/16/32 output budgets. Capacity-aware insertion never discards excess requests. All runs
-require exact event counts, completion, materialized cancellation, and complete cache reclamation.
-Tiny two-family tests additionally compare exact logits at page boundaries, verify that attention
-still receives the full batch, and inject a projection failure to test cleanup.
-
-Bitwise consistency is verified for the saved hardware/software/artifacts/workloads, not promised
-for arbitrary MLX versions, other chips, fallback operators, or unsupported models. A changed
-backend or numerical policy must rerun these gates. The 32K checks prove resource integrity with
-one decode iteration; they are not long-context semantic-quality or sustained-throughput evidence.
-
-See [the measured results](mlx-batch-numerics-results.md). Strict cross-artifact INT8 greedy quality
-remains a separate, failed gate; W4A16 is still deferred.
+The Metal tests check exact logits at page boundaries on tiny Qwen and Gemma
+models, check that attention still gets the whole batch in rowwise mode, and
+inject a projection failure to check cleanup. `benchmarks/validate_batch_numerics.py`
+runs the same comparison on a real model.

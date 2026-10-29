@@ -1,4 +1,4 @@
-# Apple Silicon MLX setup and foundation validation
+# Apple Silicon setup
 
 The validated development host is an Apple M3 Max running native arm64 Python 3.12. The MLX wheel
 requires Apple Silicon and Metal access; a sandboxed or virtualized shell may import the package but
@@ -92,10 +92,10 @@ forge-correctness \
   --output benchmark-results/mlx-gemma3-correctness.json
 ```
 
-The correctness command is intentionally strict and exits nonzero for any greedy-token divergence.
-See the saved Gemma report for the measured FP16 near-tie rather than weakening this gate.
+The correctness command exits nonzero on any greedy-token divergence. Gemma currently diverges on
+one prompt after 25 tokens at an FP16 near-tie (see [benchmarks.md](benchmarks.md#correctness)).
 
-## Long-context gate
+## Long-context check
 
 ```bash
 forge-validate-long-context \
@@ -172,21 +172,8 @@ MTL_CAPTURE_ENABLED=1 forge-bench \
 Open the ignored bundle in Xcode. Do not report the capture-instrumented latency as normal runtime
 performance.
 
-## Experimental INT8 checkpoint
+## Experimental INT8
 
-Run `forge-quantize FP16.engine INT8.engine`, then explicitly select the new artifact with
-`int8_mode="metal"` (or `"dequantize"` for its baseline). See
-[the quantization runbook](quantization.md) before using it: the current real-model quality gates
-have not passed. The ordinary FP16 artifacts and desktop app defaults are unchanged.
-
-Separate-corpus mixed-precision calibration and `int8_mode="reconstruct"` are now available.
-Reconstruction uses native MLX matmul even during decode, trading extra temporary matrices/launches
-for the composed baseline's accumulation order. See
-[the hardening report](mlx-int8-hardening-results.md): both numerical gates pass, but neither frozen
-policy passes every exact-greedy case. Keep FP16 for ordinary use.
-
-For the newer cached-decode calibration/repair experiment use the
-[cached checkpoint runbook](cached-calibration.md). It requires fresh artifact/result directories,
-freezes both policies before regression, and observes every cached decode position. Old policies,
-results, normal engine defaults, and app behavior remain unchanged. Calibration alone is not a
-release-quality certificate.
+`forge-quantize FP16.engine INT8.engine` converts an artifact; load the result with
+`int8_mode="metal"`, `"reconstruct"` or `"dequantize"`. It doesn't match FP16 output
+closely enough to replace it, so read [quantization.md](quantization.md) first.

@@ -32,7 +32,7 @@ eight full-attention blocks are upstream execution. Forge owns request admission
 chunked prefill, cache accounting, cleanup and worker/UI integration. Its
 recurrent state and ordinary KV arrays are not the native physical paged store
 described below. One active sequence runs per replica; bounded task workers provide
-replica concurrency. See the [Qwen3.5 contract](qwen35.md).
+replica concurrency. See [qwen35.md](qwen35.md).
 
 The Apple backend implements complete Qwen2 and Gemma 3 text graphs with MLX operations. A
 validated artifact selects a family adapter; the engine, scheduler, and physical K/V owner depend
@@ -48,7 +48,7 @@ softmax, and returned logits; activations remain FP16. FP16 is the validated wei
 version-3 artifacts store internal projections as signed INT8 plus FP32 per-output-channel scales.
 Small decode batches use a fused Metal W8A16 linear kernel; prefill reconstructs ephemeral FP16
 matrices for MLX GEMM. No dense second model is retained. The INT8 quality checkpoint remains
-experimental; see [its contract and limitations](quantization.md).
+experimental; see [quantization.md](quantization.md).
 
 Mixed-precision version-3 artifacts preserve sensitive projections in their original FP16 form.
 An offline, source-bound policy chooses the partition; inference reads tensor descriptors only.
@@ -56,11 +56,10 @@ An offline, source-bound policy chooses the partition; inference reads tensor de
 preserving the composed numerical path at the cost of temporary dense matrices and extra launches.
 The original direct small-batch kernel remains independently selectable and experimental.
 
-Offline quantization now has a [cached-decode calibration contract](cached-calibration.md):
-private reservation-aware teacher forcing, source prompt/decode activation sampling, and bounded
-joint policy repair. A repair must improve the full calibration score without crossing the 25%
-eligible-byte floor. Statistics/search policies are never loaded by inference. Regression observes
-every cached continuation position; whole-prompt prefill probes remain available for legacy runs.
+The offline calibration tools (mixed precision, second-order fitting, and calibrating through the
+real paged decode path) only decide which projections stay FP16 and how the INT8 weights are
+fitted. Inference never loads their statistics. [quantization.md](quantization.md) has the
+results.
 
 The cache allocator assigns stable physical IDs in 16-token units. Each physical block owns an
 independently replaceable MLX layer-page with shape
@@ -95,7 +94,7 @@ into independent single-row operations. The scheduler, norm/activation chains, p
 paged attention remain batched; prefill and single-request numerics are unchanged. This addresses
 native FP16 GEMM batch-shape drift at a measured dispatch/weight-reuse cost. Reconstruction modes
 share one temporary matrix among the row GEMVs. The default remains `batched`; see
-[the numerical contract](decode-numerics.md).
+[decode-numerics.md](decode-numerics.md).
 
 Three Qwen custom-Metal chains reduce elementwise launches and intermediate traffic: residual add
 plus RMSNorm, RoPE plus physical layer-page write, and SiLU-times-up. Gemma safely reuses the
@@ -103,8 +102,8 @@ RoPE/page-write chain but keeps its different norm and activation topology in ML
 packs the live
 layer-pages once for the launch, remaps logical block tables into that tensor, and runs one
 simdgroup per request/query-head with online FP32 softmax. This avoids per-request logical-history
-concatenation and longest-sequence padding. It is not a zero-copy page pool: MLX's immutable array
-contract requires the layer-page stack, which remains a measured single-request cost.
+concatenation and longest-sequence padding. It is not a zero-copy page pool: because MLX arrays are immutable, the layer-page stack is still
+needed, and it's the main cost for single long requests.
 
 ## Speculative execution
 
@@ -112,7 +111,7 @@ Qwen3.5's optional controller uses an explicit upstream recurrent cache
 transaction. It records intermediate convolution and FP32 recurrent states,
 commits the accepted prefix together with KV cursors and releases rejected
 histories. Ordinary KV trimming cannot implement this hybrid rollback. It has a
-separate numerical and capacity contract in the [Qwen3.5 guide](qwen35.md).
+separate numerics and memory accounting covered in [qwen35.md](qwen35.md).
 
 The [greedy speculative controller](speculative-decoding.md) owns one request and a private paged
 cache. Prompt/history n-grams supply proposals without another model; an optional compatible draft
@@ -123,8 +122,7 @@ Context, output and KV budgets apply before execution; completion, cancellation 
 request caches.
 
 Native FP16 block projections and attention can use different reductions from one-token decoding.
-The block policy therefore has an explicit numerical contract rather than a universal canonical
-token-parity guarantee. A sequential verification mode and no-draft baseline use ordinary decode
+So block verification can't promise token-for-token parity with ordinary decoding in every case. A sequential verification mode and no-draft baseline use ordinary decode
 calls. The existing continuous scheduler and prefix-cache snapshots are not shared with this
 standalone decoder. CUDA verification, probabilistic speculation and multi-request speculative
 batching remain separate implementation work.
@@ -170,13 +168,13 @@ operating-system sandbox.
 The journal retains exact model inputs, token reservations, prepared actions, effects and delivered
 outcomes. Coordinator leases, cancellation and conservative recovery protect those contracts;
 ambiguous non-replayable effects are not silently repeated. Optional operator-selected completion
-checks distinguish an agent's final response from a verified criterion. Control tests and local
-worker execution do not establish general task quality; [model qualification](agent-results.md)
-is tracked separately.
+checks distinguish an agent's final response from a verified criterion. The runtime tests use scripted
+models; how real models did on actual tasks is in
+[agent-runtime.md](agent-runtime.md#how-real-models-did).
 
 Worker HTTP generation jobs are implemented. Streaming chat sessions, an OpenAI-compatible API,
-automatic cluster discovery/placement, NCCL tensor parallelism and physical multi-host/GPU scaling
-qualification remain outside that transport contract. Each current replica must fit its complete
+automatic cluster discovery/placement, NCCL tensor parallelism and multi-host scaling aren't
+implemented. Each current replica must fit its complete
 model on its selected device.
 
 ## CUDA KV layout

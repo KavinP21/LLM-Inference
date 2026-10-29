@@ -55,15 +55,15 @@ synthetic token arrays. Throughput is aggregate generated tokens/s.
 
 These September 23 measurements compare two execution modes of this engine on one
 machine. The benefit is largest for concurrent decode; page packing limits the
-single-request gain at 1,024 tokens. The [benchmark report](docs/resume-benchmark-results.md)
+single-request gain at 1,024 tokens. The [benchmark report](docs/benchmarks.md)
 contains latency, memory, source identity, and reproduction commands;
-[raw JSON](benchmarks/results/resume-m3-max-2026-09-23/) is checked in.
+[raw JSON](benchmarks/results/fp16-m3-max-2026-09-23/) is checked in.
 
 ## Validation and limits
 
 | Area | Evidence |
 | --- | --- |
-| Python regression | 1,085 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen35-2026-10-10/context-manager-regression.json) |
+| Python regression | 1,085 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. |
 | Qwen3.5-4B | Full upstream text/image/video execution; 32K execution/reclamation, worker/desktop controls and all four small task cases pass. [Scope and evidence](docs/qwen35.md) |
 | Qwen2.5-0.5B reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
 | Gemma 3 1B reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
@@ -72,7 +72,7 @@ contains latency, memory, source identity, and reproduction commands;
 | INT8 | Experimental; held-out exact-token quality gates fail. FP16 remains the default. |
 | CUDA | On-device correctness and performance are unverified. |
 
-See [implementation status](STATUS.md) for the reports behind these claims.
+See [known limits](docs/roadmap.md).
 The native runtime uses greedy decoding, with optional MLX speculative verification and
 authenticated model-worker job endpoints. Task agents coordinate local or configured
 remote replicas. Qwen3.5's upstream adapter also supports sampling and full visual inputs.
@@ -193,7 +193,7 @@ The [task agent runtime](docs/agent-runtime.md) adds supervised local/remote
 replicas, bounded child agents, durable messages and recovery, workspace tools,
 and executable completion criteria. Logical agents share physical workers.
 Task-quality evidence is tracked separately from protocol tests in
-[agent results](docs/agent-results.md).
+[agent results](docs/agent-runtime.md#how-real-models-did).
 
 See [orchestration and other serving engines](docs/orchestration-and-serving.md)
 for the architecture boundary and comparison with vLLM, SGLang and TensorRT-LLM.
