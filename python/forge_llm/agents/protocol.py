@@ -27,6 +27,10 @@ class Generation:
     output_tokens: int = 0
     finish_reason: str = "stop"
     model: str | None = None
+    # Native tool-call syntax of the model that produced the text.
+    dialect: str | None = None
+    reasoning: str = ""
+    metrics: dict | None = None
 
 
 class ModelBackend(Protocol):
