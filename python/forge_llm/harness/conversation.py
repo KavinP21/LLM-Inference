@@ -107,7 +107,12 @@ class ConversationRuntime(AgentRuntime):
         projected = super()._model_context(
             run_id, agent_id, config, schema_input_bound=schema_input_bound
         )
-        task = self.store.agent(run_id, agent_id).task
+        agent = self.store.agent(run_id, agent_id)
+        if agent.parent_id is not None:
+            # Sub-agents have no chat history; the runtime already pins their
+            # assigned scope.
+            return projected
+        task = agent.task
         current_media = next(
             (
                 message.media
@@ -131,7 +136,7 @@ class ConversationRuntime(AgentRuntime):
         if (
             has_task
             and expected_media <= projected_media
-            and conservative_input_tokens(projected) <= limit
+            and self._input_bound(run_id, agent_id, projected) <= limit
         ):
             return projected
         # The general runtime pins the first user message. A conversation has

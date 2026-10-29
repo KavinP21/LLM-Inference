@@ -471,3 +471,28 @@ def test_effort_is_sent_to_the_backend():
     assert seen == [{"effort": "high"}]
     with pytest.raises(ValueError):
         RuntimeConfig(effort="extreme")
+
+
+def test_measured_prompt_tokens_keep_history_bytes_would_have_dropped():
+    reads = [call("read_file", path=f"part{n}.py") for n in range(6)]
+    backend = NativeBackend({"root": reads + ["All six parts read."]})
+    runtime = AgentRuntime(
+        backend,
+        tools={"read_file": lambda args: args["path"] + "\n" + "x = 1\n" * 500},
+        tool_schemas={"read_file": READ_SCHEMA},
+        config=RuntimeConfig(max_context_tokens=20_000, max_output_tokens=1_000),
+    )
+    result = asyncio.run(runtime.run("Read part0.py through part5.py"))
+    assert result.status == "completed"
+    last = backend.calls[-1][1]
+    # Bytes alone would have needed projection well before the last step.
+    assert conservative_input_tokens(last) > 20_000 - 1_000
+    assert not runtime.store.events(result.run_id, kinds=("context_projected",))
+    assert all(
+        any(
+            f"part{n}.py" in message.content
+            for message in last
+            if message.role == "tool"
+        )
+        for n in range(6)
+    )

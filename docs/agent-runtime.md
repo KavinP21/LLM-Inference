@@ -182,9 +182,13 @@ can be repaired without pretending a mutation occurred.
 
 Context projection preserves the system instruction and complete original task,
 adds current child/dependency state and journal receipts, and includes recent
-messages within a conservative byte-based token reservation. Omitted/truncated
-evidence is marked explicitly. The built-in `journal_read` tool retrieves earlier
-agent evidence with bounded pagination. Normal evidence pages skip the reader's
+messages within a conservative token reservation. Bytes alone overcount code
+about 3.5x, so once the backend has measured an agent's previous request, the
+estimate is that count plus a byte bound for only what was appended since. It
+is still an upper bound, and agents keep several times more history before
+anything is dropped. Omitted/truncated evidence is marked explicitly. The
+built-in `journal_read` tool retrieves earlier agent evidence with bounded
+pagination. Normal evidence pages skip the reader's
 own recall copies; full audit metadata is available with `include_control`.
 The full source evidence remains in the
 journal; an initial task that cannot fit fails explicitly.
