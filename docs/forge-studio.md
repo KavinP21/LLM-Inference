@@ -31,7 +31,6 @@ forge-studio --workspace . --config examples/agents-studio.json
 Use `--port 8766` if the default port is occupied. Keep the launcher open while
 using Studio. Ctrl-C closes its owned workers and preserves interrupted work.
 `--no-open` serves the app without authorizing a fresh browser.
-The earlier native chat remains available through `tools/forge_chat.py`.
 
 ## Conversation controls
 

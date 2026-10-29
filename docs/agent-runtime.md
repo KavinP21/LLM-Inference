@@ -11,56 +11,41 @@ parallelism: each worker must fit a complete model on its selected device.
 
 ## Install and run
 
-The daily-driver configuration is now the full Qwen3.5-4B model:
-
 ```bash
-pip install -e '.[mlx,qwen35,agents,test]'
-python -m forge_llm.prepare_qwen35
-forge-agents --state-dir .forge run --config examples/agents-qwen35.json \
+pip install -e '.[mlx,vlm,agents,test]'
+python -m forge_llm.prepare_models
+forge-agents --state-dir .forge run --config examples/agents-studio.json \
   --workspace . --task 'Review the architecture and explain its resource limits.'
 ```
 
-Add `--image FILE` or `--video FILE` for visual tasks. Media bytes are bounded and
-hashed, stored once in the private journal and inherited by children. Workers
-check processor-expanded context before inference; resume also binds processor
-and adapter identity. Qwen3.5 uses its trained XML function-call dialect and one
-active request per replica. The [guide](qwen35.md) covers context, state budgets,
-thinking, sampling and optional greedy speculation. Both Qwen3 and Qwen3.5 passed
-the four recorded small task cases; these do not establish broad reliability.
+`examples/agents-studio.json` is the setup Studio uses: Gemma 4 26B A4B runs
+every root agent, and two Qwen3.5-4B workers handle sub-agents (see
+[models.md](models.md)). `examples/agents-gemma4.json` is Gemma alone, and
+`examples/agents-qwen35.json` is two Qwen3.5 replicas. Add `--image FILE` or
+`--video FILE` for visual tasks; media is stored once in the journal and
+inherited by children.
 
-The earlier Qwen3 configuration remains available:
+### Worker groups
 
-```bash
-pip install -e '.[mlx,agents-mlx,test]'
-PYTHONPATH=python .venv/bin/python -m forge_llm.agents.cli \
-  --state-dir .forge run --config examples/agents-local-mlx-lm.json --workspace . \
-  --task 'Read the runtime architecture and identify the most important resource limitation. Cite the file and explain its effect.'
-```
+Each worker can name a `group`. The runtime sends root agents to
+`runtime.driver_group` and sub-agents to `runtime.subagent_group`. Within a
+group, an agent goes back to the replica that served its previous step when
+that replica is free, since that's where its prompt is cached; otherwise it
+takes the least busy running replica. Sub-agents get the smaller of the
+configured context and their model's own window.
 
-`forge-agents` and `forge-worker` are installed entry points for the same modules.
-The example supervises two independent processes, each with its own loaded
-model and authenticated loopback endpoint. The separate Forge FP16 example enables
-bounded 256 MiB prefix reuse; the MLX-LM runner uses fresh full K/V caches.
-They run on the same Mac GPU;
-replicas do not create extra hardware or guarantee lower latency.
+`"lazy": true` process workers start in the background without loading their
+model, load it on their first request (~1.2 s for Qwen3.5) and exit after
+`idle_seconds` (default 600) without work. Workers stream partial output back to
+the coordinator while they generate.
 
-The task configuration selects an already local Qwen3-30B-A3B-Instruct-2507
-checkpoint through the optional MLX-LM runner. Set `model` and `tokenizer` to your
-local checkpoint directory, or link it at the configured ignored path:
+`forge-agents` and `forge-worker` are installed entry points for the same
+modules. Replicas on one Mac share its GPU, so extra replicas add concurrency
+but not hardware.
 
-```bash
-ln -s /path/to/local/qwen3-checkpoint models/qwen3-30b-a3b-mlx
-```
-
-For dense Qwen2.5-7B, use `examples/agents-qwen2.5-7b-mlx-lm.json` with a local
-checkpoint linked at `models/qwen2.5-7b-mlx`. This profile uses two 16K workers
-and 1 GiB persistent KV per worker. The [7B guide](qwen-7b.md) covers where it
-works (inference, chat) and where it doesn't (agent tasks).
-
-The Forge runner remains the default. `examples/agents-local.json` uses its
-reconstructed 7B artifact; that model fails the coding tasks, so treat it as a
-test configuration. `examples/agents-local-smoke.json`
-uses the smaller 0.5B model for transport smoke tests.
+The native-engine examples still work: `examples/agents-local.json` runs a
+reconstructed FP16 7B `.engine` file, and `examples/agents-local-smoke.json`
+uses the 0.5B model for transport smoke tests.
 
 For a coding task, add `--allow-write --allow-tests`. Writes require a version
 obtained from reading the file. Prefer `replace_text` for a narrow edit;
@@ -88,43 +73,17 @@ test files, uses a configured Python interpreter without a shell, captures
 bounded output, and kills its owned process group on timeout/cancellation. It
 executes repository Python code; it is not an operating-system sandbox.
 
-## Model capability and local artifacts
+## Model capability
 
-The runtime does not turn a small model into a strong planner. The initial
-Qwen2.5-0.5B task evaluation failed all four single/delegated trials on protocol
-errors. Those failed outputs are retained separately from passing control tests.
-Use the small model for worker smoke tests; judge task quality using an
-appropriately capable model and executable acceptance criteria.
-
-`runner: "mlx_lm"` is an explicit optional inference adapter, pinned to MLX-LM
-0.28.3. It accepts validated local Qwen3 MoE and dense Qwen2/Qwen2.5 7B
-affine-4-bit layouts. KV admission derives from the validated layer/head geometry.
-It uses upstream model execution and full K/V caches, with one actor-owned
-request at a time, context/persistent-KV admission, cancellation, and cleanup.
-Health/resume identity includes checkpoint/config hashes and library versions.
-It reports persistent K/V separately from weights and transient arrays.
-Forge kernel, prefix-cache and speculative options are rejected for this runner.
-The [upstream API](https://github.com/ml-explore/mlx-lm/blob/v0.28.3/mlx_lm/generate.py)
-is a dependency; this path doesn't use Forge's own graph.
-
-Forge can also import an already local MLX affine-4-bit Qwen2 checkpoint into
-the existing FP16 artifact format:
-
-```bash
-forge-import-mlx /path/to/local/mlx-qwen2-checkpoint models/qwen-reconstructed.engine
-```
-
-The import uses `mlx.dequantize`, records source hashes, validates the tensor
-names and shapes, and refuses to overwrite. It reconstructs the **quantized model**;
-it doesn't recover the original FP16 weights or run native 4-bit inference. The local cached 7B conversion produced a
-15.23 GB artifact; two replicas need substantial unified memory. Point each
-worker's `model` and `tokenizer` at the corresponding artifact/source tokenizer.
+The runtime doesn't make a small model a good planner. Qwen2.5-0.5B failed every
+recorded task on protocol errors, so use it only for smoke tests, and judge task
+quality with a capable model and executable acceptance criteria.
 
 ## Delegation, messages and tool results
 
-Tool-aware Qwen workers use Hugging Face's native function-call template and
-function-result messages. Function catalogs contain only this agent's granted
-tools and currently legal controls. `native_tool_calls` is opt-in; a tokenizer
+Tool-aware workers use each model's native function-call template and
+function-result messages. The catalog lists this agent's granted tools and the
+agent controls, and stays the same every turn so the prompt cache keeps working. `native_tool_calls` is opt-in; a tokenizer
 that ignores function definitions fails readiness. Ordinary generation retains its
 existing behavior. Legacy backends use the validated JSON action interface.
 
@@ -295,8 +254,8 @@ and once delegating to two children:
 | Model (runner) | Code, single / delegated | Docs, single / delegated |
 | --- | --- | --- |
 | Qwen3.5-4B, 4-bit (MLX-VLM) | Pass, 25.9 s / Pass, 56.1 s | Pass, 8.4 s / Pass, 51.4 s |
-| Qwen3-30B-A3B, 4-bit (MLX-LM) | Pass, 17.4 s / Pass, 110.2 s | Pass, 8.8 s / Pass, 25.6 s |
-| Qwen2.5-7B-Instruct, 4-bit (MLX-LM) | Fail / Fail | Pass / Fail |
+| Qwen3-30B-A3B, 4-bit (via MLX-LM, before the VLM runner) | Pass, 17.4 s / Pass, 110.2 s | Pass, 8.8 s / Pass, 25.6 s |
+| Qwen2.5-7B-Instruct, 4-bit (via MLX-LM) | Fail / Fail | Pass / Fail |
 | Qwen2.5-0.5B (native) | Fail / Fail | Fail / Fail |
 
 Each delegated run spawned and completed two children. Delegation was slower

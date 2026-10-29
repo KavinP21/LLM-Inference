@@ -26,13 +26,11 @@ consume the same validated container and expose the same `submit`/`step`/`cancel
 
 ## MLX execution
 
-The default Qwen3.5-4B checkpoint follows a separate full-model adapter through
-MLX-VLM 0.7.6. Its vision tower, multimodal positions, 24 recurrent blocks and
-eight full-attention blocks are upstream execution. Forge owns request admission,
-chunked prefill, cache accounting, cleanup and worker/UI integration. Its
-recurrent state and ordinary KV arrays are not the native physical paged store
-described below. One active sequence runs per replica; bounded task workers provide
-replica concurrency. See [qwen35.md](qwen35.md).
+Gemma 4 and Qwen3.5 checkpoints run through the [VLM runner](vlm-runner.md): mlx-vlm executes
+the model, and Forge handles prompt reuse (per-conversation sessions and boundary snapshots),
+drafting, effort, media and worker integration. Their caches aren't the native paged store
+described below. One request runs per replica; worker groups provide concurrency. See
+[models.md](models.md).
 
 The Apple backend implements complete Qwen2 and Gemma 3 text graphs with MLX operations. A
 validated artifact selects a family adapter; the engine, scheduler, and physical K/V owner depend
@@ -107,11 +105,8 @@ needed, and it's the main cost for single long requests.
 
 ## Speculative execution
 
-Qwen3.5's optional controller uses an explicit upstream recurrent cache
-transaction. It records intermediate convolution and FP32 recurrent states,
-commits the accepted prefix together with KV cursors and releases rejected
-histories. Ordinary KV trimming cannot implement this hybrid rollback. It has a
-separate numerics and memory accounting covered in [qwen35.md](qwen35.md).
+Gemma 4 can draft with its MTP assistant model through the VLM runner; see
+[vlm-runner.md](vlm-runner.md).
 
 The [greedy speculative controller](speculative-decoding.md) owns one request and a private paged
 cache. Prompt/history n-grams supply proposals without another model; an optional compatible draft
@@ -146,7 +141,7 @@ The [agent runtime](agent-runtime.md) coordinates logical tasks over independent
                       └──────────────┼────────────────┘
                                      │
                           worker-owned complete model
-                       MlxEngine / CUDA Engine / MLX speculation / optional MLX-LM
+                       MlxEngine / CUDA Engine / MLX speculation / VLM runner
 ```
 
 Each logical agent owns its assigned scope, conversation, inbox, children, dependencies and result.
