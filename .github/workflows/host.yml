@@ -44,6 +44,11 @@ jobs:
           tests/test_qwen35_qualification_driver.py
           tests/test_agent_native_xml.py tests/test_agent_qwen35.py
           tests/test_agent_context_media.py
+          tests/test_harness_cli.py tests/test_harness_extensions.py tests/test_harness_policy.py
+          tests/test_harness_service.py tests/test_harness_service_review.py tests/test_harness_server.py
+          tests/test_harness_conversation.py
+          tests/test_harness_media.py tests/test_harness_developer.py tests/test_harness_commands.py
+          tests/test_agent_operator_cancel.py
       - run: bash -n tools/verify_wsl_environment.sh tools/run_sanitizer.sh
 
   sanitized-host:

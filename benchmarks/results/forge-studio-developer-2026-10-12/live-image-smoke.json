@@ -1,0 +1,56 @@
+{
+  "scope": "Two image turns plus one narrowly approved Python command through local Qwen3.5; not broad vision or coding capability evidence",
+  "source_revision": "60054a0f3a32854c61d9a420f9bbe3b367e00b26",
+  "file_sha256": {
+    "python/forge_llm/harness/__init__.py": "6b34086f0824e97463e7c8eb034bf20f9d3ea1fcca44255fc8a527a8109d5d28",
+    "python/forge_llm/harness/cli.py": "08bdbb2e561bf9ae788d8df9c0abc234fb02f7defd8cb26c67a5146015f64966",
+    "python/forge_llm/harness/commands.py": "d66307f32072748bc459b9050cdb115576852cb864e6e2848456f43be1617872",
+    "python/forge_llm/harness/conversation.py": "7f4b0666028ccd5e9d3205410426006199a6bd74bb77e42b6ffa705e98b960d5",
+    "python/forge_llm/harness/demo.py": "b07e9deb3a5dd5f7ee416a6618a2fc3529d20f5b0b3c3749a8e454234ed292c9",
+    "python/forge_llm/harness/developer.py": "379574839708d322327466513d6d118a272c92eff7386036c21a424327f22580",
+    "python/forge_llm/harness/extensions.py": "31eb4061eda543000446868154d9ce36c7c29df781ba6fc197beda4e7decc9f9",
+    "python/forge_llm/harness/policy.py": "1bbbbc5fd2f6e8ccc31dcea2f005e9464273df83aadd0eb58a8e8f45f8d5a602",
+    "python/forge_llm/harness/server.py": "7f26d20784dcda9fb7f983f1d7284d090c772effd3c8debb63f8fd8a40f72106",
+    "python/forge_llm/harness/service.py": "ef81ea5f8de55b58f7a4cefcc61eca29cd8c8373e570ea8c36f1e77185191d76",
+    "python/forge_llm/agents/runtime.py": "11f544e6dc1cf41c5233a0b0a64136f7fd09cab34d065a668b5b89ba6aebace0",
+    "python/forge_llm/agents/store.py": "1de8879604a68271d8fd5cdbf3e94bc5046c666ac41bf6e6e84ddc67d3d104ed"
+  },
+  "image_sha256": "fa20f19977e089ed3ddf216b6896c3a357502d6b2970602383ce93e2afd71dc7",
+  "image_description": "Synthetic white320x180PNG, redleft rectangle and blueright rectangle",
+  "workers": {
+    "studio-local": {
+      "model": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen3.5-4b-mlx",
+      "tokenizer": "/Users/kavinprabhakar/customLLMInferenceEngine/models/qwen3.5-4b-mlx",
+      "backend": "mlx",
+      "max_model_length": 32768,
+      "model_data_sha256": "fe4f2e41e792e1b4b6ed8902371cf4b0ae429a33ef3f80b45bd357942cd995c3",
+      "model_config_sha256": "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+      "tokenizer_signature": "28e2908f436170d36f29586c891fd9ed0e9ab1e7f2b4fa98669d9fce604ed94f",
+      "draft_model_data_sha256": null,
+      "speculative": null,
+      "native_tool_calls": true,
+      "runner": "mlx_vlm",
+      "runner_version": "0.7.6",
+      "mlx_version": "0.32.2",
+      "checkpoint_format": "mlx_vlm_safetensors",
+      "processor_signature": "d0ca0e25857f83362e046cc79bbb52145623c1e35ede82462c9af961369414b9",
+      "enable_thinking": false,
+      "native_call_dialect": "qwen3_coder_xml",
+      "adapter_implementation_sha256": "0c5f3e3247834e07e3d4dccfc67093d5ded6f3acc93fc086d151153455f2a12a"
+    }
+  },
+  "statuses": [
+    "completed",
+    "completed"
+  ],
+  "outputs": [
+    "red",
+    "blue"
+  ],
+  "image_metadata_count": 1,
+  "command_status": "completed",
+  "command_output": "The command `python -c \"print('FORGE_COMMAND_OK')\"` was executed successfully. Actual output: FORGE_COMMAND_OK",
+  "successful_command_receipts": 1,
+  "elapsed_seconds": 24.694,
+  "passed": true
+}
