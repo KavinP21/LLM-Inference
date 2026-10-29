@@ -786,6 +786,23 @@ def test_cancel_propagates_to_worker_and_all_children():
     asyncio.run(scenario())
 
 
+def test_cancel_is_not_overtaken_by_a_generation_finishing_before_the_next_poll():
+    async def scenario():
+        # Finishes well inside the coordinator's one-second poll interval.
+        backend = ScriptBackend({"root": [action("finish", result="Late")]}, delay=0.3)
+        runtime = AgentRuntime(backend)
+        job = asyncio.create_task(runtime.run("Task", run_id="cancel"))
+        while not backend.calls:
+            await asyncio.sleep(0.001)
+        await runtime.cancel("cancel")
+        result = await job
+        assert result.status == "cancelled"
+        assert [agent.status for agent in result.agents] == ["cancelled"]
+        assert result.output is None
+
+    asyncio.run(scenario())
+
+
 def test_worker_coroutine_cancel_returns_cancelled_run_not_coordinator_interruption():
     class CancellingBackend(ScriptBackend):
         def __init__(self):
