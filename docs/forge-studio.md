@@ -4,14 +4,14 @@ Forge Studio is a local assistant for the inference engine. Open it, type what
 you need, and continue in the same conversation. Tools, delegated agents and
 permissions appear inline when they are relevant.
 
-![Forge conversation with inline tools and persistent composer](images/forge-studio-chat.jpg)
+![Forge conversation with sub-agents, thinking and a table answer](images/forge-studio-chat.jpg)
 
-Screenshot from `--demo` mode.
+Gemma 4 26B A4B answering with help from two Qwen3.5-4B sub-agents.
 
 ## Open and type
 
-From the repository root, with the existing Python environment and Qwen3.5
-checkpoint installed:
+From the repository root, after `pip install -e '.[mlx,vlm,agents]'` and
+`python -m forge_llm.prepare_models` (see [models.md](models.md)):
 
 ```bash
 .venv/bin/python tools/forge_studio.py
@@ -29,7 +29,8 @@ forge-studio --workspace . --config examples/agents-studio.json
 ```
 
 Use `--port 8766` if the default port is occupied. Keep the launcher open while
-using Studio. Ctrl-C closes its owned workers and preserves interrupted work.
+using Studio. Ctrl-C or SIGTERM stops its model workers and preserves interrupted
+work, and the workers also exit by themselves if the launcher is killed.
 `--no-open` serves the app without authorizing a fresh browser.
 
 ## Conversation controls
@@ -39,7 +40,11 @@ using Studio. Ctrl-C closes its owned workers and preserves interrupted work.
 | Send a prompt or follow-up | Enter, or Send |
 | Insert a newline | Shift+Enter |
 | Stop the current response | Escape, or Stop |
-| Start fresh | New chat; previous chats stay in history |
+| Start fresh | New chat (Cmd/Ctrl+K); previous chats stay in history |
+| Find an old chat | Search chats in the sidebar, or Cmd/Ctrl+Shift+F |
+| Rename or delete a chat | Pencil or × on the chat in the sidebar; delete asks once more |
+| Pick the model or reasoning effort | Selectors under the message box |
+| See how full the context is | Meter in the top bar: this chat's prompt against its limit |
 | Inspect a tool or delegated agent | Expand its inline activity row |
 | Review a proposed change | Inspect the inline diff, then approve or decline |
 | Adjust permissions | Settings; technical configuration stays out of the composer |
@@ -47,14 +52,34 @@ using Studio. Ctrl-C closes its owned workers and preserves interrupted work.
 | Reference a source file | Files panel: search, open, then Insert @path |
 | Attach an image | Attach images, paste, or drop an image onto the composer |
 
+## Models and reasoning effort
+
+The default profile, `examples/agents-studio.json`, runs Gemma 4 26B A4B as the
+main model and two Qwen3.5-4B workers for sub-agents. A chat can also be driven
+by Qwen3.5-4B, which is faster and lighter but weaker. The choice and the effort
+apply from the next message and are kept per chat.
+
+| Effort | What the model does |
+| --- | --- |
+| Fast | Answers without thinking. Agent steps decode greedily, with Gemma's drafter where it helps |
+| Think · low / medium | Thinks for up to 1,024 / 4,096 tokens first |
+| Think · high | Thinks for as long as it needs, within the output limit |
+
+Replies stream in as they're generated. While the model is thinking, its
+reasoning shows in a collapsible block, which stays under the answer as
+"Thought" afterwards. Sub-agents stream into their own cards.
+
+The Qwen workers start when a sub-agent first needs one and stop after ten idle
+minutes, so a chat that never delegates only holds Gemma in memory (about
+16 GB). Each agent keeps to the worker that has its prompt cached; see
+[vlm-runner.md](vlm-runner.md) for how prompts are reused.
+
 ## Developer workspace
 
 The optional right panel has independent scrolling. On desktop it can stay open
 beside the chat; on smaller screens it becomes a dismissible drawer.
 
-![Developer workspace with created files and image attachment](images/forge-studio-developer.jpg)
-
-Screenshot from `--demo` mode.
+![Developer workspace on the Performance tab](images/forge-studio-developer.jpg)
 
 - **Agents** shows assigned tasks, current tool operations, status, permissions,
   results and errors. Select an agent to save direction for its next model step
@@ -74,6 +99,17 @@ Screenshot from `--demo` mode.
   bounded output, failures and timeouts. Ask Forge to run a developer command
   in chat. `run_command` executes an explicitly reviewed argv array, with no
   implicit shell expansion; it does not provide an interactive terminal.
+- **Performance** lists every model call in the chat: prompt size and how much
+  of it came from the prompt cache, time to first token, decode speed, tokens
+  per round when Gemma's drafter ran, and output length. Above the list are
+  totals and each agent's context use.
+- **System** shows each model worker: memory, prompt-cache size, requests,
+  cache reuse, and whether it's ready, generating, starting or stopped.
+
+<p>
+  <img src="images/forge-studio-chat-mobile.jpg" alt="Studio chat on a phone" width="260">
+  <img src="images/forge-studio-developer-mobile.jpg" alt="System tab on a phone" width="260">
+</p>
 
 Commands can run repository code and have the launcher's OS privileges. Review
 the exact command before approval. Their working directory is confined to the
@@ -92,14 +128,16 @@ profile runs locally. They are not sent to an image-generation service.
 Accepted images are validated, hashed and stored once in private state. Sent
 thumbnails and full previews are authenticated and scoped to the conversation.
 Follow-ups and delegated agents receive bounded prior image context, keeping
-newer attachments when older ones exceed the limit. The default Qwen3.5 model
-supports image inference; incompatible model pools produce an explicit error.
+newer attachments when older ones exceed the limit. Gemma 4 and Qwen3.5 both
+accept images; model pools that can't produce an explicit error.
 Draft image bytes stay in the current browser tab's memory until sent; text
 drafts continue to use session storage.
 
 Follow-ups retain prior user messages and assistant replies in the same chat.
 The model receives bounded conversation context, with the current request pinned
-when older context is compacted. Chat history and accepted prompts persist across
+when older context is compacted. Old turns are dropped several at a time rather
+than one per message, so the start of the prompt, and with it the model's prompt
+cache, stays the same for a while. Chat history and accepted prompts persist across
 browser refreshes and server restarts. While the assistant is busy, submitted
 direction is saved and delivered without requiring a new task or a branch.
 
@@ -110,10 +148,10 @@ versions and proposed diffs are rechecked before editing. Read-only mode exposes
 inspection tools without mutation tools. Child agents inherit a restricted tool
 scope; their work appears inline and does not require switching to another view.
 
-The launcher profile loads one complete model replica. Logical agents have their
-own contexts and share that replica. For two physical replicas, select the existing
-`examples/agents-qwen35.json` worker configuration. Turn, token, context, deadline
-and concurrency limits still apply internally. Failures appear in the conversation
+Logical agents have their own contexts and share the configured workers: the
+main agent runs on the chat's model and sub-agents on the Qwen workers, two at a
+time. Turn, token, context, deadline and concurrency limits still apply
+internally. Failures appear in the conversation
 with the submitted message preserved.
 
 ## Optional extensions
@@ -169,11 +207,11 @@ These application controls are not an OS sandbox. Repository tests and selected
 MCP executables run with the launcher's OS privileges. Interrupted uncertain
 mutations and completion validators are not automatically replayed.
 
-Activity is updated from the durable journal at action boundaries. Token-by-token
-answer streaming, Studio video upload, remote MCP transports, OS/container
-isolation, computer-use tools, scheduled jobs and multiple human accounts remain
-outside this release. Text/image/video model execution remains available in the
-engine and earlier chat/CLI APIs.
+Replies, thinking and worker status arrive over one server-sent event stream
+(`/api/events`); tool activity updates from the durable journal at action
+boundaries. Video upload, remote MCP transports, OS/container isolation,
+computer-use tools, scheduled jobs and multiple human accounts are not part of
+Studio. Short video works through the runner API ([models.md](models.md)).
 
 For an explicitly labeled deterministic harness exercise without inference:
 
