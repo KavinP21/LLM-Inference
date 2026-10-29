@@ -80,7 +80,7 @@ def test_completion_steering_does_not_reveal_additional_code_cases(
     assert "test_unseen_inputs" in final["independent_test_output"]
 
 
-def test_qwen7b_example_admits_coding_catalog_and_independent_review_prompt(
+def test_qwen35_example_admits_coding_catalog_and_independent_review_prompt(
     tmp_path, monkeypatch
 ):
 
@@ -89,9 +89,7 @@ def test_qwen7b_example_admits_coding_catalog_and_independent_review_prompt(
     from forge_llm.agents.protocol import Generation
 
     module = evaluator(monkeypatch)
-    example = (
-        Path(__file__).resolve().parents[1] / "examples/agents-qwen2.5-7b-mlx-lm.json"
-    )
+    example = Path(__file__).resolve().parents[1] / "examples/agents-qwen35.json"
     config = load_config(example)
     for name, text in module.CASES["coding"]["files"].items():
         path = tmp_path / name

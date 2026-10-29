@@ -62,22 +62,14 @@ def quality_gates(summary: dict, reclaimed: bool, cosine_gate: float = 0.999) ->
     return gates
 
 
-def verify_derivation(original, packed, calibration_stats: Path | None = None) -> dict:
+def verify_derivation(original, packed) -> dict:
     """Recompute every packed value and scale; never trust an export label."""
     if original.quantization or not packed.quantization:
         raise ValueError("validation requires FP16 source and INT8 candidate")
-    calibrated = None
-    if calibration_stats is not None:
-        from .second_order import CalibrationStats
-
-        calibrated = CalibrationStats(calibration_stats, original)
     for name, spec in packed.quantization.items():
         if original.tensor_info(name).shape != packed.tensor_info(name).shape:
             raise ValueError("source and quantized tensor shapes differ")
-        if calibrated is None:
-            q, s = quantize_per_channel(original.tensor_numpy(name))
-        else:
-            q, s, _ = calibrated.quantize(name, original.tensor_numpy(name))
+        q, s = quantize_per_channel(original.tensor_numpy(name))
         if not np.array_equal(q, packed.tensor_numpy(name)) or not np.array_equal(
             s, packed.tensor_numpy(spec.scale_name)
         ):
@@ -90,9 +82,7 @@ def verify_derivation(original, packed, calibration_stats: Path | None = None) -
         ):
             raise ValueError(f"retained source tensor differs: {name}")
     return {
-        "method": calibrated.method if calibrated else "rtn_v1",
-        "calibration_stats_sha256": calibrated.sha256 if calibrated else None,
-        "quantizer_config": calibrated.config if calibrated else None,
+        "method": "rtn_v1",
         "all_packed_values_and_scales_recomputed": True,
         "retained_source_tensors_identical": True,
     }
@@ -107,9 +97,7 @@ def validate(
     positions: list[int],
     cosine_gate: float = 0.999,
     int8_mode: str = "metal",
-    calibration_stats: Path | None = None,
     decode_mode: str = "batched",
-    cached_teacher_forcing: bool = False,
 ) -> dict:
     from transformers import AutoTokenizer
 
@@ -121,8 +109,6 @@ def validate(
         or max(positions) >= count
     ):
         raise ValueError("invalid quality workload")
-    if cached_teacher_forcing and positions != sorted(set(positions)):
-        raise ValueError("cached positions must be sorted and unique")
     if not 0.999 <= cosine_gate <= 1:
         raise ValueError("cosine gate cannot be weaker than 0.999")
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
@@ -163,7 +149,7 @@ def validate(
 
         if signature(original.config) != signature(packed.config):
             raise ValueError("FP16 and INT8 architecture configurations differ")
-        derivation = verify_derivation(original, packed, calibration_stats)
+        derivation = verify_derivation(original, packed)
         mx.random.seed(17)
         for name in packed.quantization:
             x = mx.random.normal((4, packed.tensor_info(name).shape[1])).astype(
@@ -200,29 +186,11 @@ def validate(
             actual = candidate.generate(ids, count, eos_token_ids=[])
             dense = baseline.generate(ids, count, eos_token_ids=[])
             observations = []
-            cached_rows = None
-            if cached_teacher_forcing:
-                from .cached_decode import replay_cached
-
-                cached_rows = [
-                    replay_cached(e, ids, expected, positions)
-                    for e in (reference, candidate, baseline)
-                ]
-                if cached_rows[0]["greedy_tokens"] != expected:
-                    raise RuntimeError(
-                        "source cached replay differs from greedy generation"
-                    )
             for position in positions:
-                if cached_rows is None:
-                    context = ids + expected[:position]
-                    fp16_logits = np.array(reference.debug_prefill_logits(context))
-                    int8_logits = np.array(candidate.debug_prefill_logits(context))
-                    dequant_logits = np.array(baseline.debug_prefill_logits(context))
-                else:
-                    row_index = positions.index(position)
-                    fp16_logits, int8_logits, dequant_logits = [
-                        r["logits"][row_index] for r in cached_rows
-                    ]
+                context = ids + expected[:position]
+                fp16_logits = np.array(reference.debug_prefill_logits(context))
+                int8_logits = np.array(candidate.debug_prefill_logits(context))
+                dequant_logits = np.array(baseline.debug_prefill_logits(context))
                 observations.append(
                     {
                         "generated_position": position,
@@ -240,20 +208,11 @@ def validate(
             )
             divergence = None
             if prefix < count and prefix not in positions:
-                if cached_teacher_forcing:
-                    rows = [
-                        replay_cached(e, ids, expected, [prefix])
-                        for e in (reference, candidate)
-                    ]
-                    divergence = compare_logits(
-                        rows[0]["logits"][0], rows[1]["logits"][0]
-                    )
-                else:
-                    context = ids + expected[:prefix]
-                    divergence = compare_logits(
-                        np.array(reference.debug_prefill_logits(context)),
-                        np.array(candidate.debug_prefill_logits(context)),
-                    )
+                context = ids + expected[:prefix]
+                divergence = compare_logits(
+                    np.array(reference.debug_prefill_logits(context)),
+                    np.array(candidate.debug_prefill_logits(context)),
+                )
             cases.append(
                 {
                     "prompt": prompt,
@@ -266,11 +225,6 @@ def validate(
                     "matching_prefix": prefix,
                     "teacher_forced_logits": observations,
                     "first_divergence_logits": divergence,
-                    "private_cache_reclaimed": all(
-                        r["cache_reclaimed"] for r in cached_rows
-                    )
-                    if cached_rows
-                    else None,
                 }
             )
             print(
@@ -322,9 +276,6 @@ def validate(
             and engine.stats()["kv_device_bytes"] == 0
             and engine.stats()["kv_cache"]["reserved_blocks"] == 0
             for engine in [reference, candidate, baseline]
-        ) and (
-            not cached_teacher_forcing
-            or all(c["private_cache_reclaimed"] for c in cases)
         )
         return {
             "schema_version": 1,
@@ -344,9 +295,6 @@ def validate(
                 "teacher_forced_positions": positions,
                 "int8_mode": int8_mode,
                 "decode_mode": decode_mode,
-                "teacher_forcing_path": "cached_paged_decode"
-                if cached_teacher_forcing
-                else "whole_prompt_prefill",
                 "prompts_sha256": hashlib.sha256(
                     json.dumps(prompts, ensure_ascii=False).encode()
                 ).hexdigest(),
@@ -376,12 +324,6 @@ def main() -> None:
         "--int8-mode", choices=["metal", "reconstruct"], default="metal"
     )
     parser.add_argument("--positions", type=int, nargs="+", default=[0, 1, 7, 15, 31])
-    parser.add_argument("--calibration-stats", type=Path)
-    parser.add_argument(
-        "--cached-logits",
-        action="store_true",
-        help="observe every generated position on the actual paged decode path",
-    )
     parser.add_argument(
         "--decode-mode", choices=["batched", "rowwise"], default="batched"
     )
@@ -394,11 +336,9 @@ def main() -> None:
         args.tokenizer,
         json.loads(args.prompts.read_text()),
         args.output_tokens,
-        list(range(args.output_tokens)) if args.cached_logits else args.positions,
+        args.positions,
         int8_mode=args.int8_mode,
-        calibration_stats=args.calibration_stats,
         decode_mode=args.decode_mode,
-        cached_teacher_forcing=args.cached_logits,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as handle:

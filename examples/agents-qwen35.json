@@ -8,12 +8,9 @@
       "backend": "mlx",
       "max_model_length": 32768,
       "kv_cache_bytes": 2147483648,
-      "engine_options": {
-        "prefill_step_size": 256
-      },
+      "engine_options": {},
       "native_tool_calls": true,
-      "runner": "qwen35",
-      "enable_thinking": false
+      "runner": "vlm"
     },
     {
       "type": "process",
@@ -23,12 +20,9 @@
       "backend": "mlx",
       "max_model_length": 32768,
       "kv_cache_bytes": 2147483648,
-      "engine_options": {
-        "prefill_step_size": 256
-      },
+      "engine_options": {},
       "native_tool_calls": true,
-      "runner": "qwen35",
-      "enable_thinking": false
+      "runner": "vlm"
     }
   ],
   "runtime": {
