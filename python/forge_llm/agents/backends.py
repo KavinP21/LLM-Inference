@@ -26,11 +26,27 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+from ..chat_formats import EFFORT_BUDGETS
 from .media import MAX_MEDIA_REQUEST_BYTES, MAX_TOTAL_MEDIA_BYTES, validate_media
 from .protocol import ChatMessage, Generation, ModelBackend
+
+DIALECTS = frozenset({"json", "qwen3_coder_xml", "gemma4"})
+
+
+def validate_options(options: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Per-request generation options; currently just the reasoning effort."""
+    if options is None:
+        return {}
+    if not isinstance(options, Mapping) or set(options) - {"effort"}:
+        raise RequestValidationError("generation options accept only effort")
+    effort = options.get("effort", "off")
+    if effort not in EFFORT_BUDGETS:
+        raise RequestValidationError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
+    return {"effort": effort}
 
 
 class BackendError(RuntimeError):
@@ -186,12 +202,41 @@ class WorkerConfig:
             raise ValueError("model and tokenizer are required")
         if self.backend not in {"auto", "mlx", "cuda"}:
             raise ValueError("backend must be auto, mlx, or cuda")
-        if self.runner not in {"forge", "mlx_lm", "qwen35"}:
-            raise ValueError("runner must be forge, mlx_lm or qwen35")
+        if self.runner not in {"forge", "mlx_lm", "qwen35", "vlm"}:
+            raise ValueError("runner must be forge, mlx_lm, qwen35 or vlm")
         if type(self.enable_thinking) is not bool:
             raise TypeError("enable_thinking must be a boolean")
-        if self.enable_thinking and self.runner != "qwen35":
-            raise ValueError("thinking configuration requires the qwen35 runner")
+        if self.enable_thinking and self.runner not in {"qwen35", "vlm"}:
+            raise ValueError("thinking configuration requires the qwen35 or vlm runner")
+        if self.runner == "vlm":
+            if self.backend == "cuda" or self.cuda_visible_devices is not None:
+                raise ValueError("the vlm runner requires Apple MLX execution")
+            if not self.local_files_only or self.speculative is not None:
+                raise ValueError(
+                    "the vlm runner needs a local checkpoint; configure drafting with engine_options.draft_model"
+                )
+            if not isinstance(
+                self.engine_options, dict
+            ) or self.engine_options.keys() - {
+                "draft_model",
+                "draft_block_size",
+                "prefill_step_size",
+                "cache_budget_bytes",
+                "effort",
+            }:
+                raise ValueError("unsupported vlm engine options")
+            if self.engine_options.get("effort", "off") not in EFFORT_BUDGETS:
+                raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
+            draft = self.engine_options.get("draft_model")
+            if draft is not None and not Path(draft).is_dir():
+                raise ValueError("draft_model must be a local checkpoint directory")
+            if (
+                not Path(self.model).is_dir()
+                or Path(self.model).resolve() != Path(self.tokenizer).resolve()
+            ):
+                raise ValueError(
+                    "vlm model and tokenizer must reference the same local directory"
+                )
         if self.runner == "qwen35":
             if self.backend == "cuda" or self.cuda_visible_devices is not None:
                 raise ValueError("qwen35 requires Apple MLX execution")
@@ -328,6 +373,14 @@ class LocalForgeBackend:
         self.native_call_dialect = (
             "qwen3_coder_xml" if config.runner == "qwen35" else "json"
         )
+        if config.runner == "vlm":
+            from ..chat_formats import family_for
+
+            config_file = Path(config.model) / "config.json"
+            model_type = json.loads(config_file.read_text()).get("model_type", "")
+            self.native_call_dialect = family_for(model_type).dialect
+        # Latest decoded text per in-flight request, for live progress.
+        self.partial: dict[str, str] = {}
         self.supports_native_tools = config.native_tool_calls
         if (
             config.cuda_visible_devices is not None
@@ -367,6 +420,9 @@ class LocalForgeBackend:
 
     def _load(self) -> None:
         if self._engine is not None:
+            return
+        if self.config.runner == "vlm" and not self._engine_factory:
+            self._load_vlm()
             return
         if self._tokenizer_factory:
             tokenizer = self._tokenizer_factory()
@@ -631,6 +687,34 @@ class LocalForgeBackend:
             self._engine = None
             raise ValueError("EOS token IDs do not fit the model vocabulary")
 
+    def _load_vlm(self) -> None:
+        from ..vlm_runner import VlmRunner, checkpoint_fingerprint
+
+        options = self.config.engine_options
+        runner = VlmRunner(
+            self.config.model,
+            draft_path=options.get("draft_model"),
+            draft_block_size=options.get("draft_block_size", 3),
+            max_context_tokens=self.config.max_model_length,
+            prefill_step_size=options.get("prefill_step_size", 1024),
+            cache_budget_bytes=options.get(
+                "cache_budget_bytes", self.config.kv_cache_bytes
+            ),
+        )
+        self._engine = runner
+        self._tokenizer = runner.tokenizer
+        self._actual_backend = "mlx"
+        self._context_limit = runner.max_context_tokens
+        self._model_type = runner.model_type
+        self._runner_metadata.update(
+            runner_version=version("mlx-vlm"), family=runner.family.name
+        )
+        self._artifact_identity.update(checkpoint_fingerprint(self.config.model))
+        if options.get("draft_model"):
+            self._artifact_identity["draft_model_data_sha256"] = checkpoint_fingerprint(
+                options["draft_model"]
+            )["model_data_sha256"]
+
     async def start(self) -> LocalForgeBackend:
         with self._lock:
             if self._closed:
@@ -713,6 +797,8 @@ class LocalForgeBackend:
         deadline: float,
         tool_specs: list[dict[str, Any]] | None = None,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
+        request_id: str = "",
     ) -> Generation:
         def check() -> None:
             if cancel.is_set():
@@ -721,14 +807,25 @@ class LocalForgeBackend:
                 raise GenerationTimeoutError("generation deadline exceeded")
 
         check()
-        if self.config.runner != "qwen35" and any(
+        if self.config.runner not in {"qwen35", "vlm"} and any(
             message.media for message in messages
         ):
             raise RequestValidationError(
-                "image/video requests require the qwen35 runner"
+                "image/video requests require the qwen35 or vlm runner"
             )
         self._load()
         check()
+        if self.config.runner == "vlm" and not self._engine_factory:
+            return self._generate_vlm(
+                messages,
+                max_tokens,
+                tool_specs,
+                cancel,
+                deadline,
+                max_context_tokens,
+                options or {},
+                request_id,
+            )
         if self.config.runner == "qwen35":
             return self._generate_qwen35(
                 messages, max_tokens, tool_specs, check, max_context_tokens
@@ -841,6 +938,83 @@ class LocalForgeBackend:
             if self.config.runner == "mlx_lm":
                 self._last_runner_stats = self._engine.stats()
 
+    def _generate_vlm(
+        self,
+        messages,
+        max_tokens,
+        tool_specs,
+        cancel,
+        deadline,
+        max_context_tokens,
+        options,
+        request_id,
+    ) -> Generation:
+        from .media import materialize_media
+
+        context_limit = min(
+            self._context_limit, max_context_tokens or self._context_limit
+        )
+        effort = options.get("effort") or self.config.engine_options.get(
+            "effort", "medium" if self.config.enable_thinking else "off"
+        )
+        partial: list[str] = []
+
+        def on_text(piece: str) -> None:
+            partial.append(piece)
+            self.partial[request_id] = "".join(partial)
+
+        with tempfile.TemporaryDirectory(prefix="forge-worker-media-") as temporary:
+            turns = []
+            for index, message in enumerate(messages):
+                turn = {"role": message.role, "content": message.content}
+                if message.media:
+                    directory = Path(temporary) / str(index)
+                    directory.mkdir(mode=0o700)
+                    paths = materialize_media(message.media, directory)
+                    turn["media"] = [
+                        {
+                            "type": part["type"],
+                            "path": part[part["type"]],
+                            "key": item["sha256"],
+                        }
+                        for part, item in zip(paths, message.media)
+                    ]
+                turns.append(turn)
+            try:
+                result = self._engine.generate(
+                    turns,
+                    max_tokens=max_tokens,
+                    tools=tool_specs,
+                    effort=effort,
+                    cancelled=lambda: cancel.is_set() or time.monotonic() >= deadline,
+                    on_text=on_text,
+                    max_context_tokens=context_limit,
+                )
+            except InterruptedError as exc:
+                if time.monotonic() >= deadline:
+                    raise GenerationTimeoutError(
+                        "generation deadline exceeded"
+                    ) from exc
+                raise GenerationCancelledError("generation cancelled") from exc
+            except ValueError as exc:
+                if "context" in str(exc):
+                    raise ContextLengthError(str(exc)) from exc
+                raise
+            finally:
+                self.partial.pop(request_id, None)
+        self._completed += 1
+        self._last_runner_stats = self._engine.stats()
+        return Generation(
+            result.text,
+            result.input_tokens,
+            result.output_tokens,
+            result.finish_reason,
+            self.config.model,
+            result.dialect,
+            result.reasoning,
+            result.metrics,
+        )
+
     def _generate_qwen35(
         self, messages, max_tokens, tool_specs, check, max_context_tokens
     ):
@@ -919,9 +1093,14 @@ class LocalForgeBackend:
         request_id: str,
         *,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         return await self._dispatch(
-            messages, max_tokens, request_id, max_context_tokens=max_context_tokens
+            messages,
+            max_tokens,
+            request_id,
+            max_context_tokens=max_context_tokens,
+            options=options,
         )
 
     async def generate_action(
@@ -932,6 +1111,7 @@ class LocalForgeBackend:
         tool_specs: Sequence[dict[str, Any]],
         *,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         if not self.supports_native_tools:
             raise RequestValidationError(
@@ -946,6 +1126,7 @@ class LocalForgeBackend:
             request_id,
             specs,
             max_context_tokens=max_context_tokens,
+            options=options,
         )
 
     async def _dispatch(
@@ -956,10 +1137,12 @@ class LocalForgeBackend:
         tool_specs: list[dict[str, Any]] | None = None,
         *,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
         )
+        options = validate_options(options)
         max_context_tokens = validate_context_limit(max_context_tokens)
         if max_context_tokens is not None and max_tokens >= max_context_tokens:
             raise ContextLengthError(
@@ -983,6 +1166,8 @@ class LocalForgeBackend:
             deadline,
             tool_specs,
             max_context_tokens,
+            options,
+            request_id,
         )
 
         # Keep capacity reserved until the actor actually stops. asyncio task
@@ -1201,7 +1386,7 @@ class RemoteWorkerBackend:
             )
         self.identity = result
         dialect = result.get("native_call_dialect", "json")
-        if dialect not in {"json", "qwen3_coder_xml"}:
+        if dialect not in DIALECTS:
             raise BackendError("worker returned an unsupported native tool dialect")
         self.native_call_dialect = dialect
         native = result.get("native_tool_calls", False)
@@ -1221,9 +1406,14 @@ class RemoteWorkerBackend:
         request_id: str,
         *,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         return await self._dispatch(
-            messages, max_tokens, request_id, max_context_tokens=max_context_tokens
+            messages,
+            max_tokens,
+            request_id,
+            max_context_tokens=max_context_tokens,
+            options=options,
         )
 
     async def generate_action(
@@ -1234,6 +1424,7 @@ class RemoteWorkerBackend:
         tool_specs: Sequence[dict[str, Any]],
         *,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         from .native_tools import validate_tool_specs
 
@@ -1250,6 +1441,7 @@ class RemoteWorkerBackend:
             request_id,
             specs,
             max_context_tokens=max_context_tokens,
+            options=options,
         )
 
     async def _dispatch(
@@ -1260,10 +1452,12 @@ class RemoteWorkerBackend:
         tool_specs: list[dict[str, Any]] | None = None,
         *,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
         )
+        options = validate_options(options)
         if self._closed:
             raise WorkerUnavailableError("worker client is closed")
         max_context_tokens = validate_context_limit(max_context_tokens)
@@ -1291,6 +1485,8 @@ class RemoteWorkerBackend:
             body["tools"] = tool_specs
         if max_context_tokens is not None:
             body["max_context_tokens"] = max_context_tokens
+        if options:
+            body["options"] = options
         submitted = False
         try:
             # One bounded retry only for a transport failure, with idempotency.
@@ -1328,9 +1524,19 @@ class RemoteWorkerBackend:
             ):
                 raise BackendError("worker returned an invalid generation state")
             data = result["generation"]
+            required = {
+                "text",
+                "input_tokens",
+                "output_tokens",
+                "finish_reason",
+                "model",
+            }
             if (
-                set(data)
-                != {"text", "input_tokens", "output_tokens", "finish_reason", "model"}
+                not required <= set(data)
+                or set(data) - required - {"dialect", "reasoning", "metrics"}
+                or data.get("dialect") not in DIALECTS | {None}
+                or not isinstance(data.get("reasoning", ""), str)
+                or not isinstance(data.get("metrics") or {}, dict)
                 or not isinstance(data.get("text"), str)
                 or any(
                     type(data.get(name)) is not int or data[name] < 0
@@ -1471,14 +1677,13 @@ class WorkerPool:
 
     @property
     def native_call_dialect(self):
-        return (
-            "qwen3_coder_xml"
-            if any(
-                getattr(backend, "native_call_dialect", "json") == "qwen3_coder_xml"
-                for backend in self.backends.values()
-            )
-            else "json"
-        )
+        # Generations report their own dialect; this is the fallback when every
+        # replica runs the same model family.
+        dialects = {
+            getattr(backend, "native_call_dialect", "json")
+            for backend in self.backends.values()
+        }
+        return dialects.pop() if len(dialects) == 1 else "json"
 
     @property
     def supports_context_limits(self) -> bool:
@@ -1514,6 +1719,7 @@ class WorkerPool:
         *,
         worker: str | None = None,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         return await self._dispatch(
             messages,
@@ -1521,6 +1727,7 @@ class WorkerPool:
             request_id,
             worker=worker,
             max_context_tokens=max_context_tokens,
+            options=options,
         )
 
     async def generate_action(
@@ -1532,6 +1739,7 @@ class WorkerPool:
         *,
         worker: str | None = None,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         if not self.supports_native_tools:
             raise RequestValidationError(
@@ -1547,6 +1755,7 @@ class WorkerPool:
             worker=worker,
             tool_specs=specs,
             max_context_tokens=max_context_tokens,
+            options=options,
         )
 
     async def _dispatch(
@@ -1558,6 +1767,7 @@ class WorkerPool:
         worker: str | None = None,
         tool_specs: list[dict[str, Any]] | None = None,
         max_context_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
@@ -1574,6 +1784,9 @@ class WorkerPool:
             if max_context_tokens is None
             else {"max_context_tokens": max_context_tokens}
         )
+        options = validate_options(options)
+        if options:
+            backend_options["options"] = options
         selected: str | None = None
         async with self._condition:
             if self._closed:
