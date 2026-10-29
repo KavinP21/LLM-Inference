@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import signal
 import stat
 import threading
 import webbrowser
@@ -135,7 +136,10 @@ async def serve(args):
         )
         if not args.no_open:
             webbrowser.open(server.origin + "/#token=" + quote(server.bootstrap_token))
-        await asyncio.Event().wait()
+        # SIGTERM gets the same cleanup as Ctrl-C, so model workers stop too.
+        stopped = asyncio.Event()
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stopped.set)
+        await stopped.wait()
     finally:
         try:
             if server is not None:

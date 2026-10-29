@@ -67,10 +67,25 @@ def split_thinking(text: str, family: ChatFamily) -> tuple[str, str, bool]:
     if start == -1 or text[:start].strip():
         return text.strip(), "", True
     body = text[start + len(family.think_open) :]
-    reasoning, closed, answer = body.partition(family.think_close)
-    if not closed:
-        return "", reasoning.strip(), False
-    return answer.strip(), reasoning.strip(), True
+    end = _thinking_end(body, family.think_close)
+    if end == -1:
+        return "", body.strip(), False
+    answer = body[end + len(family.think_close) :]
+    return answer.strip(), body[:end].strip(), True
+
+
+def _thinking_end(body: str, close: str) -> int:
+    # Thinking about a file that contains the close marker quotes it, and the
+    # tokenizer turns the quote into the real token. Skip occurrences that are
+    # immediately closed off by a quote or punctuation, which a real end of
+    # thinking never is.
+    first = position = body.find(close)
+    while position != -1:
+        following = body[position + len(close) : position + len(close) + 1]
+        if not following or following not in "\"'`),;]":
+            return position
+        position = body.find(close, position + 1)
+    return first
 
 
 # --- Gemma 4 native tool calls ------------------------------------------------

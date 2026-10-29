@@ -1473,7 +1473,12 @@ class LazyBackend:
 
     async def health(self) -> dict[str, Any]:
         if self.backend is None:
-            return {**self._identity, "ready": True, "started": False}
+            return {
+                **self._identity,
+                "ready": True,
+                "started": False,
+                "starting": self._active > 0,
+            }
         health = self.backend.health()
         if asyncio.iscoroutine(health):
             health = await health
@@ -1861,11 +1866,13 @@ class LocalProcessBackend(RemoteWorkerBackend):
             json.dumps(asdict(config)),
             "--port",
             "0",
+            "--exit-with-parent",
             *(["--defer-load"] if defer_load else []),
         ]
         process = await asyncio.create_subprocess_exec(
             *command,
             env=env,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

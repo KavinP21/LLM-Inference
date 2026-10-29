@@ -32,6 +32,27 @@ def test_read_search_and_bounded_listing(tmp_path):
     assert listing == {"files": ["a.py"], "truncated": True}
 
 
+def test_search_accepts_regular_expressions_and_smart_case(tmp_path):
+    (tmp_path / "formats.py").write_text(
+        "def gemma_calls(text):\n"
+        "def to_gemma_messages(messages):\n"
+        "GEMMA = 1  # x+y\n"
+        "def qwen():\n"
+    )
+    tools = WorkspaceTools(tmp_path, tmp_path / "artifacts")
+
+    def lines(query):
+        result = json.loads(asyncio.run(tools.search({"query": query})))
+        return [match["line"] for match in result["matches"]]
+
+    assert lines("def .*gemma") == [1, 2]
+    assert lines("gemma") == [1, 2, 3]
+    assert lines("GEMMA") == [3]
+    assert lines("x+y") == [3]  # Literal text still matches.
+    assert lines("gemma_calls(") == [1]  # Not a valid pattern; literal.
+    assert lines("(a+)+$") == []  # Nested quantifiers are never run as a regex.
+
+
 @pytest.mark.parametrize(
     "path",
     [

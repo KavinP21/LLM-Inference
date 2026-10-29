@@ -19,6 +19,7 @@ from ..agents.protocol import ChatMessage
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
+from ..chat_formats import EFFORT_BUDGETS
 from .commands import CommandTools
 from .conversation import ConversationController, ConversationRuntime
 from .demo import DemoBackend
@@ -64,6 +65,29 @@ def _digest(value: Any) -> str:
     ).hexdigest()
 
 
+MODEL_NAMES = {
+    "gemma-4-26b-a4b-mlx": "Gemma 4 26B A4B",
+    "qwen3.5-4b-mlx": "Qwen3.5-4B",
+    "qwen3-30b-a3b-mlx": "Qwen3-30B-A3B",
+    "qwen2.5-7b-mlx": "Qwen2.5-7B",
+}
+
+
+def model_label(path: str) -> str:
+    name = Path(path).name
+    return MODEL_NAMES.get(name, name or "model")
+
+
+def worker_state(health: dict) -> str:
+    if "error" in health:
+        return "error"
+    if health.get("started") is False:
+        return "starting" if health.get("starting") else "stopped"
+    if not health.get("loaded", True):
+        return "starting"
+    return "busy" if health.get("active") else "idle"
+
+
 class StudioService:
     """Each run gets isolated file receipts, artifacts, policy and completion checks."""
 
@@ -107,6 +131,7 @@ class StudioService:
         self._mcp_configs = tuple(client.config for client in self.mcp_clients)
         self._restart_mcp = False
         self.hooks = hooks
+        self.worker_status: list[dict] = []
         self.closing = False
         self._closed = False
         self.conversations = ConversationController(self)
@@ -138,6 +163,7 @@ class StudioService:
                     await client.start()
                 self.backend, self.identities = pool, identities
                 self.backend_status = "ready"
+                self._status_task = asyncio.create_task(self._watch_workers())
             except BaseException as exc:
                 # A partially started extension and pool are both owned here.
                 # Clients are single-use; retry must construct fresh instances.
@@ -156,6 +182,108 @@ class StudioService:
 
         self._loader = asyncio.create_task(load())
         return {"status": "loading"}
+
+    async def _watch_workers(self) -> None:
+        """Refresh worker status for the UI every couple of seconds."""
+        while not self.closing:
+            await self._refresh_workers()
+            await asyncio.sleep(2.0)
+
+    async def _refresh_workers(self) -> None:
+        backends = getattr(self.backend, "backends", None)
+        if not backends:
+            return
+        groups = getattr(self.backend, "groups", {})
+        status = []
+        for name, backend in backends.items():
+            try:
+                health = backend.health()
+                if asyncio.iscoroutine(health):
+                    health = await asyncio.wait_for(health, 2.0)
+            except Exception as exc:  # noqa: BLE001 - a stuck worker shows as unreachable.
+                health = {"error": f"{type(exc).__name__}: {exc}"}
+            stats = health.get("last_runner_stats") or {}
+            status.append(
+                {
+                    "name": name,
+                    "group": groups.get(name),
+                    "model": model_label(health.get("model") or ""),
+                    "state": worker_state(health),
+                    "active": health.get("active", 0),
+                    "requests": stats.get("requests", 0),
+                    "memory_bytes": stats.get("active_memory_bytes"),
+                    "weight_bytes": stats.get("weight_bytes"),
+                    "cache_bytes": stats.get("cache_bytes"),
+                    "cache_entries": stats.get("cache_entries"),
+                    "prompt_tokens": stats.get("prompt_tokens", 0),
+                    "reused_tokens": stats.get("reused_tokens", 0),
+                    "generated_tokens": stats.get("generated_tokens", 0),
+                    "draft_enabled": stats.get("draft_enabled"),
+                    "context": health.get("max_model_length"),
+                    "error": health.get("error"),
+                }
+            )
+        self.worker_status = status
+
+    def summary(self) -> dict:
+        """The cheap part of state() that chat views need on every refresh."""
+        label = (
+            "Deterministic harness demo"
+            if self.demo
+            else ", ".join(model["label"] for model in self.models())
+        )
+        return {
+            "workspace": str(self.workspace),
+            "mode": "demo" if self.demo else "live",
+            "backend": {
+                "status": self.backend_status,
+                "label": label or "No workers configured",
+                "error": self.backend_error,
+            },
+        }
+
+    def models(self) -> list[dict]:
+        """Models a chat can be driven by: one entry per worker group."""
+        choices = {}
+        for worker in self.config.get("workers", []):
+            group = worker.get("group")
+            if group and group not in choices:
+                choices[group] = {
+                    "id": group,
+                    "label": model_label(worker.get("model", "")),
+                    "context": worker.get("max_model_length"),
+                }
+        return list(choices.values())
+
+    def live(self) -> dict:
+        """In-flight generations with the text decoded so far, plus workers."""
+        partial = getattr(self.backend, "partial", None)
+        generations = []
+        for runtime in list(self.runtimes.values()):
+            for (run_id, agent_id), request_id in list(runtime._requests.items()):
+                generations.append(
+                    {
+                        "run_id": run_id,
+                        "agent_id": agent_id,
+                        "request_id": request_id,
+                        "text": (partial(request_id) if callable(partial) else None)
+                        or "",
+                    }
+                )
+        # Changes whenever anything in the journal or a chat changes, so the UI
+        # knows when to refetch the chat it's showing.
+        version = self.store.connection.execute(
+            "SELECT (SELECT COALESCE(MAX(id), 0) FROM events), "
+            "(SELECT COUNT(*) || ':' || COALESCE(MAX(updated), 0) FROM studio_chats), "
+            "(SELECT COUNT(*) || ':' || COALESCE(SUM(LENGTH(status)), 0) "
+            "FROM studio_chat_turns)"
+        ).fetchone()
+        return {
+            "version": ":".join(str(part) for part in version),
+            "generations": generations,
+            "workers": self.worker_status,
+            "backend": self.summary()["backend"],
+        }
 
     def _manifest(self, run_id: str) -> dict:
         row = self.store.connection.execute(
@@ -626,6 +754,10 @@ class StudioService:
                 "utf-8"
             )
             return {"path": name, "content": content}
+        if method == "GET" and path == "/api/live":
+            return self.live()
+        if method == "GET" and path == "/api/models":
+            return {"models": self.models(), "efforts": list(EFFORT_BUDGETS)}
         if method == "GET" and path == "/api/state":
             return await self.state()
         if method == "POST" and path == "/api/backend/start":
@@ -661,6 +793,8 @@ class StudioService:
             return
         self.closing = True
         await self.conversations.close()
+        if hasattr(self, "_status_task"):
+            self._status_task.cancel()
         if hasattr(self, "_loader") and not self._loader.done():
             self._loader.cancel()
             await asyncio.gather(self._loader, return_exceptions=True)

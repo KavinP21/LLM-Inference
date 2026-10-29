@@ -6,9 +6,9 @@ cache, continuous batching and custom Metal kernels. PyTorch and Transformers ar
 only used to export weights, tokenize and check outputs; they're never in the
 generation loop.
 
-The repo also has a few things built on top of the engine: speculative decoding,
-a multi-agent task runtime, a local web UI (Forge Studio), and a Qwen3.5-4B
-multimodal path.
+The repo also has a few things built on top of it: speculative decoding, a
+multi-agent task runtime, and a local web UI (Forge Studio) where Gemma 4 26B A4B
+works in a directory and hands work to Qwen3.5-4B sub-agents.
 
 ## What the engine does
 
@@ -123,10 +123,12 @@ python -m forge_llm.prepare_models       # ~18 GB into models/
 
 **Forge Studio.** A local web UI (`python tools/forge_studio.py`, or double-click
 `Forge Studio.command`) for chatting with the model and letting it work in a
-directory. Tool calls, sub-agents and approval prompts for edits and commands
-show up inline in the conversation. It has an optional developer panel, image
-attachments, skills and stdio MCP servers. `--demo` runs the UI without loading
-a model. See [docs/forge-studio.md](docs/forge-studio.md).
+directory. Replies stream in, and tool calls, sub-agents and approval prompts for
+edits and commands show up inline. Each chat picks its model and reasoning effort,
+a meter shows how full the context is, and a developer panel shows files,
+diffs, every model call's timing and cache use, and the state of each worker.
+It also takes image attachments, skills and stdio MCP servers. `--demo` runs the
+UI without loading a model. See [docs/forge-studio.md](docs/forge-studio.md).
 
 **Agent runtime.** Logical agents share a pool of model worker processes (local
 or remote over authenticated HTTP), spawn bounded child agents, and journal
