@@ -702,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
             service,
             token,
             max_body_bytes=MAX_MEDIA_REQUEST_BYTES
-            if config.runner == "qwen35"
+            if config.runner == "vlm"
             else 1 << 20,
         )
         if args.tls_cert:
