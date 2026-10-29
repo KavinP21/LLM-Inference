@@ -14,6 +14,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .backends import (
+    LazyBackend,
     LocalForgeBackend,
     LocalProcessBackend,
     RemoteWorkerBackend,
@@ -53,6 +54,7 @@ def load_config(path: str | Path) -> dict:
 
 async def create_pool(config: dict) -> WorkerPool:
     replicas = {}
+    groups = {}
     try:
         for i, raw in enumerate(config["workers"]):
             worker = dict(raw)
@@ -60,10 +62,34 @@ async def create_pool(config: dict) -> WorkerPool:
             name = worker.pop("name", f"worker-{i}")
             if not isinstance(name, str) or not name or name in replicas:
                 raise ValueError("worker names must be nonempty and unique")
+            group = worker.pop("group", None)
+            if group is not None:
+                if not isinstance(group, str) or not group:
+                    raise ValueError("worker group must be a nonempty string")
+                groups[name] = group
+            lazy = worker.pop("lazy", False)
+            idle_seconds = worker.pop("idle_seconds", 600.0)
+            if type(lazy) is not bool or (lazy and kind != "process"):
+                raise ValueError("lazy applies only to process workers")
+            if idle_seconds is not None and (
+                isinstance(idle_seconds, bool)
+                or not isinstance(idle_seconds, (int, float))
+                or idle_seconds <= 0
+            ):
+                raise ValueError("idle_seconds must be positive or null")
             if kind in {"process", "local"}:
                 worker.setdefault("worker_id", name)
                 definition = WorkerConfig(**worker)
-                if kind == "process":
+                if kind == "process" and lazy:
+                    backend = LazyBackend(
+                        definition,
+                        lambda definition=definition: LocalProcessBackend.start(
+                            definition, defer_load=True
+                        ),
+                        idle_seconds=idle_seconds,
+                        prestart=True,
+                    )
+                elif kind == "process":
                     backend = await LocalProcessBackend.start(definition)
                 else:
                     backend = LocalForgeBackend(definition)
@@ -103,7 +129,9 @@ async def create_pool(config: dict) -> WorkerPool:
             else:
                 raise ValueError("worker type must be process, local or remote")
             replicas[name] = backend
-        return WorkerPool(replicas, max_pending=config.get("max_pending", 32))
+        return WorkerPool(
+            replicas, max_pending=config.get("max_pending", 32), groups=groups
+        )
     except BaseException:
         await asyncio.gather(
             *(b.close() for b in replicas.values()), return_exceptions=True

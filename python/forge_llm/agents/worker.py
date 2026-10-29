@@ -614,6 +614,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--model")
     parser.add_argument("--tokenizer")
+    parser.add_argument(
+        "--defer-load",
+        action="store_true",
+        help="report ready without loading the model; it loads on the first request",
+    )
     parser.add_argument("--backend", choices=("auto", "mlx", "cuda"), default="auto")
     parser.add_argument(
         "--runner", choices=("forge", "mlx_lm", "qwen35"), default="forge"
@@ -686,7 +691,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     server: WorkerHTTPServer | None = None
     try:
-        service.start()
+        if args.defer_load:
+            service._ready = True
+        else:
+            service.start()
         from .media import MAX_MEDIA_REQUEST_BYTES
 
         server = WorkerHTTPServer(
