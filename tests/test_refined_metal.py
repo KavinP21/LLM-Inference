@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 import pytest
+
+pytest.importorskip("mlx.core")
+
 from forge_llm.cached_decode import replay_cached
 from forge_llm.calibrate_cached import calibrate
 from forge_llm.mlx_engine import MlxEngine
@@ -12,14 +14,12 @@ from forge_llm.refined import ALGORITHM, DEFAULT_CONFIG
 from forge_llm.validate_int8 import validate
 from test_quantization import tiny_artifact
 
-pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="requires Apple Metal")
-
 
 @pytest.mark.parametrize("family", ["qwen2", "gemma3_text"])
 def test_refined_calibration_export_native_composed_cached_identity(
     tmp_path, monkeypatch, family
 ):
-    import transformers
+    transformers = pytest.importorskip("transformers")
 
     class Tokenizer:
         def __call__(self, text, **kwargs):

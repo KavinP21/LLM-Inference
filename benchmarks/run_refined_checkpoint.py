@@ -47,7 +47,7 @@ TOOLS = [
     Path("benchmarks/verify_refined_objectives.py"),
     Path("benchmarks/audit_refined_checkpoint.py"),
     Path("tools/verify_mlx_checkpoint.sh"),
-    Path(".github/workflows/host.yml"),
+    Path(".github/workflows/ci.yml"),
 ]
 
 

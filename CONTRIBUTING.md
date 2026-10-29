@@ -6,8 +6,8 @@ the [README](README.md).
 
 ```bash
 python -m pip install -e '.[dev]'
-ruff check python benchmarks tests tools/forge_chat.py
-ruff format --check python benchmarks tests tools/forge_chat.py
+ruff check python benchmarks tests tools
+ruff format --check python benchmarks tests tools
 FORGE_INSPECT_MODEL=build/forge-inspect-model PYTHONPATH=python python -m pytest -q
 ```
 

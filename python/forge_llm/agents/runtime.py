@@ -227,6 +227,9 @@ class AgentRuntime:
         self._owners: dict[str, str] = {}
         self._requests: dict[tuple[str, str], str] = {}
         self._run_semaphores: dict[str, asyncio.Semaphore] = {}
+        # Set when a local caller cancels, so the coordinator doesn't wait for
+        # its next poll while an in-flight generation finishes first.
+        self._wakeups: dict[str, asyncio.Event] = {}
 
     def _allowed_tools(self, run_id: str, agent_id: str) -> frozenset[str]:
         agent = self.store.agent(run_id, agent_id)
@@ -575,8 +578,14 @@ class AgentRuntime:
         config = RuntimeConfig(**run["config"])
         return await self._drive(run_id, config, recover=True)
 
+    def _wake(self, run_id: str) -> None:
+        wakeup = self._wakeups.get(run_id)
+        if wakeup is not None:
+            wakeup.set()
+
     async def cancel(self, run_id: str) -> None:
         self.store.request_cancel(run_id)
+        self._wake(run_id)
         await self._cancel_requests(run_id)
 
     async def cancel_agent(self, run_id: str, agent_id: str) -> None:
@@ -592,6 +601,7 @@ class AgentRuntime:
         self.store.event(
             run_id, agent_id, "agent_cancel_requested", {"agent_id": agent_id}
         )
+        self._wake(run_id)
 
     async def _agent_cancellations(self, run_id: str, running: dict) -> None:
         for event in self.store.events(run_id, kinds=("agent_cancel_requested",)):
@@ -1191,6 +1201,7 @@ class AgentRuntime:
         self._run_semaphores[run_id] = asyncio.Semaphore(
             config.max_concurrent_generations
         )
+        wakeup = self._wakeups[run_id] = asyncio.Event()
         running: dict[str, asyncio.Task[None]] = {}
         try:
             for agent in self.store.agents(run_id):
@@ -1311,11 +1322,16 @@ class AgentRuntime:
                         "no runnable work: unresolved dependency or wait state",
                     )
                     continue
-                done, _ = await asyncio.wait(
-                    running.values(),
-                    timeout=min(1.0, config.lease_seconds / 3),
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
+                woken = asyncio.ensure_future(wakeup.wait())
+                try:
+                    done, _ = await asyncio.wait(
+                        [*running.values(), woken],
+                        timeout=min(1.0, config.lease_seconds / 3),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    woken.cancel()
+                wakeup.clear()
                 for agent_id, job in list(running.items()):
                     if job in done:
                         del running[agent_id]
@@ -1375,6 +1391,7 @@ class AgentRuntime:
             self._active.discard(run_id)
             self._owners.pop(run_id, None)
             self._run_semaphores.pop(run_id, None)
+            self._wakeups.pop(run_id, None)
         return self.result(run_id)
 
     async def _turn(self, run_id: str, agent_id: str, config: RuntimeConfig) -> None:

@@ -30,18 +30,19 @@ def create_engine(
 ):
     """Construct a backend explicitly or choose the native available backend."""
     selected = backend.lower()
-    if model_path is None:
-        model_path = DEFAULT_MODEL_PATH
     if selected == "auto":
         selected = "cuda" if CudaEngine is not None else "mlx"
     if selected == "cuda":
         if CudaEngine is None:
             raise RuntimeError("the CUDA extension is not installed")
+        # The default checkpoint is an MLX directory the CUDA engine can't read.
+        if model_path is None:
+            raise ValueError("the CUDA backend needs an exported .engine model path")
         return CudaEngine(model_path, **kwargs)
     if selected == "mlx":
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise RuntimeError("the MLX backend requires Apple Silicon")
-        path = Path(model_path)
+        path = Path(DEFAULT_MODEL_PATH if model_path is None else model_path)
         if path.is_dir():
             with (path / "config.json").open("rb") as stream:
                 config_data = stream.read((1 << 20) + 1)
