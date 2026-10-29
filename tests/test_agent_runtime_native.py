@@ -160,9 +160,13 @@ def test_native_resume_replays_exact_catalog_before_reviewing_new_messages(tmp_p
         assert any(
             "New requirement" in message.content for message in backend.calls[2][1]
         )
+        # Older saved prompts are pruned; the latest one is kept.
         assert (
-            store.generation_tool_specs("native-replay", "native-replay.root.1")
-            == backend.calls[0][2]
+            store.generation_tool_specs("native-replay", "native-replay.root.1") is None
+        )
+        assert (
+            store.generation_tool_specs("native-replay", "native-replay.root.2")
+            == backend.calls[2][2]
         )
         store.close()
 

@@ -66,6 +66,9 @@ class AgentStore:
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.execute("PRAGMA journal_mode=WAL")
+        # WAL stays consistent with NORMAL; only a power cut can lose the last
+        # commits, and the runtime already treats those as interrupted.
+        self.connection.execute("PRAGMA synchronous=NORMAL")
         version = self.connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 1):
             self.connection.close()
@@ -119,6 +122,7 @@ class AgentStore:
             );
             CREATE INDEX IF NOT EXISTS messages_agent ON messages(run_id, agent_id, id);
             CREATE INDEX IF NOT EXISTS events_run ON events(run_id, id);
+            CREATE INDEX IF NOT EXISTS events_agent ON events(run_id, agent_id, kind, id);
             PRAGMA user_version=1;
         """)
         with self.transaction():
@@ -521,6 +525,17 @@ class AgentStore:
                 if tool_specs is not None
                 else None,
             ),
+        )
+
+    def prune_generation_inputs(self, run_id: str, agent_id: str, keep: str) -> None:
+        """Drop an agent's older saved prompts. Resuming and the measured
+        context bound only ever read the latest, and a long task would
+        otherwise store its whole context again on every step."""
+        prefix = f"{run_id}.{agent_id}."
+        self.connection.execute(
+            "DELETE FROM generation_inputs WHERE run_id=? AND "
+            "substr(request_id, 1, ?)=? AND request_id<>?",
+            (run_id, len(prefix), prefix, keep),
         )
 
     def generation_tool_specs(
