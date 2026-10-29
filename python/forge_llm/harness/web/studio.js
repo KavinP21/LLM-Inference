@@ -11,6 +11,8 @@
     policy: "review", drafts: new Map(), turns: new Map(), busyApprovals: new Set(),
     requests: new Map(), sendError: "", signatures: new WeakMap(), commandIndex: 0,
     draftStorage: null, acknowledged: new Map(), policyTouched: false,
+    models: [], live: null, liveVersion: null, stream: null, streaming: false, chatQuery: "",
+    newChat: { model: null, effort: "off" },
     git: { status: null, loading: false, updated: 0, selected: null, diff: null, diffLoading: false, diffVersion: 0 },
     mediaDrafts: new Map(), imageCache: new Map(), imageRequests: new Map(), inFlightMedia: new Set(),
     dev: { open: false, tab: "agents", data: null, error: "", loading: false, loadingRequest: false, version: 0,
@@ -237,7 +239,12 @@
     input.style.height = `${Math.max(78, Math.min(input.scrollHeight, 220))}px`;
     $("jump-bottom").style.bottom = `${$("composer-area").offsetHeight + 14}px`;
   }
+  function chosenModel() {
+    const id = state.detail?.chat?.model || state.newChat.model;
+    return state.models.find((model) => model.id === id) || state.models[0];
+  }
   function modelLabel(backend = state.detail?.backend || state.overview?.backend || {}) {
+    if (state.models.length && backend.status !== "loading") return chosenModel()?.label || "Local model";
     const label = String(backend.label || "Local model");
     if (/deterministic|harness demo/i.test(label)) return "Demo backend";
     const qwen = /qwen[-_ ]?(3\.5|3|2\.5)/i.exec(label);
@@ -270,10 +277,12 @@
     $("model-dot").className = `status-dot ${["ready", "connected", "running", "loading", "error", "failed"].includes(backend.status) ? backend.status : ""}`;
     $("settings-model-label").textContent = modelLabel(backend);
     $("settings-model-status").textContent = statusLabel(backend.status);
+    renderSelects();
     $("demo-badge").hidden = overview.mode !== "demo";
     $("demo-note").hidden = overview.mode !== "demo";
-    const chats = overview.chats || [];
-    patch($("chat-list"), chats.length ? chats.map((chat) => `<button type="button" class="chat-item${chat.chat_id === state.selected ? " selected" : ""}" data-chat="${escape(chat.chat_id)}"${chat.chat_id === state.selected ? ' aria-current="true"' : ""}><span class="chat-title">${escape(chat.title || "New chat")}</span><span class="chat-meta">${working.has(chat.status) ? `<span class="status-dot ${chat.status === "loading" ? "loading" : "running"}" aria-hidden="true"></span>${chat.status === "loading" ? "Loading model" : "Working"} · ` : ""}${escape(dateLabel(chat.updated || chat.created))}</span></button>`).join("") : '<p class="sidebar-empty">Your chats will appear here.</p>');
+    const query = state.chatQuery.trim().toLowerCase();
+    const chats = (overview.chats || []).filter((chat) => !query || (chat.title || "").toLowerCase().includes(query));
+    patch($("chat-list"), chats.length ? chats.map((chat) => `<div class="chat-row${chat.chat_id === state.selected ? " selected" : ""}"><button type="button" class="chat-item${chat.chat_id === state.selected ? " selected" : ""}" data-chat="${escape(chat.chat_id)}"${chat.chat_id === state.selected ? ' aria-current="true"' : ""}><span class="chat-title">${escape(chat.title || "New chat")}</span><span class="chat-meta">${working.has(chat.status) ? `<span class="status-dot ${chat.status === "loading" ? "loading" : "running"}" aria-hidden="true"></span>${chat.status === "loading" ? "Loading model" : "Working"} · ` : ""}${escape(dateLabel(chat.updated || chat.created))}</span></button><span class="chat-actions"><button type="button" class="chat-action" data-rename-chat="${escape(chat.chat_id)}" aria-label="Rename ${escape(chat.title || "chat")}" title="Rename">✎</button><button type="button" class="chat-action" data-delete-chat="${escape(chat.chat_id)}" aria-label="Delete ${escape(chat.title || "chat")}" title="Delete">✕</button></span></div>`).join("") : `<p class="sidebar-empty">${query ? "No chats match your search." : "Your chats will appear here."}</p>`);
   }
   function disclosureSummary(text, extra = "", busy = false) {
     return `<summary class="disclosure-summary"><span class="disclosure-chevron" aria-hidden="true">›</span>${busy ? '<span class="working-dot" aria-hidden="true"></span>' : ""}<span>${escape(text)}</span>${extra ? `<span class="disclosure-count">${escape(extra)}</span>` : ""}</summary>`;
@@ -348,7 +357,7 @@
     const agents = (turn.agents || []).filter((agent) => agent.parent_id || agent.agent_id !== "root");
     if (!agents.length) return "";
     const activeCount = agents.filter((agent) => !terminal.has(agent.status) && !["failed", "cancelled"].includes(agent.status)).length;
-    return `<details class="agents-group" data-key="agents-${escape(turn.turn_id || turn.run_id)}">${disclosureSummary(`${agents.length} ${agents.length === 1 ? "agent" : "agents"}`, activeCount ? `${activeCount} working` : "Finished", activeCount > 0 && turn.active)}<div class="agents-list">${agents.map((agent) => `<details class="agent-card" data-key="agent-${escape(agent.agent_id)}"><summary><span class="disclosure-chevron" aria-hidden="true">›</span><span class="status-dot ${terminal.has(agent.status) ? agent.status : "running"}" aria-hidden="true"></span><span class="agent-name">${escape(agent.role || "Agent")}</span><span class="agent-state">${escape(terminal.has(agent.status) ? agent.status === "completed" ? "Done" : agent.status === "cancelled" ? "Stopped" : "Needs attention" : "Working")}</span></summary><div class="agent-detail"><p class="agent-task">${escape(agent.task || "")}</p>${renderToolRows(toolRows(turn, agent.agent_id))}${agent.result ? `<div class="markdown">${markdown(outputText(agent.result))}</div>` : ""}${agent.error ? `<p class="turn-error">${escape(agent.error)}</p>` : ""}</div></details>`).join("")}</div></details>`;
+    return `<details class="agents-group" data-key="agents-${escape(turn.turn_id || turn.run_id)}">${disclosureSummary(`${agents.length} ${agents.length === 1 ? "agent" : "agents"}`, activeCount ? `${activeCount} working` : "Finished", activeCount > 0 && turn.active)}<div class="agents-list">${agents.map((agent) => `<details class="agent-card" data-key="agent-${escape(agent.agent_id)}"><summary><span class="disclosure-chevron" aria-hidden="true">›</span><span class="status-dot ${terminal.has(agent.status) ? agent.status : "running"}" aria-hidden="true"></span><span class="agent-name">${escape(agent.role || "Agent")}</span><span class="agent-hint">${escape(agent.task || "")}</span><span class="agent-state">${escape(terminal.has(agent.status) ? agent.status === "completed" ? "Done" : agent.status === "cancelled" ? "Stopped" : "Needs attention" : "Working")}</span></summary><div class="agent-detail"><p class="agent-task">${escape(agent.task || "")}</p>${renderToolRows(toolRows(turn, agent.agent_id))}${terminal.has(agent.status) ? "" : liveMarkup(turn, agent.agent_id)}${agent.result ? `<div class="markdown">${markdown(outputText(agent.result))}</div>` : ""}${agent.error ? `<p class="turn-error">${escape(agent.error)}</p>` : ""}</div></details>`).join("")}</div></details>`;
   }
   function diffMarkup(value) {
     return String(value || "No textual changes.").split("\n").map((line) => `<span class="diff-line${line.startsWith("+++") || line.startsWith("---") ? " header" : line.startsWith("+") ? " add" : line.startsWith("-") ? " remove" : line.startsWith("@@") ? " hunk" : ""}">${escape(line) || " "}</span>`).join("");
@@ -381,7 +390,7 @@
     const node = document.createElement("article");
     node.className = "turn";
     node.dataset.turn = key;
-    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark" aria-hidden="true">f</span>Forge</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
+    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark" aria-hidden="true">f</span>Forge</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
     state.turns.set(key, node);
     return node;
   }
@@ -414,17 +423,161 @@
       patch(node.querySelector(".turn-approvals"), approvalsMarkup(turn));
       const progress = turnProgress(turn);
       patch(node.querySelector(".turn-progress"), progress ? `${turn.active && !turn.approvals?.length ? '<span class="working-dot" aria-hidden="true"></span>' : ""}${escape(progress)}` : "");
+      patch(node.querySelector(".turn-live"), liveMarkup(turn));
       const output = outputText(turn.output);
-      patch(node.querySelector(".turn-output"), output ? `<div class="markdown">${markdown(output)}</div><div class="output-actions"><button type="button" class="copy-response" data-copy-response="${escape(key)}">Copy response</button>${turn.status === "completed_with_failures" ? "Some delegated work needs attention." : ""}</div>` : "");
+      const thought = output ? finalThought(turn) : "";
+      patch(node.querySelector(".turn-output"), output ? `${thought ? `<details class="live-thinking" data-key="thought-${escape(key)}">${disclosureSummary("Thought")}<p>${escape(thought)}</p></details>` : ""}<div class="markdown">${markdown(output)}</div><div class="output-actions"><button type="button" class="copy-response" data-copy-response="${escape(key)}">Copy response</button>${turn.status === "completed_with_failures" ? "Some delegated work needs attention." : ""}</div>` : "");
       patch(node.querySelector(".turn-error"), turn.error && !["cancelled", "interrupted"].includes(turn.status) ? `<p>${escape(turn.run_id ? "Forge couldn’t finish this request. You can send a message to continue." : "The model couldn’t start. Your message is saved; send it again to retry.")}</p><details data-key="error-${escape(key)}">${disclosureSummary("Error details")}<pre>${escape(typeof turn.error === "string" ? turn.error : pretty(turn.error))}</pre></details>` : "");
       patch(node.querySelector(".turn-artifacts"), turn.run_id && turn.artifacts?.length ? `<div class="artifact-list">${turn.artifacts.map((artifact) => `<button type="button" class="artifact-button" data-artifact="${escape(artifact.path)}" data-run="${escape(turn.run_id)}" title="Download ${escape(artifact.path)}"><span aria-hidden="true">▤</span><span>${escape(artifact.path)}</span><span aria-hidden="true">↓</span></button>`).join("")}</div>` : "");
     });
     for (const [key, node] of state.turns) if (!keys.has(key)) { node.remove(); state.turns.delete(key); }
+    renderStatusBar(); renderSelects();
     renderComposer();
     renderSettings(); renderDeveloper(); observeImages();
     document.title = state.detail.chat?.title ? `${state.detail.chat.title} — Forge` : "Forge";
     if (follow) scrollBottom();
     else $("jump-bottom").hidden = nearBottom();
+  }
+  // Streaming text arrives raw: hide thinking blocks and native tool calls.
+  function liveView(raw) {
+    let text = String(raw || "");
+    let thinking = "";
+    const thought = /(?:<\|channel>thought\n?|<think>)([\s\S]*?)(?:<channel\|>|<\/think>|$)/.exec(text);
+    if (thought) { thinking = thought[1]; text = text.replace(thought[0], ""); }
+    const call = /(<\|tool_call>call:([\w-]+)|<tool_call>\s*(?:<function=([\w-]+)|\{\s*"name"\s*:\s*"([\w-]+)))/.exec(text);
+    const tool = call ? call[2] || call[3] || call[4] : null;
+    if (call) text = text.slice(0, call.index);
+    return { text: text.trim(), thinking: thinking.trim(), tool, thinkingOpen: Boolean(thought) && !/<channel\|>|<\/think>/.test(raw) };
+  }
+  function finalThought(turn) {
+    const responses = (turn.events || []).filter((event) => event.kind === "model_response" && (event.agent_id || "root") === "root");
+    return (responses.at(-1)?.payload?.reasoning || "").trim();
+  }
+  function liveFor(runId, agentId = "root") {
+    return (state.live?.generations || []).find((entry) => entry.run_id === runId && entry.agent_id === agentId);
+  }
+  function liveMarkup(turn, agentId = "root") {
+    if (!turn.active || !turn.run_id) return "";
+    const generation = liveFor(turn.run_id, agentId);
+    if (!generation) return "";
+    const view = liveView(generation.text);
+    const parts = [];
+    if (view.thinking) parts.push(`<details class="live-thinking"${view.thinkingOpen ? " open" : ""}><summary>${view.thinkingOpen ? "Thinking…" : "Thought"}</summary><p>${escape(view.thinking.slice(-1500))}</p></details>`);
+    if (view.text) parts.push(`<div class="markdown live-text">${markdown(view.text)}</div>`);
+    if (view.tool) parts.push(`<p class="live-tool"><span class="working-dot" aria-hidden="true"></span>Calling ${escape(view.tool.replace(/_/g, " "))}…</p>`);
+    return parts.join("");
+  }
+  function generations(turns = state.detail?.turns || []) {
+    const rows = [];
+    for (const turn of turns) for (const event of turn.events || []) {
+      if (event.kind !== "generation") continue;
+      rows.push({ turn: turn.turn_id, agent: event.agent_id || "root", created: event.created, ...event.payload, metrics: event.payload?.metrics || {} });
+    }
+    return rows;
+  }
+  function shortModel(id) {
+    const name = String(id || "").split(/[\\/]/).at(-1).replace(/-mlx$/, "");
+    if (/^gemma-4/i.test(name)) return "Gemma 4";
+    if (/^qwen3\.5/i.test(name)) return "Qwen3.5";
+    return name;
+  }
+  function compact(value) {
+    if (value == null) return "–";
+    return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}K` : String(Math.round(value));
+  }
+  function contextUsage() {
+    const rows = generations().filter((row) => row.agent === "root");
+    const last = rows.at(-1);
+    const limit = state.detail?.chat?.context_limit || chosenModel()?.context;
+    if (!last || !limit) return null;
+    return { used: (last.input_tokens || 0) + (last.output_tokens || 0), limit };
+  }
+  function renderStatusBar() {
+    const usage = contextUsage();
+    $("context-meter").hidden = !usage;
+    if (usage) {
+      const share = Math.min(1, usage.used / usage.limit);
+      $("context-fill").style.width = `${Math.max(2, share * 100)}%`;
+      $("context-fill").className = `meter-fill${share > 0.85 ? " high" : share > 0.6 ? " mid" : ""}`;
+      $("context-label").textContent = `${compact(usage.used)} / ${compact(usage.limit)}`;
+      $("context-meter").title = `Context window: ${usage.used.toLocaleString()} of ${usage.limit.toLocaleString()} tokens used by the last reply`;
+    }
+    const busy = (state.live?.generations || []).filter((entry) => entry.text);
+    const workers = (state.live?.workers || []).filter((worker) => worker.state === "busy");
+    $("live-speed").hidden = !busy.length;
+    $("live-speed").textContent = busy.length ? `${workers.length || busy.length} generating` : "";
+  }
+  function renderSelects() {
+    const select = $("model-select");
+    const chat = state.detail?.chat;
+    const model = chat?.model || state.newChat.model || state.models[0]?.id;
+    const options = state.models.map((entry) => `<option value="${escape(entry.id)}">${escape(entry.label)}</option>`).join("");
+    if (select.dataset.options !== options) { select.innerHTML = options; select.dataset.options = options; }
+    select.hidden = state.models.length < 2;
+    if (model) select.value = model;
+    $("effort-select").value = chat?.effort || state.newChat.effort || "off";
+    $("effort-select").hidden = state.overview?.mode === "demo";
+  }
+  async function changeSetting(key, value) {
+    if (!state.selected) {
+      state.newChat[key] = value;
+      try { localStorage.setItem("forge-new-chat", JSON.stringify(state.newChat)); } catch {}
+      renderOverview(); return;
+    }
+    try {
+      const result = await api(`/api/chats/${encodeURIComponent(state.selected)}/settings`, { [key]: value });
+      if (state.detail?.chat) Object.assign(state.detail.chat, result);
+      toast(key === "model" ? `Next replies use ${chosenModel()?.label || value}` : `Effort set to ${$("effort-select").selectedOptions[0]?.textContent || value}`);
+      renderOverview();
+    } catch (error) { toast(error.message, true); renderSelects(); }
+  }
+  function renameChat(id) {
+    const item = document.querySelector(`.chat-item[data-chat="${CSS.escape(id)}"]`);
+    const title = item?.querySelector(".chat-title");
+    if (!title) return;
+    const input = document.createElement("input");
+    input.className = "chat-rename";
+    input.value = title.textContent;
+    input.setAttribute("aria-label", "Chat title");
+    item.hidden = true;
+    item.before(input);
+    input.focus(); input.select();
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      const value = input.value.trim();
+      if (save && value && value !== title.textContent) {
+        try { await api(`/api/chats/${encodeURIComponent(id)}/rename`, { title: value }); }
+        catch (error) { toast(error.message, true); }
+      }
+      input.remove();
+      item.hidden = false;
+      refresh();
+    };
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Enter") { event.preventDefault(); finish(true); }
+      if (event.key === "Escape") { event.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+  }
+  async function deleteChat(id, button) {
+    // First click arms the button; a second click within a few seconds deletes.
+    if (button.dataset.armed !== "true") {
+      button.dataset.armed = "true";
+      button.textContent = "Delete?";
+      button.classList.add("armed");
+      setTimeout(() => { if (button.isConnected) { button.dataset.armed = ""; button.textContent = "✕"; button.classList.remove("armed"); } }, 3000);
+      return;
+    }
+    try {
+      await api(`/api/chats/${encodeURIComponent(id)}/delete`, {});
+      state.drafts.delete(id); persistDrafts();
+      if (state.selected === id) { state.detail = null; state.selected = null; rememberSelection(); selectChat(null); }
+      refresh(); toast("Chat deleted");
+    } catch (error) { toast(error.message, true); }
   }
   function renderComposer() {
     const images = currentMedia();
@@ -526,7 +679,41 @@
   }
   function scheduleRefresh() {
     clearTimeout(pollTimer);
+    if (state.streaming && state.connected) return;
     if (needsPolling() || !state.connected) pollTimer = setTimeout(refresh, document.hidden ? 4000 : state.connected ? 800 : 3000);
+  }
+  let liveRefreshTimer;
+  function renderLive() {
+    for (const turn of state.detail?.turns || []) {
+      const node = state.turns.get(String(turn.turn_id || turn.run_id));
+      if (node) patch(node.querySelector(".turn-live"), liveMarkup(turn));
+    }
+    renderStatusBar();
+    if (state.dev.open && state.dev.tab === "system") renderDeveloperSystem();
+    if (state.dev.open && state.dev.tab === "agents") renderDeveloperAgents();
+    if (nearBottom()) scrollBottom();
+  }
+  function connectStream() {
+    if (state.stream || typeof EventSource !== "function") return;
+    const stream = new EventSource("/api/events");
+    state.stream = stream;
+    stream.onopen = () => { state.streaming = true; clearTimeout(pollTimer); };
+    stream.onmessage = (event) => {
+      let live;
+      try { live = JSON.parse(event.data); } catch { return; }
+      state.live = live;
+      if (live.version !== state.liveVersion) {
+        state.liveVersion = live.version;
+        clearTimeout(liveRefreshTimer);
+        liveRefreshTimer = setTimeout(refresh, 60);
+      }
+      renderLive();
+    };
+    stream.onerror = () => {
+      // The browser reconnects on its own; poll until it does.
+      state.streaming = false;
+      scheduleRefresh();
+    };
   }
   async function refresh() {
     if (state.refreshing) { refreshAgain = true; return; }
@@ -570,6 +757,10 @@
     $("command-menu").hidden = true;
     renderComposer();
     const request = selected ? { message, request_id: requestId } : { message, policy: state.policy, request_id: requestId };
+    if (!selected) {
+      if (state.newChat.model && state.models.some((model) => model.id === state.newChat.model)) request.model = state.newChat.model;
+      if (state.newChat.effort && state.overview?.mode !== "demo") request.effort = state.newChat.effort;
+    }
     if (images.length) {
       request.media = images.map((image) => ({ type: "image", mime: image.mime, sha256: image.sha256, data: image.data }));
       request.media_names = images.map((image) => image.name);
@@ -834,7 +1025,7 @@
   }
   function toggleDeveloper(open = !state.dev.open, tab = state.dev.tab) {
     state.dev.open = open;
-    state.dev.tab = ["agents", "files", "changes", "activity"].includes(tab) ? tab : "agents";
+    state.dev.tab = ["agents", "files", "changes", "activity", "performance", "system"].includes(tab) ? tab : "agents";
     if (open && matchMedia("(max-width:1100px)").matches && state.sidebar) toggleSidebar(false);
     $("developer-pane").hidden = !open;
     $("app").classList.toggle("developer-open", open);
@@ -1095,6 +1286,43 @@
     const record = records.find((entry) => String(entry.key) === state.dev.selectedActivity);
     patch($("dev-activity-viewer"), record ? `<div class="developer-detail"><h3>${escape(record.name === "run_tests" ? "Test output" : record.name === "run_command" ? "Command output" : ["failed", "denied", "cancelled", "expired", "stale", "interrupted"].includes(record.status) ? failedToolLabel(record.name, record.args, record.status) : toolLabel(record.name, record.args))}</h3><p>${escape(agentStatus(record.status))}${record.exit_code != null ? ` · exit ${escape(record.exit_code)}` : ""}${record.agent_id ? ` · ${escape(record.agent_id === "root" ? "Main agent" : record.agent_id)}` : ""}</p><pre class="activity-output">${escape(readableOutput(record.result) || (record.status === "proposed" ? "Waiting for approval before execution." : record.status === "running" ? "Command is running…" : "No output was recorded."))}</pre>${record.output_truncated ? '<p class="developer-footnote">Showing an output excerpt.</p>' : ""}<details class="tool-detail" data-key="activity-request-${escape(record.key)}">${disclosureSummary("Exact request")}<pre>${escape(pretty(record.args || {}))}</pre></details></div>` : "");
   }
+  function cacheBadge(source) {
+    return `<span class="cache-badge ${escape(source || "none")}">${escape(({ session: "cached", snapshot: "snapshot", cold: "cold" })[source] || "–")}</span>`;
+  }
+  function agentLabel(id) { return id === "root" ? "Main" : id.replace(/^agent-0*/, "Sub-agent "); }
+  function renderDeveloperPerformance() {
+    const rows = generations();
+    if (!rows.length) {
+      patch($("dev-performance-summary"), emptyDeveloper("No model calls yet", "Timing for each model call in this chat shows up here."));
+      patch($("dev-context"), ""); patch($("dev-performance-list"), ""); return;
+    }
+    const measured = rows.filter((row) => row.metrics.prompt_tokens);
+    const prompt = measured.reduce((sum, row) => sum + row.metrics.prompt_tokens, 0);
+    const reused = measured.reduce((sum, row) => sum + (row.metrics.reused_tokens || 0), 0);
+    const output = rows.reduce((sum, row) => sum + (row.output_tokens || 0), 0);
+    const speeds = measured.map((row) => row.metrics.decode_tps).filter(Boolean).sort((a, b) => a - b);
+    const ttfts = measured.map((row) => row.metrics.ttft_ms).filter(Boolean).sort((a, b) => a - b);
+    const median = (values) => values.length ? values[Math.floor(values.length / 2)] : null;
+    patch($("dev-performance-summary"), `<div class="stat-grid"><div class="stat"><span>${rows.length}</span>model calls</div><div class="stat"><span>${prompt ? `${Math.round((reused / prompt) * 100)}%` : "–"}</span>prompt reused</div><div class="stat"><span>${median(ttfts) != null ? `${Math.round(median(ttfts))} ms` : "–"}</span>median first token</div><div class="stat"><span>${median(speeds) != null ? Math.round(median(speeds)) : "–"}</span>median tok/s</div><div class="stat"><span>${prompt ? compact(prompt) : "–"}</span>prompt tokens</div><div class="stat"><span>${compact(output)}</span>generated</div></div>`);
+    const agents = new Map();
+    for (const row of rows) agents.set(row.agent, row);
+    const limit = state.detail?.chat?.context_limit;
+    patch($("dev-context"), `<h3 class="file-group-label">Context window</h3>${[...agents.values()].map((row) => {
+      const used = (row.input_tokens || 0) + (row.output_tokens || 0);
+      const cap = row.agent === "root" ? limit : (state.models.find((model) => model.id !== state.detail?.chat?.model)?.context || limit);
+      const share = cap ? Math.min(1, used / cap) : 0;
+      return `<div class="context-row"><span>${escape(agentLabel(row.agent))}</span><span class="meter" aria-hidden="true"><span class="meter-fill${share > 0.85 ? " high" : share > 0.6 ? " mid" : ""}" style="width:${Math.max(2, share * 100)}%"></span></span><span>${compact(used)}${cap ? ` / ${compact(cap)}` : ""}</span></div>`;
+    }).join("")}`);
+    patch($("dev-performance-list"), `<div class="perf-scroll"><table class="perf-table"><thead><tr><th>Agent</th><th>Model</th><th>Prompt · reused</th><th>Cache</th><th>First token</th><th>Speed</th><th>Out</th></tr></thead><tbody>${rows.slice().reverse().slice(0, 200).map((row) => { const prompt = row.metrics.prompt_tokens || row.input_tokens || 0; const reused = row.metrics.reused_tokens || 0; return `<tr><td>${escape(agentLabel(row.agent))}</td><td>${escape(shortModel(row.model))}</td><td title="${escape(reused)} of ${escape(prompt)} prompt tokens came from the cache">${compact(prompt)}${reused && prompt ? ` <small>· ${Math.round((100 * reused) / prompt)}%</small>` : ""}</td><td>${cacheBadge(row.metrics.cache_source)}</td><td>${row.metrics.ttft_ms != null ? `${Math.round(row.metrics.ttft_ms)} ms` : "–"}</td><td>${row.metrics.decode_tps ? `${Math.round(row.metrics.decode_tps)} tok/s` : "–"}${row.metrics.draft ? ` <small title="Speculative decoding: tokens per verify round">· ${escape(row.metrics.draft.tokens_per_round)}/round</small>` : ""}</td><td>${compact(row.output_tokens)}</td></tr>`; }).join("")}</tbody></table></div>`);
+  }
+  function bytes(value) { return value == null ? "–" : value >= 2 ** 30 ? `${(value / 2 ** 30).toFixed(1)} GB` : `${Math.round(value / 2 ** 20)} MB`; }
+  function renderDeveloperSystem() {
+    const workers = state.live?.workers || [];
+    patch($("dev-system-list"), workers.length ? workers.map((worker) => {
+      const reuse = worker.prompt_tokens ? Math.round((worker.reused_tokens / worker.prompt_tokens) * 100) : null;
+      return `<div class="worker-card"><div class="worker-title"><span class="status-dot ${worker.state === "busy" ? "running" : worker.state === "idle" ? "ready" : worker.state === "error" ? "failed" : worker.state === "starting" ? "loading" : ""}" aria-hidden="true"></span><strong>${escape(worker.model)}</strong><span class="worker-role">${escape(worker.group === "driver" ? "main model" : worker.group === "subagent" ? "sub-agents" : worker.name)}</span><span class="worker-state">${escape(({ busy: "Generating", idle: "Ready", stopped: "Not running", starting: "Starting", error: "Unreachable" })[worker.state] || worker.state)}</span></div><dl class="worker-stats"><div><dt>Memory</dt><dd>${bytes(worker.memory_bytes)}</dd></div><div><dt>Prompt cache</dt><dd>${bytes(worker.cache_bytes)}${worker.cache_entries ? ` · ${worker.cache_entries}` : ""}</dd></div><div><dt>Requests</dt><dd>${worker.requests || 0}</dd></div><div><dt>Reused</dt><dd>${reuse != null ? `${reuse}%` : "–"}</dd></div><div><dt>Generated</dt><dd>${compact(worker.generated_tokens)}</dd></div><div><dt>Context</dt><dd>${worker.context ? `${Math.round(worker.context / 1024)}K` : "–"}</dd></div>${worker.draft_enabled != null ? `<div><dt>Drafting</dt><dd>${worker.draft_enabled ? "on" : "paused"}</dd></div>` : ""}</dl>${worker.error ? `<p class="worker-error">${escape(worker.error)}</p>` : ""}</div>`;
+    }).join("") : emptyDeveloper(state.overview?.mode === "demo" ? "Demo mode has no model workers" : "Workers appear once the model starts"));
+  }
   function renderDeveloper() {
     if (!state.dev.open) return;
     document.querySelectorAll("[data-dev-tab]").forEach((button) => {
@@ -1110,6 +1338,8 @@
     if (state.dev.tab === "agents") renderDeveloperAgents();
     else if (state.dev.tab === "files") renderDeveloperFiles();
     else if (state.dev.tab === "changes") renderDeveloperChanges();
+    else if (state.dev.tab === "performance") renderDeveloperPerformance();
+    else if (state.dev.tab === "system") renderDeveloperSystem();
     else renderDeveloperActivity();
   }
   async function refreshDeveloper() {
@@ -1219,6 +1449,10 @@
     }
   });
   document.addEventListener("click", (event) => {
+    const rename = event.target.closest("[data-rename-chat]");
+    if (rename) { renameChat(rename.dataset.renameChat); return; }
+    const remove = event.target.closest("[data-delete-chat]");
+    if (remove) { deleteChat(remove.dataset.deleteChat, remove); return; }
     const chat = event.target.closest("[data-chat]");
     if (chat) { selectChat(chat.dataset.chat); return; }
     const starter = event.target.closest("[data-starter]");
@@ -1237,6 +1471,11 @@
     const artifact = event.target.closest("[data-artifact]");
     if (artifact) downloadArtifact(artifact);
   });
+  $("model-select").addEventListener("change", (event) => changeSetting("model", event.target.value));
+  $("effort-select").addEventListener("change", (event) => changeSetting("effort", event.target.value));
+  $("chat-search").addEventListener("input", (event) => { state.chatQuery = event.target.value; renderOverview(); });
+  $("context-meter").addEventListener("click", () => toggleDeveloper(true, "performance"));
+  $("live-speed").addEventListener("click", () => toggleDeveloper(true, "system"));
   $("toggle-sidebar").addEventListener("click", () => toggleSidebar());
   $("close-sidebar").addEventListener("click", () => { toggleSidebar(false); $("toggle-sidebar").focus(); });
   $("sidebar-backdrop").addEventListener("click", () => toggleSidebar(false));
@@ -1256,6 +1495,7 @@
   $("transcript-pane").addEventListener("scroll", () => { $("jump-bottom").hidden = nearBottom(); }, { passive: true });
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "d") { event.preventDefault(); toggleDeveloper(); return; }
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); if (!state.sidebar && matchMedia("(max-width:900px)").matches) toggleSidebar(true); $("chat-search").focus(); return; }
     if (event.key === "Tab" && state.dev.open && matchMedia("(max-width:1100px)").matches && !$("settings").open && !$("image-viewer").open) {
       const buttons = Array.from($("developer-pane").querySelectorAll('button:not(:disabled),input,textarea,select,a[href]')).filter((element) => element.getClientRects().length && element.tabIndex !== -1);
       const first = buttons[0]; const last = buttons.at(-1);
@@ -1406,7 +1646,10 @@
       try { await api("/api/auth", { token }); }
       catch { setConnection("This session could not be authenticated. Reopen the Forge link from the local launcher."); return; }
     }
+    try { Object.assign(state.newChat, JSON.parse(localStorage.getItem("forge-new-chat") || "{}")); } catch {}
+    try { state.models = (await api("/api/models")).models || []; } catch {}
     await refresh();
+    connectStream();
   }
   boot();
 })();
