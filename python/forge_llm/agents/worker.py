@@ -39,6 +39,7 @@ from .backends import (
     WorkerUnavailableError,
     is_loopback,
     validate_context_limit,
+    validate_options,
     validate_request,
 )
 from .protocol import ChatMessage, Generation, ModelBackend
@@ -169,12 +170,15 @@ class WorkerService:
         timeout: float,
         tool_specs: list[dict[str, Any]] | None = None,
         max_context_tokens: int | None = None,
+        generation_options: dict[str, Any] | None = None,
     ) -> Generation:
-        options = (
+        options: dict[str, Any] = (
             {}
             if max_context_tokens is None
             else {"max_context_tokens": max_context_tokens}
         )
+        if generation_options:
+            options["options"] = generation_options
         if tool_specs is not None:
             return await asyncio.wait_for(
                 self.backend.generate_action(
@@ -243,6 +247,7 @@ class WorkerService:
             "timeout",
             "tools",
             "max_context_tokens",
+            "options",
         }:
             raise ValueError("invalid job submission fields")
         raw_messages = payload.get("messages")
@@ -301,6 +306,9 @@ class WorkerService:
             canonical["tools"] = tool_specs
         if max_context_tokens is not None:
             canonical["max_context_tokens"] = max_context_tokens
+        options = validate_options(payload.get("options"))
+        if options:
+            canonical["options"] = options
         fingerprint = hashlib.sha256(
             json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
@@ -329,6 +337,7 @@ class WorkerService:
                     timeout,
                     tool_specs,
                     max_context_tokens,
+                    options,
                 ),
                 self._loop,
             )

@@ -162,6 +162,16 @@ def _string(limit: int, *, nullable: bool = False) -> dict:
     }
 
 
+def _string_list(minimum: int = 0) -> dict:
+    return {
+        "type": "array",
+        "items": _string(128),
+        "minItems": minimum,
+        "maxItems": 64,
+        "uniqueItems": True,
+    }
+
+
 def _ids(identifiers: Sequence[str], *, nonempty: bool = False) -> dict:
     item = _string(128)
     if identifiers:
@@ -184,6 +194,7 @@ def build_tool_specs(
     child_ids: Collection[str] = (),
     recipient_ids: Collection[str] = (),
     wait_ids: Collection[str] | None = None,
+    stable: bool = False,
 ) -> list[dict[str, Any]]:
     """Advertise only registered/granted tools and currently legal controls.
 
@@ -192,6 +203,11 @@ def build_tool_specs(
     agents, and the tool grant must be the current agent's complete allowlist.
     Empty recipient/wait sets omit those functions. ``controls`` comes from the
     current action menu, so depth/capacity restrictions can omit spawning.
+
+    ``stable`` advertises agent IDs as plain strings and keeps send/wait in the
+    catalog even with no current recipients. The catalog then stays identical
+    from turn to turn, which keeps the model's prompt cache valid; the runtime
+    checks IDs when the action runs.
     """
     if not isinstance(tool_schemas, Mapping):
         raise ValueError("tool_schemas must map registered names to parameter schemas")  # noqa: TRY004 - JSON schema errors share a ValueError contract.
@@ -252,25 +268,33 @@ def build_tool_specs(
                 {
                     "task": _string(12_000),
                     "role": _string(256, nullable=True),
-                    "dependencies": _ids(children),
+                    "dependencies": _ids(children) if not stable else _string_list(),
                     "tools": _ids(granted),
                 },
                 ["task"],
             ),
         )
-    if "send" in chosen and recipients:
+    if "send" in chosen and (recipients or stable):
         recipient = _string(128)
-        recipient["enum"] = recipients
+        if not stable:
+            recipient["enum"] = recipients
         add(
             "send",
             "Send evidence or instructions to one currently permitted actual agent ID.",
             _object({"to": recipient, "message": _string(8_000)}, ["to", "message"]),
         )
-    if "wait" in chosen and waiting:
+    if "wait" in chosen and (waiting or stable):
         add(
             "wait",
             "Wait for outcomes from these actual direct children; do not invent IDs or tasks.",
-            _object({"agents": _ids(waiting, nonempty=True)}, ["agents"]),
+            _object(
+                {
+                    "agents": _ids(waiting, nonempty=True)
+                    if not stable
+                    else _string_list(1)
+                },
+                ["agents"],
+            ),
         )
     if "finish" in chosen:
         result_schema = _string(24_000)
@@ -679,6 +703,10 @@ def parse_native_action(
     return parse_action(canonical_wire, max_chars=max(max_chars, len(canonical_wire)))
 
 
+class NoNativeCall(ProtocolError):
+    """The reply contains no tool call at all, i.e. it's a plain-text answer."""
+
+
 def parse_native_actions(
     text: str,
     tool_specs: Sequence[dict],
@@ -686,6 +714,7 @@ def parse_native_actions(
     max_calls: int = 4,
     max_chars: int = 32_768,
     allow_xml_text: bool = False,
+    dialect: str = "json",
 ) -> list[dict[str, Any]]:
     """Validate a bounded native batch before returning any canonical actions.
 
@@ -706,6 +735,10 @@ def parse_native_actions(
         )
     specs = validate_tool_specs(tool_specs)
     body = text.strip()
+    if dialect == "gemma4":
+        return _gemma_actions(body, specs, max_calls=max_calls, max_chars=max_chars)
+    if "<tool_call>" not in body and not body.startswith("{"):
+        raise NoNativeCall("reply contains no tool call")
     if not body.startswith("<tool_call>") and not (
         allow_xml_text and "<tool_call>" in body
     ):
@@ -778,3 +811,26 @@ def parse_native_actions(
         actions.append(parse_native_action(payload, specs, max_chars=max_chars))
         position = skip_whitespace(position + len("</tool_call>"))
     return actions
+
+
+def _gemma_actions(
+    body: str, specs: list[dict], *, max_calls: int, max_chars: int
+) -> list[dict[str, Any]]:
+    """Gemma 4 writes ``<|tool_call>call:name{...}<tool_call|>``, possibly with
+    a short note around the calls."""
+    from ..chat_formats import GEMMA_CALL_OPEN, GemmaSyntaxError, gemma_calls
+
+    if GEMMA_CALL_OPEN not in body:
+        raise NoNativeCall("reply contains no tool call")
+    try:
+        calls, _ = gemma_calls(body)
+    except GemmaSyntaxError as exc:
+        raise ProtocolError(f"invalid Gemma tool call: {exc}") from exc
+    if len(calls) > max_calls:
+        raise ProtocolError(f"native batch exceeds its {max_calls}-call allowance")
+    return [
+        parse_native_action(
+            json.dumps(call, ensure_ascii=False), specs, max_chars=max_chars
+        )
+        for call in calls
+    ]

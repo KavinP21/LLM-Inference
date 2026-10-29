@@ -106,7 +106,10 @@ def test_false_child_claim_and_actual_source_survive_handoff_projection_and_resu
     assert "calibration failed" in page["events"][0]["payload_excerpt"]
     prompt = messages[0].content
     assert "Child conclusions are unverified claims" in prompt
-    assert "Missing measurements remain unknown" in prompt
+    assert (
+        "say it's unknown instead of guessing" in prompt
+        or "Missing measurements remain unknown" in prompt
+    )
 
     # Project a long earlier history while retaining the latest actual handoff.
     store.connection.execute(
