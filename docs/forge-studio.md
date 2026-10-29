@@ -6,7 +6,7 @@ permissions appear inline when they are relevant.
 
 ![Forge conversation with inline tools and persistent composer](images/forge-studio-chat.jpg)
 
-Actual HTTP-backed browser QA using the explicitly labeled deterministic demo.
+Screenshot from `--demo` mode.
 
 ## Open and type
 
@@ -55,7 +55,7 @@ beside the chat; on smaller screens it becomes a dismissible drawer.
 
 ![Developer workspace with created files and image attachment](images/forge-studio-developer.jpg)
 
-Actual HTTP-backed browser QA in the explicitly labeled deterministic mode.
+Screenshot from `--demo` mode.
 
 - **Agents** shows assigned tasks, current tool operations, status, permissions,
   results and errors. Select an agent to save direction for its next model step
@@ -183,9 +183,9 @@ For an explicitly labeled deterministic harness exercise without inference:
 ```
 
 The original mission APIs remain available for integrations, but the interactive
-UI uses conversations. The [design](harness-design.md) documents the current
-interaction model and the underlying runtime boundaries.
-The [conversation validation report](../benchmarks/results/forge-studio-conversation-2026-10-11/)
-records the real-model three-turn check and browser interaction scope.
-The [developer workspace report](../benchmarks/results/forge-studio-developer-2026-10-12/)
-records image context, command execution, agent controls and panel validation.
+UI uses conversations. [harness-design.md](harness-design.md) covers how the
+pieces fit together.
+
+`benchmarks/smoke_studio.py`, `smoke_studio_chat.py` and `smoke_studio_image.py`
+drive a running Studio end to end with a real model (a multi-turn chat, and an
+image question) as a quick check after changes.

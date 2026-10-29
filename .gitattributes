@@ -1,7 +1,0 @@
-benchmarks/results/agents-*/*.json linguist-generated=true
-benchmarks/results/agents-*/*.xml linguist-generated=true
-benchmarks/results/speculative-published-*/*.json linguist-generated=true
-benchmarks/results/qwen7b-*/*.json linguist-generated=true
-benchmarks/results/qwen7b-*/*.xml linguist-generated=true
-benchmarks/results/qwen35-*/*.json linguist-generated=true
-benchmarks/results/qwen35-*/*.xml linguist-generated=true
