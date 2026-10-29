@@ -30,6 +30,39 @@ if TYPE_CHECKING:
 SETTINGS = {"model", "effort"}
 
 SETTLED = TERMINAL | {"completed_with_failures", "interrupted"}
+
+# A chat view gets every event of its latest turns, but only what the transcript
+# shows for older ones, and long text is clipped. A long chat then stays cheap
+# to refresh while a reply streams.
+RECENT_TURNS = 8
+OLD_TURN_EVENTS = {"tool_result", "generation", "operator_message"}
+
+
+def _clip(value, limit):
+    if isinstance(value, str) and len(value) > limit:
+        return value[:limit] + f"\n… [{len(value) - limit:,} more characters]"
+    if isinstance(value, dict):
+        return {key: _clip(item, limit) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clip(item, limit) for item in value]
+    return value
+
+
+def _slim(events, limit):
+    return [dict(event, payload=_clip(event["payload"], limit)) for event in events]
+
+
+def _old_turn_events(events):
+    responses = [
+        event
+        for event in events
+        if event["kind"] == "model_response" and event["agent_id"] == "root"
+    ]
+    kept = [event for event in events if event["kind"] in OLD_TURN_EVENTS]
+    # The last root response carries the reasoning shown as "Thought".
+    return _slim(sorted(kept + responses[-1:], key=lambda event: event["id"]), 600)
+
+
 IMAGE_MIMES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
@@ -247,6 +280,7 @@ class ConversationController:
             "WHERE run_id IS NULL AND status IN ('loading','queued')",
             ("Interrupted while starting the model. Send a message to continue.",),
         )
+        self._manifests_seen = -1
         self._import_legacy()
 
     @property
@@ -347,6 +381,11 @@ class ConversationController:
 
     def _import_legacy(self):
         """Group existing run lineages without changing their original journals."""
+        # Every run has a manifest, so this only rescans when a run was added.
+        count = self.db.execute("SELECT COUNT(*) FROM studio_manifests").fetchone()[0]
+        if count == self._manifests_seen:
+            return
+        self._manifests_seen = count
         rows = self.db.execute(
             "SELECT m.run_id,m.manifest,r.created,r.config FROM studio_manifests m "
             "JOIN runs r ON m.run_id=r.run_id ORDER BY r.created"
@@ -1006,7 +1045,7 @@ class ConversationController:
             "SELECT * FROM studio_chat_turns WHERE chat_id=? ORDER BY created,rowid",
             (chat_id,),
         ).fetchall()
-        for row in rows:
+        for index, row in enumerate(rows):
             messages = self._user_messages(row)
             turn = {
                 "turn_id": row["turn_id"],
@@ -1051,6 +1090,12 @@ class ConversationController:
                     in {"context_projected", "conversation_context_projected"}
                     for event in detail["events"]
                 )
+                if turn["active"] or index >= len(rows) - RECENT_TURNS:
+                    turn["events"] = _slim(detail["events"], 4000)
+                else:
+                    if "old_events" not in detail:
+                        detail["old_events"] = _old_turn_events(detail["events"])
+                    turn["events"] = detail["old_events"]
             turns.append(turn)
             transcript.extend(
                 dict(message, turn_id=row["turn_id"]) for message in messages

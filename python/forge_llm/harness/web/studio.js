@@ -52,7 +52,20 @@
     // Expand once: user-provided text inside a code token cannot create another token.
     return text.replace(/\u0000(\d+)\u0000/g, (_, i) => tokens[Number(i)] || "");
   }
+  // Every refresh re-renders the whole transcript; most of it hasn't changed.
+  const rendered = new Map();
   function markdown(value, depth = 0) {
+    if (depth) return renderMarkdown(value, depth);
+    const key = String(value || "");
+    let html = rendered.get(key);
+    if (html === undefined) {
+      html = renderMarkdown(key, 0);
+      if (rendered.size > 500) rendered.delete(rendered.keys().next().value);
+      rendered.set(key, html);
+    }
+    return html;
+  }
+  function renderMarkdown(value, depth) {
     const lines = String(value || "").replace(/\r\n?/g, "\n").split("\n");
     if (depth > 6) return `<p>${inline(value)}</p>`;
     const blocks = [];
@@ -463,7 +476,7 @@
     const view = liveView(generation.text);
     const parts = [];
     if (view.thinking) parts.push(`<details class="live-thinking"${view.thinkingOpen ? " open" : ""}><summary>${view.thinkingOpen ? "Thinking…" : "Thought"}</summary><p>${escape(view.thinking.slice(-1500))}</p></details>`);
-    if (view.text) parts.push(`<div class="markdown live-text">${markdown(view.text)}</div>`);
+    if (view.text) parts.push(`<div class="markdown live-text">${renderMarkdown(view.text, 0)}</div>`);
     if (view.tool) parts.push(`<p class="live-tool"><span class="working-dot" aria-hidden="true"></span>Calling ${escape(view.tool.replace(/_/g, " "))}…</p>`);
     return parts.join("");
   }
