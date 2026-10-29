@@ -650,6 +650,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--tls-cert")
     parser.add_argument("--tls-key")
+    # Set by LocalProcessBackend: stdin is a pipe from the parent, and EOF
+    # means the parent is gone (even after SIGKILL), so the worker exits
+    # instead of holding its model in memory.
+    parser.add_argument(
+        "--exit-with-parent", action="store_true", help=argparse.SUPPRESS
+    )
     args = parser.parse_args(argv)
     token = os.environ.get(args.token_env, "")
     if not token:
@@ -717,6 +723,14 @@ def main(argv: list[str] | None = None) -> int:
 
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
+        if args.exit_with_parent:
+
+            def watch_parent() -> None:
+                while os.read(0, 4096):
+                    pass
+                stop(signal.SIGTERM, None)
+
+            threading.Thread(target=watch_parent, daemon=True).start()
         print(
             json.dumps(
                 {
