@@ -579,6 +579,61 @@ class AgentRuntime:
         self.store.request_cancel(run_id)
         await self._cancel_requests(run_id)
 
+    async def cancel_agent(self, run_id: str, agent_id: str) -> None:
+        """Request operator cancellation; the owning scheduler stops its subtree."""
+        if run_id not in self._active:
+            raise ValueError("agent cancellation requires an active coordinator")
+        self._assert_lease(run_id)
+        if self.store.agent(run_id, agent_id).status in TERMINAL:
+            raise ValueError("agent has already settled")
+        if agent_id == "root":
+            await self.cancel(run_id)
+            return
+        self.store.event(
+            run_id, agent_id, "agent_cancel_requested", {"agent_id": agent_id}
+        )
+
+    async def _agent_cancellations(self, run_id: str, running: dict) -> None:
+        for event in self.store.events(run_id, kinds=("agent_cancel_requested",)):
+            key = f"{run_id}/operator-agent-cancel/{event['id']}"
+            if self.store.effect(key) is not None:
+                continue
+            agents = {a.agent_id: a for a in self.store.agents(run_id)}
+            scope = {event["payload"]["agent_id"]}
+            while True:
+                expanded = scope | {
+                    a.agent_id for a in agents.values() if a.parent_id in scope
+                }
+                if expanded == scope:
+                    break
+                scope = expanded
+            jobs, requests = [], []
+            for target in scope:
+                job = running.pop(target, None)
+                if job is not None:
+                    job.cancel()
+                    jobs.append(job)
+                request = self._requests.get((run_id, target))
+                if request is not None:
+                    requests.append(request)
+            await asyncio.gather(
+                *(self._cancel_request(run_id, request) for request in requests)
+            )
+            await asyncio.gather(*jobs, return_exceptions=True)
+            self._assert_lease(run_id)
+            for target in scope:
+                if (
+                    target in agents
+                    and self.store.agent(run_id, target).status not in TERMINAL
+                ):
+                    self._fail(
+                        run_id,
+                        target,
+                        "operator stopped this agent",
+                        status="cancelled",
+                    )
+            self.store.record_effect(key, {"agents": sorted(scope)})
+
     def result(self, run_id: str) -> RunResult:
         run = self.store.run(run_id)
         return RunResult(
@@ -1183,6 +1238,7 @@ class AgentRuntime:
                         reason,
                     )
                     break
+                await self._agent_cancellations(run_id, running)
                 # Failure propagation and parent wake-ups must reach a fixed
                 # point before declaring deadlock from a stale snapshot.
                 while self._refresh_waiters(run_id, config):
