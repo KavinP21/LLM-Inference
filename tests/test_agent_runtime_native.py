@@ -79,13 +79,12 @@ def test_native_calls_use_scoped_functions_tool_responses_and_parent_synthesis()
     result = asyncio.run(runtime.run("Review source.py; children must inspect only."))
     assert result.status == "completed"
     first = backend.calls[0]
-    assert "PROVIDED FUNCTIONS" in first[1][0].content
+    assert "provided tools" in first[1][0].content
     assert "CURRENT ACTION MENU" not in first[1][-1].content
     assert "exactly one JSON object" not in first[1][0].content
-    assert "verified text or a JSON object" in first[1][0].content
-    assert "Prefer an object" in first[1][0].content
+    assert "final answer as plain text" in first[1][0].content
     assert "never invent source contents" in first[1][0].content
-    assert "For reviews omit spawn.tools" in first[1][0].content
+    assert "read-only tools unless you grant edit tools" in first[1][0].content
     child = next(item for item in backend.calls if ".agent-0001.1" in item[0])
     assert "write_file" not in names(child[2]) and "spawn" not in names(child[2])
     assert child[1][0].content.startswith("You are a delegated subagent.")
@@ -107,10 +106,12 @@ def test_native_calls_use_scoped_functions_tool_responses_and_parent_synthesis()
         message.role == "tool" and "Actual source" in message.content
         for message in child_finish[1]
     )
+    # The catalog is the same every turn (so the prompt cache stays valid);
+    # finishing early is rejected when the action runs instead.
     waiting = next(item for item in backend.calls if ".root.2" in item[0])
-    assert "finish" not in names(waiting[2]) and "wait" in names(waiting[2])
+    assert names(waiting[2]) == names(first[2])
     final = next(item for item in backend.calls if ".root.3" in item[0])
-    assert "wait" not in names(final[2]) and "finish" in names(final[2])
+    assert final[2] == first[2]
     assert any(
         message.role == "tool" and "Verified source evidence" in message.content
         for message in final[1]
@@ -273,7 +274,7 @@ def test_native_invalid_function_is_repaired_without_dsl_instructions():
     result = asyncio.run(AgentRuntime(backend).run("Task"))
     assert result.status == "completed"
     feedback = backend.calls[1][1][-1].content
-    assert "PROVIDED FUNCTION" in feedback and "CURRENT ACTION MENU" not in feedback
+    assert "plain text" in feedback and "CURRENT ACTION MENU" not in feedback
 
 
 def test_diagnostic_excerpt_preserves_head_and_tail_within_limit():
@@ -425,3 +426,48 @@ def test_repeated_identical_tool_result_produces_no_progress_feedback():
         if event["kind"] == "action_rejected"
     ]
     assert len(rejected) == 1 and "no new evidence" in rejected[0]["payload"]["error"]
+
+
+def test_plain_text_reply_is_the_final_answer():
+    backend = NativeBackend({"root": ["The project is called **Forge LLM**."]})
+    result = asyncio.run(AgentRuntime(backend).run("What is the project called?"))
+    assert result.status == "completed"
+    assert result.output == "The project is called **Forge LLM**."
+
+
+def test_prompts_only_grow_by_appending_across_turns():
+    backend = NativeBackend(
+        {
+            "root": [
+                call("spawn", task="Count the files"),
+                call("wait", agents=["agent-0001"]),
+                "Done: 3 files.",
+            ],
+            "agent-0001": ["3 files."],
+        }
+    )
+    result = asyncio.run(AgentRuntime(backend).run("Count files using a helper."))
+    assert result.status == "completed"
+    turns = [item[1] for item in backend.calls if ".root." in item[0]]
+    for earlier, later in zip(turns, turns[1:]):
+        assert later[: len(earlier)] == earlier
+    notes = [m.content for m in turns[-1] if m.content.startswith("[runtime] ")]
+    assert notes and "agent-0001" in notes[-1]
+
+
+def test_effort_is_sent_to_the_backend():
+    seen = []
+
+    class EffortBackend(NativeBackend):
+        async def generate_action(
+            self, messages, max_tokens, request_id, tool_specs, **kwargs
+        ):
+            seen.append(kwargs.get("options"))
+            return Generation("ok", 20, 10)
+
+    asyncio.run(
+        AgentRuntime(EffortBackend({}), config=RuntimeConfig(effort="high")).run("Task")
+    )
+    assert seen == [{"effort": "high"}]
+    with pytest.raises(ValueError):
+        RuntimeConfig(effort="extreme")
