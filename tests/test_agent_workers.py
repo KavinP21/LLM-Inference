@@ -1146,3 +1146,40 @@ def test_requests_reject_invalid_types_roles_and_ids(messages, maximum, request_
             await backend.close()
 
     asyncio.run(run())
+
+
+def test_worker_streams_partial_text_while_generating():
+    class Streaming:
+        def __init__(self):
+            self.partial = {}
+
+        async def generate(self, messages, max_tokens, request_id):
+            for piece in ("Hel", "lo ", "there"):
+                self.partial[request_id] = self.partial.get(request_id, "") + piece
+                await asyncio.sleep(0.05)
+            self.partial.pop(request_id)
+            return Generation("Hello there", 5, 3)
+
+    service = WorkerService(Streaming())
+    service.start()
+    server = WorkerHTTPServer(("127.0.0.1", 0), service, TOKEN)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        backend = client(f"http://127.0.0.1:{server.server_port}")
+        seen = []
+
+        async def run():
+            task = asyncio.create_task(backend.generate(CHAT, 4, "stream"))
+            while not task.done():
+                seen.append(backend.partial.get("stream"))
+                await asyncio.sleep(0.01)
+            return await task
+
+        assert asyncio.run(run()).text == "Hello there"
+        assert any(text and text.startswith("Hel") for text in seen)
+        assert "stream" not in backend.partial
+    finally:
+        server.shutdown()
+        server.server_close()
+        service.close()

@@ -14,7 +14,7 @@ import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +64,9 @@ class RuntimeConfig:
     completion_timeout_seconds: float = 30.0
     # Reasoning effort passed to the model: off, low, medium or high.
     effort: str = "off"
+    # Worker groups for root agents and for sub-agents (see WorkerPool.groups).
+    driver_group: str | None = None
+    subagent_group: str | None = None
 
     def __post_init__(self) -> None:
         integers = (
@@ -105,6 +108,10 @@ class RuntimeConfig:
             raise ValueError("lease_seconds must be at least 3 seconds")
         if self.effort not in EFFORT_BUDGETS:
             raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
+        for name in ("driver_group", "subagent_group"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value):
+                raise ValueError(f"{name} must be a nonempty string or null")
         if self.max_tool_result_chars > self.max_stored_tool_chars:
             raise ValueError("context tool limit exceeds storage tool limit")
         if not isinstance(self.compact_history, bool):
@@ -1449,6 +1456,21 @@ class AgentRuntime:
             self.store.update_agent(run_id, agent_id, status="running")
         agent = self.store.agent(run_id, agent_id)
         request_id = f"{run_id}.{agent_id}.{agent.steps}"
+        if getattr(self.backend, "routes", False) is True:
+            # Sub-agents may run on a model with a smaller context window.
+            group = (
+                config.driver_group
+                if agent.parent_id is None
+                else config.subagent_group
+            )
+            context_limit = getattr(self.backend, "context_limit", None)
+            limit = context_limit(group) if callable(context_limit) else None
+            if limit and limit < config.max_context_tokens:
+                config = replace(
+                    config,
+                    max_context_tokens=limit,
+                    max_output_tokens=min(config.max_output_tokens, limit // 4),
+                )
         saved_input = self.store.generation_input(run_id, request_id)
         if saved_input is None:
             tool_specs = (
@@ -1489,6 +1511,17 @@ class AgentRuntime:
         backend_options: dict[str, Any] = {}
         if config.effort != "off":
             backend_options["options"] = {"effort": config.effort}
+        if getattr(self.backend, "routes", False) is True:
+            # Root agents run on the driver model and sub-agents on the
+            # sub-agent model; each agent sticks to the replica holding its
+            # prompt cache.
+            agent = self.store.agent(run_id, agent_id)
+            backend_options["group"] = (
+                config.driver_group
+                if agent.parent_id is None
+                else config.subagent_group
+            )
+            backend_options["affinity"] = f"{run_id}/{agent_id}"
         if any(message.media for message in messages):
             model_limit = getattr(self.backend, "max_model_length", None)
             if type(model_limit) is not int or model_limit <= 0:

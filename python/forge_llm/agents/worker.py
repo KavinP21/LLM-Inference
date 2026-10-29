@@ -344,13 +344,29 @@ class WorkerService:
             job.future.add_done_callback(lambda future: self._done(job, future))
             return {"status": "pending", "request_id": request_id}
 
-    def get(self, request_id: str) -> dict[str, Any]:
-        with self._lock:
-            self._prune()
-            job = self._jobs.get(request_id)
-            if not job:
-                raise ValueError("unknown request_id")
-            return job.result or {"status": "pending", "request_id": request_id}
+    def get(
+        self, request_id: str, *, wait: float = 0.0, since: int = 0
+    ) -> dict[str, Any]:
+        """Job state, including the text decoded so far while it runs.
+
+        With ``wait``, hold the request until there is more text than
+        ``since`` characters or the job finishes, so clients can stream
+        without polling in a tight loop.
+        """
+        deadline = time.monotonic() + min(max(wait, 0.0), 2.0)
+        partials = getattr(self.backend, "partial", {})
+        while True:
+            with self._lock:
+                self._prune()
+                job = self._jobs.get(request_id)
+                if not job:
+                    raise ValueError("unknown request_id")
+                if job.result:
+                    return job.result
+            text = partials.get(request_id, "")
+            if len(text) > since or time.monotonic() >= deadline:
+                return {"status": "pending", "request_id": request_id, "partial": text}
+            time.sleep(0.01)
 
     def cancel(self, request_id: str) -> dict[str, Any]:
         with self._lock:
@@ -506,9 +522,13 @@ class _Handler(BaseHTTPRequestHandler):
         if not value.isascii() or not hmac.compare_digest(value, expected):
             raise AuthenticationError("invalid worker bearer token")
 
-    def _request_id(self) -> str:
+    def _request_id(self, *, allow_query: bool = False) -> str:
         path = urllib.parse.urlsplit(self.path)
-        if path.query or path.fragment or not path.path.startswith("/v1/jobs/"):
+        if (
+            (path.query and not allow_query)
+            or path.fragment
+            or not path.path.startswith("/v1/jobs/")
+        ):
             raise ValueError("unknown worker route")
         request_id = urllib.parse.unquote(path.path[len("/v1/jobs/") :])
         validate_request([ChatMessage("user", "")], 1, request_id)
@@ -558,7 +578,12 @@ class _Handler(BaseHTTPRequestHandler):
             elif method == "POST" and self.path == "/v1/jobs":
                 result = self.server.service.submit(self._body())
             elif method == "GET":
-                result = self.server.service.get(self._request_id())
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                result = self.server.service.get(
+                    self._request_id(allow_query=True),
+                    wait=float(query.get("wait", ["0"])[0]),
+                    since=int(query.get("since", ["0"])[0]),
+                )
             elif method == "DELETE":
                 result = self.server.service.cancel(self._request_id())
             else:
@@ -589,6 +614,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--model")
     parser.add_argument("--tokenizer")
+    parser.add_argument(
+        "--defer-load",
+        action="store_true",
+        help="report ready without loading the model; it loads on the first request",
+    )
     parser.add_argument("--backend", choices=("auto", "mlx", "cuda"), default="auto")
     parser.add_argument(
         "--runner", choices=("forge", "mlx_lm", "qwen35"), default="forge"
@@ -661,7 +691,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     server: WorkerHTTPServer | None = None
     try:
-        service.start()
+        if args.defer_load:
+            service._ready = True
+        else:
+            service.start()
         from .media import MAX_MEDIA_REQUEST_BYTES
 
         server = WorkerHTTPServer(
