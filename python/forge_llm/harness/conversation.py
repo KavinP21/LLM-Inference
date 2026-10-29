@@ -106,6 +106,17 @@ class ConversationRuntime(AgentRuntime):
             "are later projected out of the model context."
         )
 
+    def _anchor_indices(self, run_id, agent_id, history):
+        agent = self.store.agent(run_id, agent_id)
+        if agent.parent_id is None:
+            # A chat's root agent starts after earlier turns; compaction should
+            # keep this run's request, not the oldest message of the chat.
+            for index in range(len(history) - 1, 0, -1):
+                message = history[index]
+                if message.role == "user" and message.content == agent.task:
+                    return [0, index]
+        return super()._anchor_indices(run_id, agent_id, history)
+
     def _model_context(self, run_id, agent_id, config, *, schema_input_bound=0):
         projected = super()._model_context(
             run_id, agent_id, config, schema_input_bound=schema_input_bound
@@ -150,7 +161,8 @@ class ConversationRuntime(AgentRuntime):
             "[Earlier conversation context was omitted to retain the complete current request. The saved Studio transcript still contains those messages.]",
         )
         tail = []
-        for message in projected[1:-1]:
+        # DSL agents end with the legal menu, which is re-added below.
+        for message in projected[1:] if self.native_mode else projected[1:-1]:
             if message.role == "user" and message.content == task:
                 continue
             if message.role == "user" and message.content.startswith(task + "\n\n"):

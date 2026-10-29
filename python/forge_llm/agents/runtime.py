@@ -40,6 +40,25 @@ from .store import (
 
 Tool = Callable[[dict[str, Any]], str | Awaitable[str]]
 
+# Context compaction (native agents): once the context passes COMPACT_AT of the
+# input budget, the model summarizes its work and messages older than about
+# COMPACT_TAIL of the budget (in bytes) are replaced by that summary.
+COMPACT_AT = 0.75
+COMPACT_TAIL = 0.4
+COMPACT_SUMMARY_TOKENS = 2048
+COMPACT_SUMMARY_CHARS = 16_000
+COMPACT_REQUEST = (
+    "[runtime] Your context is nearly full. Earlier messages will be replaced by "
+    "a summary you write now, so reply with plain text only and no tool calls. "
+    "Cover the goal, what you have done and found, every file you read or "
+    "changed (with paths), decisions and why, open problems, and your next "
+    "steps. Keep exact names, paths, commands and error messages you will need."
+)
+SUMMARY_PREFIX = (
+    "[runtime] Summary of your earlier work on this task; the full messages are "
+    "in the journal.\n\n"
+)
+
 
 @dataclass(frozen=True)
 class RuntimeConfig:
@@ -954,6 +973,195 @@ class AgentRuntime:
         )
         return min(bound, measured)
 
+    def _history(
+        self, run_id: str, agent_id: str, config: RuntimeConfig
+    ) -> list[ChatMessage]:
+        history = self.store.messages(run_id, agent_id)
+        if self.native_mode:
+            agent = self.store.agent(run_id, agent_id)
+            history[0] = ChatMessage(
+                "system",
+                self._system_prompt(
+                    config,
+                    task=agent.task,
+                    allowed_tools=self._allowed_tools(run_id, agent_id),
+                    is_subagent=agent.parent_id is not None,
+                ),
+            )
+        return history
+
+    async def _maybe_compact(
+        self,
+        run_id: str,
+        agent_id: str,
+        config: RuntimeConfig,
+        tool_specs: list[dict[str, Any]] | None,
+    ) -> None:
+        """Replace older messages with a summary the model writes, once the
+        context is mostly full.
+
+        Projection alone would rebuild the window on every step, so the prompt
+        would change near its start and miss the prompt cache each time. A
+        compaction changes it once; after that it grows by appending again.
+        The summary request itself extends the cached prompt, so it only costs
+        the summary's own tokens.
+        """
+        schema = self._schema_input_bound(tool_specs)
+        budget = config.max_context_tokens - config.max_output_tokens - schema
+        history = self._history(run_id, agent_id, config)
+        view = self._compacted(run_id, agent_id, history)
+        if self._input_bound(run_id, agent_id, view) <= budget * COMPACT_AT:
+            return
+        floor = max(self._anchor_indices(run_id, agent_id, history)) + 1
+        previous = self.store.last_event(run_id, agent_id, "context_compacted")
+        if previous is not None:
+            floor = max(floor, previous["payload"]["keep_from"])
+        # Keep recent messages, starting at an assistant message so tool
+        # results stay with their calls. Sizes are in bytes because nothing
+        # measured them on their own yet.
+        keep_from, size = len(history), 0
+        for index in range(len(history) - 1, floor - 1, -1):
+            size += len(history[index].content.encode("utf-8")) + 32
+            if size > budget * COMPACT_TAIL:
+                break
+            if history[index].role == "assistant":
+                keep_from = index
+        summary_tokens = min(COMPACT_SUMMARY_TOKENS, config.max_output_tokens)
+        request = [*view, ChatMessage("user", COMPACT_REQUEST)]
+        if (
+            keep_from <= floor
+            or self._input_bound(run_id, agent_id, request) + schema + summary_tokens
+            > config.max_context_tokens
+        ):
+            return  # Nothing to drop, or too late: projection handles it.
+        agent = self.store.agent(run_id, agent_id)
+        request_id = f"{run_id}.{agent_id}.{agent.steps}.compact"
+        options = self._backend_options(run_id, agent_id, config, request)
+        reservation = request_id + "/reservation"
+        async with self._semaphore, self._run_semaphores[run_id]:
+            self._assert_lease(run_id)
+            try:
+                self.store.reserve(
+                    run_id,
+                    reservation,
+                    self._input_bound(run_id, agent_id, request)
+                    + schema
+                    + summary_tokens,
+                    config.max_total_tokens,
+                )
+            except BudgetError:
+                return
+            self._requests[(run_id, agent_id)] = request_id
+            try:
+                generation = await asyncio.wait_for(
+                    self.backend.generate_action(
+                        request,
+                        summary_tokens,
+                        request_id,
+                        tool_specs=tool_specs,
+                        **options,
+                    ),
+                    timeout=config.generation_timeout_seconds,
+                )
+                self._assert_lease(run_id)
+                self.store.settle(
+                    run_id,
+                    reservation,
+                    generation.input_tokens,
+                    generation.output_tokens,
+                )
+            except (asyncio.CancelledError, LeaseError):
+                self.store.uncertain(run_id, reservation)
+                raise
+            except Exception as exc:  # noqa: BLE001 - compaction is best effort.
+                self.store.uncertain(run_id, reservation)
+                self.store.event(
+                    run_id,
+                    agent_id,
+                    "compaction_failed",
+                    {"error": f"{type(exc).__name__}: {exc}"},
+                )
+                return
+            finally:
+                self._requests.pop((run_id, agent_id), None)
+        summary = generation.text.strip()
+        try:
+            parse_native_actions(
+                summary, tool_specs or [], dialect=generation.dialect or "json"
+            )
+        except NoNativeCall:
+            pass
+        except ProtocolError:
+            summary = ""  # A malformed call is not a summary either.
+        else:
+            summary = ""
+        if not summary:
+            self.store.event(
+                run_id,
+                agent_id,
+                "compaction_failed",
+                {"error": "the model did not reply with a plain-text summary"},
+            )
+            return
+        self.store.event(
+            run_id,
+            agent_id,
+            "context_compacted",
+            {
+                "keep_from": keep_from,
+                "summary": summary[:COMPACT_SUMMARY_CHARS],
+                "messages_summarized": keep_from - floor,
+                "input_tokens": generation.input_tokens,
+            },
+        )
+
+    def _backend_options(
+        self,
+        run_id: str,
+        agent_id: str,
+        config: RuntimeConfig,
+        messages: list[ChatMessage],
+    ) -> dict[str, Any]:
+        options: dict[str, Any] = {}
+        if config.effort != "off":
+            options["options"] = {"effort": config.effort}
+        if getattr(self.backend, "routes", False) is True:
+            # Root agents run on the driver model and sub-agents on the
+            # sub-agent model; each agent sticks to the replica holding its
+            # prompt cache.
+            agent = self.store.agent(run_id, agent_id)
+            options["group"] = (
+                config.driver_group
+                if agent.parent_id is None
+                else config.subagent_group
+            )
+            options["affinity"] = f"{run_id}/{agent_id}"
+        if any(message.media for message in messages) and (
+            getattr(self.backend, "supports_context_limits", False) is True
+        ):
+            options["max_context_tokens"] = config.max_context_tokens
+        return options
+
+    def _anchor_indices(
+        self, run_id: str, agent_id: str, history: list[ChatMessage]
+    ) -> list[int]:
+        """Messages every context starts with: the system prompt and the task."""
+        return [0, 1]
+
+    def _compacted(
+        self, run_id: str, agent_id: str, history: list[ChatMessage]
+    ) -> list[ChatMessage]:
+        """The history as the model sees it after its latest compaction."""
+        event = self.store.last_event(run_id, agent_id, "context_compacted")
+        if event is None:
+            return history
+        payload = event["payload"]
+        return [
+            *(history[i] for i in self._anchor_indices(run_id, agent_id, history)),
+            ChatMessage("user", SUMMARY_PREFIX + payload["summary"]),
+            *history[payload["keep_from"] :],
+        ]
+
     def _model_context(
         self,
         run_id: str,
@@ -962,18 +1170,9 @@ class AgentRuntime:
         *,
         schema_input_bound: int = 0,
     ) -> list[ChatMessage]:
-        history = self.store.messages(run_id, agent_id)
+        history = self._history(run_id, agent_id, config)
         if self.native_mode:
-            history[0] = ChatMessage(
-                "system",
-                self._system_prompt(
-                    config,
-                    task=self.store.agent(run_id, agent_id).task,
-                    allowed_tools=self._allowed_tools(run_id, agent_id),
-                    is_subagent=self.store.agent(run_id, agent_id).parent_id
-                    is not None,
-                ),
-            )
+            history = self._compacted(run_id, agent_id, history)
         # Native agents get state through persisted notes (see _note_state), so
         # their prompt only ever grows by appending.
         menu = "" if self.native_mode else self._legal_menu(run_id, agent_id, config)
@@ -1516,6 +1715,8 @@ class AgentRuntime:
             )
             if self.native_mode:
                 self._note_state(run_id, agent_id, config)
+                if config.compact_history:
+                    await self._maybe_compact(run_id, agent_id, config, tool_specs)
             history_length = len(self.store.messages(run_id, agent_id))
             messages = self._model_context(
                 run_id,
@@ -1544,20 +1745,7 @@ class AgentRuntime:
             )
             return
         reservation_input_bound = input_bound
-        backend_options: dict[str, Any] = {}
-        if config.effort != "off":
-            backend_options["options"] = {"effort": config.effort}
-        if getattr(self.backend, "routes", False) is True:
-            # Root agents run on the driver model and sub-agents on the
-            # sub-agent model; each agent sticks to the replica holding its
-            # prompt cache.
-            agent = self.store.agent(run_id, agent_id)
-            backend_options["group"] = (
-                config.driver_group
-                if agent.parent_id is None
-                else config.subagent_group
-            )
-            backend_options["affinity"] = f"{run_id}/{agent_id}"
+        backend_options = self._backend_options(run_id, agent_id, config, messages)
         if any(message.media for message in messages):
             model_limit = getattr(self.backend, "max_model_length", None)
             if type(model_limit) is not int or model_limit <= 0:
@@ -1567,9 +1755,10 @@ class AgentRuntime:
                     "multimodal backend must advertise a bounded model context",
                 )
                 return
-            if getattr(self.backend, "supports_context_limits", False) is True:
-                backend_options["max_context_tokens"] = config.max_context_tokens
-            elif model_limit > config.max_context_tokens:
+            if (
+                getattr(self.backend, "supports_context_limits", False) is not True
+                and model_limit > config.max_context_tokens
+            ):
                 self._fail(
                     run_id,
                     agent_id,
