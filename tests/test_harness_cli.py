@@ -7,13 +7,13 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from forge_llm.harness import cli
+from instinct.harness import cli
 
 
 def _args(workspace, **updates):
     values = {
         "workspace": str(workspace),
-        "state_dir": ".forge/studio",
+        "state_dir": ".instinct/studio",
         "skills_dir": [],
         "mcp_config": None,
         "config": None,
@@ -134,9 +134,7 @@ def test_demo_rejects_mcp_before_loading_operator_configuration(tmp_path, monkey
 
 
 def test_main_reports_demo_mcp_combination_as_a_cli_usage_error(monkeypatch, capsys):
-    monkeypatch.setattr(
-        sys, "argv", ["forge-studio", "--demo", "--mcp-config", "mcp.json"]
-    )
+    monkeypatch.setattr(sys, "argv", ["instinct", "--demo", "--mcp-config", "mcp.json"])
     with pytest.raises(SystemExit) as error:
         cli.main()
     assert error.value.code == 2
@@ -251,7 +249,7 @@ def test_launcher_cancellation_shuts_down_and_joins_server_without_printing_toke
         "thread-joined",
         "service-closed",
     ]
-    assert lifecycle_fakes.state_dir == tmp_path.resolve() / ".forge/studio"
+    assert lifecycle_fakes.state_dir == tmp_path.resolve() / ".instinct/studio"
     assert "TEST-BOOTSTRAP-NOT-PRINTED" not in capsys.readouterr().out
 
 

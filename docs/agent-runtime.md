@@ -1,6 +1,6 @@
 # Task agents and model replicas
 
-Forge separates logical agents from physical model replicas. An agent owns its
+Instinct separates logical agents from physical model replicas. An agent owns its
 task, role, conversation, inbox, children, dependencies and result. A worker
 owns one loaded model and its K/V memory. Multiple agents share a bounded pool
 of workers; spawning a child does not load another copy of the weights.
@@ -13,8 +13,8 @@ parallelism: each worker must fit a complete model on its selected device.
 
 ```bash
 pip install -e '.[mlx,vlm,agents,test]'
-python -m forge_llm.prepare_models
-forge-agents --state-dir .forge run --config examples/agents-studio.json \
+python -m instinct.prepare_models
+instinct-agents --state-dir .instinct run --config examples/agents-studio.json \
   --workspace . --task 'Review the architecture and explain its resource limits.'
 ```
 
@@ -39,7 +39,7 @@ model, load it on their first request (~1.2 s for Qwen3.5) and exit after
 `idle_seconds` (default 600) without work. Workers stream partial output back to
 the coordinator while they generate.
 
-`forge-agents` and `forge-worker` are installed entry points for the same
+`instinct-agents` and `instinct-worker` are installed entry points for the same
 modules. Replicas on one Mac share its GPU, so extra replicas add concurrency
 but not hardware.
 
@@ -156,15 +156,15 @@ requested behavior. The benchmark's oracle also lives outside the agent workspac
 
 ## Journaling, context and recovery
 
-The local `.forge` directory contains a private SQLite journal, manifests,
+The local `.instinct` directory contains a private SQLite journal, manifests,
 results and artifacts. It is Git-ignored. The journal records tasks, messages,
 exact model inputs, token reservations, prepared actions, effects and outcomes.
 A renewable lease prevents two coordinators from driving the same run.
 
 ```bash
-forge-agents --state-dir .forge inspect --run-id RUN_ID
-forge-agents --state-dir .forge cancel --run-id RUN_ID
-forge-agents --state-dir .forge resume --run-id RUN_ID \
+instinct-agents --state-dir .instinct inspect --run-id RUN_ID
+instinct-agents --state-dir .instinct cancel --run-id RUN_ID
+instinct-agents --state-dir .instinct resume --run-id RUN_ID \
   --config examples/agents-local.json --workspace .
 ```
 
@@ -200,8 +200,8 @@ Run one worker for each desired replica on its host. Select `--backend cuda` or
 The CUDA engine hasn't been run on an NVIDIA GPU yet.
 
 ```bash
-export FORGE_WORKER_TOKEN='a-long-random-credential'
-forge-worker --model /models/qwen.engine --tokenizer /models/tokenizer \
+export INSTINCT_WORKER_TOKEN='a-long-random-credential'
+instinct-worker --model /models/qwen.engine --tokenizer /models/tokenizer \
   --backend cuda --host 0.0.0.0 --port 8443 \
   --tls-cert /certs/worker.crt --tls-key /certs/worker.key
 ```

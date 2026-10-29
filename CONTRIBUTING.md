@@ -8,7 +8,7 @@ Python 3.11+ is required. The Metal tests were last run on an M3 Max with Python
 python -m pip install -e '.[dev]'
 ruff check python benchmarks tests tools
 ruff format --check python benchmarks tests tools
-FORGE_INSPECT_MODEL=build/forge-inspect-model PYTHONPATH=python python -m pytest -q
+INSTINCT_INSPECT_MODEL=build/instinct-inspect-model PYTHONPATH=python python -m pytest -q
 ```
 
 CI runs everything that doesn't need a GPU. Metal tests skip without mlx and
@@ -17,7 +17,7 @@ Run the Metal tests locally before merging anything that touches `backends/`,
 `paged_kv.py` or the engine.
 
 When changing numerics, compare against an independent reference (the NumPy
-reference in the tests, or Transformers via `forge-correctness`), not just the
+reference in the tests, or Transformers via `instinct-correctness`), not just the
 previous output. Cache changes need tests for completion, cancellation,
 allocation failure and page boundaries, since those are where pages leak.
 

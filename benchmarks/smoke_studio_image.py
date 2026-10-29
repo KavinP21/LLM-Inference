@@ -11,8 +11,8 @@ import time
 import uuid
 from pathlib import Path
 
-from forge_llm.agents.media import media_from_file
-from forge_llm.harness.service import StudioService
+from instinct.agents.media import media_from_file
+from instinct.harness.service import StudioService
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,16 +53,16 @@ async def execute(args):
     revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
-    files = sorted((ROOT / "python/forge_llm/harness").rglob("*.py")) + [
-        ROOT / "python/forge_llm/agents/runtime.py",
-        ROOT / "python/forge_llm/agents/store.py",
+    files = sorted((ROOT / "python/instinct/harness").rglob("*.py")) + [
+        ROOT / "python/instinct/agents/runtime.py",
+        ROOT / "python/instinct/agents/store.py",
     ]
     identity = {
         str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in files
     }
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="forge-image-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="instinct-image-smoke-") as directory:
         workspace = Path(directory)
         image = Image.new("RGB", (320, 180), "white")
         draw = ImageDraw.Draw(image)
@@ -73,7 +73,7 @@ async def execute(args):
         (workspace / "README.md").write_text("# Image and developer fixture\n")
         service = StudioService(
             workspace,
-            ROOT / ".forge/studio-image-smoke" / uuid.uuid4().hex,
+            ROOT / ".instinct/studio-image-smoke" / uuid.uuid4().hex,
             config=config,
         )
         try:
@@ -104,7 +104,7 @@ async def execute(args):
             outputs = [t.get("output") or "" for t in detail["turns"]]
             command_chat = await service.conversations.create(
                 {
-                    "message": "Run exactly python -c \"print('FORGE_COMMAND_OK')\" using run_command, then report its actual output. Do not edit files.",
+                    "message": "Run exactly python -c \"print('INSTINCT_COMMAND_OK')\" using run_command, then report its actual output. Do not edit files.",
                     "policy": "review",
                     "request_id": uuid.uuid4().hex,
                 }
@@ -125,8 +125,8 @@ async def execute(args):
                             or argv[1] != "-c"
                             or argv[2]
                             not in {
-                                "print('FORGE_COMMAND_OK')",
-                                'print("FORGE_COMMAND_OK")',
+                                "print('INSTINCT_COMMAND_OK')",
+                                'print("INSTINCT_COMMAND_OK")',
                             }
                             or arguments.get("cwd", ".") != "."
                         ):
@@ -151,7 +151,7 @@ async def execute(args):
             ]
             successful_command = any(
                 json.loads(event["payload"]["result"]).get("exit_code") == 0
-                and "FORGE_COMMAND_OK"
+                and "INSTINCT_COMMAND_OK"
                 in json.loads(event["payload"]["result"]).get("output", "")
                 for event in command_receipts
             )

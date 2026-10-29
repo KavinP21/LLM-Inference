@@ -1,6 +1,6 @@
 # Runtime architecture
 
-Forge LLM separates model artifacts and request orchestration from device execution. CUDA and MLX
+Instinct separates model artifacts and request orchestration from device execution. CUDA and MLX
 consume the same validated container and expose the same `submit`/`step`/`cancel`/`generate` API.
 
 ```text
@@ -27,7 +27,7 @@ consume the same validated container and expose the same `submit`/`step`/`cancel
 ## MLX execution
 
 Gemma 4 and Qwen3.5 checkpoints run through the [VLM runner](vlm-runner.md): mlx-vlm executes
-the model, and Forge handles prompt reuse (per-conversation sessions and boundary snapshots),
+the model, and Instinct handles prompt reuse (per-conversation sessions and boundary snapshots),
 drafting, effort, media and worker integration. Their caches aren't the native paged store
 described below. One request runs per replica; worker groups provide concurrency. See
 [models.md](models.md).

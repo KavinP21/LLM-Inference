@@ -7,11 +7,11 @@ import pytest
 
 mx = pytest.importorskip("mlx.core")
 
-from forge_llm.backends.int8_kernels import Int8LinearKernels
-from forge_llm.format import write_engine
-from forge_llm.mlx_engine import MlxEngine
-from forge_llm.model_file import ModelFile
-from forge_llm.quantization import (
+from instinct.backends.int8_kernels import Int8LinearKernels
+from instinct.format import write_engine
+from instinct.mlx_engine import MlxEngine
+from instinct.model_file import ModelFile
+from instinct.quantization import (
     dequantize_per_channel,
     quantize_model,
     quantize_per_channel,

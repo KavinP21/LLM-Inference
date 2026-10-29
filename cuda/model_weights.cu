@@ -1,14 +1,14 @@
-#include "forge/model_weights.h"
+#include "instinct/model_weights.h"
 
-#include "forge/cuda_utils.h"
-#include "forge/error.h"
-#include "forge/qwen_validation.h"
+#include "instinct/cuda_utils.h"
+#include "instinct/error.h"
+#include "instinct/qwen_validation.h"
 
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 
-namespace forge {
+namespace instinct {
 namespace {
 
 }  // namespace
@@ -36,12 +36,12 @@ ModelWeights::ModelWeights(const ModelFile& file, cudaStream_t stream)
     } else {
       destination = arena_.allocate(info.nbytes);
       const auto source = file.tensor_bytes(info.name);
-      FORGE_CUDA(cudaMemcpyAsync(destination, source.data(), source.size(), cudaMemcpyHostToDevice, stream));
+      INSTINCT_CUDA(cudaMemcpyAsync(destination, source.data(), source.size(), cudaMemcpyHostToDevice, stream));
       device_by_offset.emplace(info.offset, destination);
     }
     tensors_.emplace(info.name, DeviceTensor{destination, info.dtype, info.shape, info.nbytes});
   }
-  FORGE_CUDA(cudaStreamSynchronize(stream));
+  INSTINCT_CUDA(cudaStreamSynchronize(stream));
 }
 
 const DeviceTensor& ModelWeights::tensor(const std::string& name) const {
@@ -50,4 +50,4 @@ const DeviceTensor& ModelWeights::tensor(const std::string& name) const {
   return it->second;
 }
 
-}  // namespace forge
+}  // namespace instinct

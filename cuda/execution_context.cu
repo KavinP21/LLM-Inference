@@ -1,12 +1,12 @@
-#include "forge/execution_context.h"
+#include "instinct/execution_context.h"
 
-#include "forge/cuda_utils.h"
-#include "forge/error.h"
+#include "instinct/cuda_utils.h"
+#include "instinct/error.h"
 
 #include <functional>
 #include <utility>
 
-namespace forge {
+namespace instinct {
 
 struct ExecutionContext::LinearPlan {
   cublasLtMatmulDesc_t operation{};
@@ -32,9 +32,9 @@ std::size_t ExecutionContext::LinearKeyHash::operator()(const LinearKey& key) co
 }
 
 ExecutionContext::ExecutionContext(std::size_t workspace_bytes) : workspace_(workspace_bytes) {
-  FORGE_CUDA(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
+  INSTINCT_CUDA(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
   try {
-    FORGE_CUBLAS(cublasLtCreate(&blas_));
+    INSTINCT_CUBLAS(cublasLtCreate(&blas_));
   } catch (...) {
     cudaStreamDestroy(stream_);
     throw;
@@ -54,31 +54,31 @@ ExecutionContext::LinearPlan& ExecutionContext::linear_plan(const LinearKey& key
   auto plan = std::make_unique<LinearPlan>();
   cublasLtMatmulPreference_t preference{};
   try {
-    FORGE_CUBLAS(cublasLtMatmulDescCreate(&plan->operation, CUBLAS_COMPUTE_32F, CUDA_R_32F));
+    INSTINCT_CUBLAS(cublasLtMatmulDescCreate(&plan->operation, CUBLAS_COMPUTE_32F, CUDA_R_32F));
     const cublasOperation_t trans_b = CUBLAS_OP_T;
-    FORGE_CUBLAS(cublasLtMatmulDescSetAttribute(
+    INSTINCT_CUBLAS(cublasLtMatmulDescSetAttribute(
         plan->operation, CUBLASLT_MATMUL_DESC_TRANSB, &trans_b, sizeof(trans_b)));
     if (key.bias) {
       const cublasLtEpilogue_t epilogue = CUBLASLT_EPILOGUE_BIAS;
-      FORGE_CUBLAS(cublasLtMatmulDescSetAttribute(
+      INSTINCT_CUBLAS(cublasLtMatmulDescSetAttribute(
           plan->operation, CUBLASLT_MATMUL_DESC_EPILOGUE, &epilogue, sizeof(epilogue)));
     }
-    FORGE_CUBLAS(cublasLtMatrixLayoutCreate(&plan->a_layout, CUDA_R_16F, key.m, key.k, key.k));
-    FORGE_CUBLAS(cublasLtMatrixLayoutCreate(&plan->b_layout, CUDA_R_16F, key.n, key.k, key.k));
-    FORGE_CUBLAS(cublasLtMatrixLayoutCreate(&plan->d_layout, CUDA_R_16F, key.m, key.n, key.n));
+    INSTINCT_CUBLAS(cublasLtMatrixLayoutCreate(&plan->a_layout, CUDA_R_16F, key.m, key.k, key.k));
+    INSTINCT_CUBLAS(cublasLtMatrixLayoutCreate(&plan->b_layout, CUDA_R_16F, key.n, key.k, key.k));
+    INSTINCT_CUBLAS(cublasLtMatrixLayoutCreate(&plan->d_layout, CUDA_R_16F, key.m, key.n, key.n));
     const cublasLtOrder_t row_major = CUBLASLT_ORDER_ROW;
     for (auto layout : {plan->a_layout, plan->b_layout, plan->d_layout}) {
-      FORGE_CUBLAS(cublasLtMatrixLayoutSetAttribute(
+      INSTINCT_CUBLAS(cublasLtMatrixLayoutSetAttribute(
           layout, CUBLASLT_MATRIX_LAYOUT_ORDER, &row_major, sizeof(row_major)));
     }
-    FORGE_CUBLAS(cublasLtMatmulPreferenceCreate(&preference));
+    INSTINCT_CUBLAS(cublasLtMatmulPreferenceCreate(&preference));
     const auto workspace_bytes = workspace_.capacity();
-    FORGE_CUBLAS(cublasLtMatmulPreferenceSetAttribute(
+    INSTINCT_CUBLAS(cublasLtMatmulPreferenceSetAttribute(
         preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
         &workspace_bytes, sizeof(workspace_bytes)));
     cublasLtMatmulHeuristicResult_t heuristic{};
     int returned = 0;
-    FORGE_CUBLAS(cublasLtMatmulAlgoGetHeuristic(
+    INSTINCT_CUBLAS(cublasLtMatmulAlgoGetHeuristic(
         blas_, plan->operation, plan->a_layout, plan->b_layout, plan->d_layout,
         plan->d_layout, preference, 1, &heuristic, &returned));
     check(returned == 1, "cuBLASLt found no algorithm for linear layer");
@@ -98,17 +98,17 @@ void ExecutionContext::linear_fp16(const void* a, const void* b, const void* bia
   check(m > 0 && n > 0 && k > 0, "linear layer dimensions must be positive");
   auto& plan = linear_plan({m, n, k, bias != nullptr});
   if (bias != nullptr) {
-    FORGE_CUBLAS(cublasLtMatmulDescSetAttribute(
+    INSTINCT_CUBLAS(cublasLtMatmulDescSetAttribute(
         plan.operation, CUBLASLT_MATMUL_DESC_BIAS_POINTER, &bias, sizeof(bias)));
   }
   constexpr float alpha = 1.0F;
   constexpr float beta = 0.0F;
-  FORGE_CUBLAS(cublasLtMatmul(
+  INSTINCT_CUBLAS(cublasLtMatmul(
       blas_, plan.operation, &alpha, a, plan.a_layout, b, plan.b_layout, &beta,
       d, plan.d_layout, d, plan.d_layout, &plan.algorithm,
       workspace_.data(), workspace_.capacity(), stream_));
 }
 
-void ExecutionContext::synchronize() const { FORGE_CUDA(cudaStreamSynchronize(stream_)); }
+void ExecutionContext::synchronize() const { INSTINCT_CUDA(cudaStreamSynchronize(stream_)); }
 
-}  // namespace forge
+}  // namespace instinct

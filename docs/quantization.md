@@ -1,6 +1,6 @@
 # INT8 weights (experimental)
 
-Forge can convert a Qwen2 or Gemma 3 FP16 artifact into a W8A16 artifact (INT8
+Instinct can convert a Qwen2 or Gemma 3 FP16 artifact into a W8A16 artifact (INT8
 weights, FP16 activations) and run it on MLX/Metal. It works, and it saves memory,
 but it doesn't reproduce the FP16 model's greedy output closely enough to be the
 default. FP16 stays the default everywhere. CUDA rejects INT8 artifacts.
@@ -8,12 +8,12 @@ default. FP16 stays the default everywhere. CUDA rejects INT8 artifacts.
 ## Converting and running
 
 ```bash
-PYTHONPATH=python python -m forge_llm.quantization \
+PYTHONPATH=python python -m instinct.quantization \
   models/qwen2.5-0.5b.engine models/qwen2.5-0.5b-int8.engine
 ```
 
 ```python
-from forge_llm import create_engine
+from instinct import create_engine
 
 with create_engine("models/qwen2.5-0.5b-int8.engine", backend="mlx",
                    int8_mode="metal") as engine:
@@ -59,11 +59,11 @@ Most of the quality loss comes from a handful of projections. `--retain-fp16`
 (repeatable) keeps named projections in FP16:
 
 ```bash
-PYTHONPATH=python python -m forge_llm.quantization \
+PYTHONPATH=python python -m instinct.quantization \
   models/qwen2.5-0.5b.engine models/qwen2.5-0.5b-int8-mixed.engine \
   --retain-fp16 model.layers.0.mlp.down_proj.weight
 
-PYTHONPATH=python python -m forge_llm.validate_int8 \
+PYTHONPATH=python python -m instinct.validate_int8 \
   --source models/qwen2.5-0.5b.engine --model models/qwen2.5-0.5b-int8-mixed.engine \
   --tokenizer Qwen/Qwen2.5-0.5B-Instruct --int8-mode reconstruct \
   --output benchmark-results/qwen-mixed-quality.json

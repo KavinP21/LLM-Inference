@@ -7,8 +7,8 @@ import re
 import threading
 
 import pytest
-from forge_llm.harness.server import StudioHTTPServer
-from forge_llm.harness.service import worker_state
+from instinct.harness.server import StudioHTTPServer
+from instinct.harness.service import worker_state
 from test_harness_conversation import ChatBackend, make_service, settle
 
 WORKERS = [
@@ -171,7 +171,7 @@ def test_event_stream_requires_auth_and_sends_the_live_snapshot(tmp_path):
             )
             headers = {"Origin": server.origin}
             if auth:
-                headers["Cookie"] = "forge_studio=" + server.session_token
+                headers["Cookie"] = "instinct_session=" + server.session_token
             connection.request("GET", "/api/events", headers=headers)
             response = connection.getresponse()
             if response.status != 200:

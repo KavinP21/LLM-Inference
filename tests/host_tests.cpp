@@ -1,8 +1,8 @@
-#include "forge/error.h"
-#include "forge/kv_cache.h"
-#include "forge/model_file.h"
-#include "forge/scheduler.h"
-#include "forge/sha256.h"
+#include "instinct/error.h"
+#include "instinct/kv_cache.h"
+#include "instinct/model_file.h"
+#include "instinct/scheduler.h"
+#include "instinct/sha256.h"
 
 #include <array>
 #include <cstddef>
@@ -30,14 +30,14 @@ void expect_throws(Function&& function, std::string_view message) {
   try {
     function();
     expect(false, message);
-  } catch (const forge::Error&) {
+  } catch (const instinct::Error&) {
   }
 }
 
 void test_sha256() {
   constexpr std::string_view input = "abc";
   const auto bytes = std::as_bytes(std::span(input.data(), input.size()));
-  const auto digest = forge::sha256(bytes);
+  const auto digest = instinct::sha256(bytes);
   constexpr std::array<std::uint8_t, 32> expected = {
       0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40,
       0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17,
@@ -45,7 +45,7 @@ void test_sha256() {
   expect(digest == expected, "SHA-256 known-answer test");
 
   const auto digest_text = [](std::span<const std::byte> value) {
-    const auto hash = forge::sha256(value);
+    const auto hash = instinct::sha256(value);
     std::ostringstream output;
     for (const auto byte : hash) {
       output << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned>(byte);
@@ -65,7 +65,7 @@ void test_sha256() {
 
 void test_cache_boundaries() {
   // One block is 2 layers * K/V * 2 heads * 16 tokens * 8 dims * 2 bytes = 2048.
-  forge::KVBlockPool pool(2048U * 8U, 2, 2, 8);
+  instinct::KVBlockPool pool(2048U * 8U, 2, 2, 8);
   expect(pool.reserve(1, 33), "reserve three blocks");
   expect(pool.ensure_tokens(1, 15), "allocate first block");
   expect(pool.block_table(1).size() == 1, "15 tokens use one block");
@@ -80,7 +80,7 @@ void test_cache_boundaries() {
 }
 
 void test_reservation_isolation() {
-  forge::KVBlockPool pool(2048U * 4U, 2, 2, 8);
+  instinct::KVBlockPool pool(2048U * 4U, 2, 2, 8);
   expect(pool.reserve(1, 32), "first reservation");
   expect(pool.reserve(2, 32), "second reservation");
   expect(pool.stats().total_blocks == 4, "reservations do not inflate physical capacity");
@@ -90,8 +90,8 @@ void test_reservation_isolation() {
 }
 
 void test_scheduler_lifecycle() {
-  forge::KVBlockPool pool(2048U * 16U, 2, 2, 8);
-  forge::Scheduler scheduler(4, 64, pool);
+  instinct::KVBlockPool pool(2048U * 16U, 2, 2, 8);
+  instinct::Scheduler scheduler(4, 64, pool);
   const std::array<std::int32_t, 3> prompt = {1, 2, 3};
   const std::array<std::int32_t, 1> eos = {9};
   const auto first = scheduler.submit(prompt, 3, eos);
@@ -100,48 +100,48 @@ void test_scheduler_lifecycle() {
   scheduler.finish_prefill(first);
   expect(!scheduler.append_token(first, 4), "ordinary token keeps request running");
   expect(scheduler.append_token(first, 9), "EOS completes request");
-  expect(scheduler.sequence(first).state == forge::SequenceState::completed, "terminal state recorded");
+  expect(scheduler.sequence(first).state == instinct::SequenceState::completed, "terminal state recorded");
   expect(pool.stats().allocated_blocks == 0, "completion releases cache");
 
   const auto second = scheduler.submit(prompt, 3, eos);
   scheduler.cancel(second);
-  expect(scheduler.sequence(second).state == forge::SequenceState::cancelled, "waiting cancellation");
+  expect(scheduler.sequence(second).state == instinct::SequenceState::cancelled, "waiting cancellation");
   expect(!scheduler.next().prefill.has_value(), "cancelled request removed from queue");
 }
 
 void test_scheduler_limits_and_reuse() {
-  forge::KVBlockPool pool(2048U * 4U, 2, 2, 8);
-  forge::Scheduler scheduler(1, 32, pool);
+  instinct::KVBlockPool pool(2048U * 4U, 2, 2, 8);
+  instinct::Scheduler scheduler(1, 32, pool);
   const std::array<std::int32_t, 2> prompt = {1, 2};
   const std::array<std::int32_t, 1> eos = {99};
   const auto first = scheduler.submit(prompt, 2, eos);
   const auto first_schedule = scheduler.next();
   expect(first_schedule.prefill == first, "first request starts prefill");
   const auto rejected_while_prefilling = scheduler.submit(prompt, 2, eos);
-  expect(scheduler.sequence(rejected_while_prefilling).state == forge::SequenceState::rejected,
+  expect(scheduler.sequence(rejected_while_prefilling).state == instinct::SequenceState::rejected,
          "prefilling request counts against concurrency limit");
   scheduler.cancel(first);
   expect(pool.stats().allocated_blocks == 0 && pool.stats().reserved_blocks == 0,
          "cancelling prefill releases allocated and reserved blocks");
   const auto replacement = scheduler.submit(prompt, 2, eos);
-  expect(scheduler.sequence(replacement).state == forge::SequenceState::waiting,
+  expect(scheduler.sequence(replacement).state == instinct::SequenceState::waiting,
          "capacity is reusable after cancellation");
 
   std::vector<std::int32_t> oversized(33, 1);
   const auto too_long = scheduler.submit(oversized, 1, eos);
-  expect(scheduler.sequence(too_long).state == forge::SequenceState::rejected,
+  expect(scheduler.sequence(too_long).state == instinct::SequenceState::rejected,
          "oversized prompt rejected without integer truncation");
   const std::array<std::int32_t, 0> empty{};
   const auto empty_request = scheduler.submit(empty, 1, eos);
-  expect(scheduler.sequence(empty_request).state == forge::SequenceState::rejected,
+  expect(scheduler.sequence(empty_request).state == instinct::SequenceState::rejected,
          "empty prompt rejected");
   expect_throws([&] { static_cast<void>(scheduler.sequence(999999)); },
                 "unknown sequence lookup throws");
 }
 
 void test_scheduler_forget_terminal_history() {
-  forge::KVBlockPool pool(2048U * 4U, 2, 2, 8);
-  forge::Scheduler scheduler(2, 32, pool);
+  instinct::KVBlockPool pool(2048U * 4U, 2, 2, 8);
+  instinct::Scheduler scheduler(2, 32, pool);
   const std::array<std::int32_t, 2> prompt{1, 2};
   const std::array<std::int32_t, 0> no_eos{};
   const auto id = scheduler.submit(prompt, 2, no_eos);
@@ -154,8 +154,8 @@ void test_scheduler_forget_terminal_history() {
 }
 
 void test_scheduler_fcfs_continuous_admission() {
-  forge::KVBlockPool pool(2048U * 16U, 2, 2, 8);
-  forge::Scheduler scheduler(3, 64, pool);
+  instinct::KVBlockPool pool(2048U * 16U, 2, 2, 8);
+  instinct::Scheduler scheduler(3, 64, pool);
   const std::array<std::int32_t, 2> prompt = {1, 2};
   const std::array<std::int32_t, 0> no_eos{};
   const auto first = scheduler.submit(prompt, 4, no_eos);
@@ -165,12 +165,12 @@ void test_scheduler_fcfs_continuous_admission() {
   expect(schedule.prefill == first && schedule.decode.empty(), "FCFS first admission");
   scheduler.finish_prefill(first);
   schedule = scheduler.next();
-  expect(schedule.prefill == second && schedule.decode == std::vector<forge::RequestId>{first},
+  expect(schedule.prefill == second && schedule.decode == std::vector<instinct::RequestId>{first},
          "new prefill joins existing decode iteration");
   scheduler.finish_prefill(second);
   schedule = scheduler.next();
   expect(schedule.prefill == third &&
-             schedule.decode == std::vector<forge::RequestId>({first, second}),
+             schedule.decode == std::vector<instinct::RequestId>({first, second}),
          "waiting requests cannot starve behind decoders");
   scheduler.finish_prefill(third);
   scheduler.cancel(first);
@@ -181,7 +181,7 @@ void test_scheduler_fcfs_continuous_admission() {
 }
 
 void test_model_file(const char* path) {
-  const forge::ModelFile model(path);
+  const instinct::ModelFile model(path);
   expect(model.config().hidden_size == 8, "model config round trip");
   expect(model.tensors().size() == 2, "model tensor count round trip");
   expect(model.tensor("model.embed_tokens.weight").shape == std::vector<std::uint32_t>({32, 8}),

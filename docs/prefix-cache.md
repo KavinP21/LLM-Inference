@@ -6,7 +6,7 @@ CUDA or INT8 support. With the default `prefix_cache_bytes=0` the engine uses th
 plain private-page allocator, exactly as before.
 
 ```python
-from forge_llm import MlxEngine
+from instinct import MlxEngine
 
 with MlxEngine(
     "models/qwen2.5-0.5b.engine",

@@ -2,8 +2,8 @@ import asyncio
 import json
 
 import pytest
-from forge_llm.agents.protocol import Generation
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.protocol import Generation
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
 
 
 def test_operator_stops_child_without_stopping_parent_or_sibling():

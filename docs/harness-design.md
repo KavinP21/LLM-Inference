@@ -1,6 +1,6 @@
-# Forge Studio internals
+# Instinct internals
 
-Forge Studio puts a chat interface on top of the existing task-agent runtime.
+Instinct puts a chat interface on top of the existing task-agent runtime.
 The inference engine still runs the model; Studio handles conversations, tool
 approvals and the browser UI. Better scheduling on its own doesn't make a model
 reason any better.

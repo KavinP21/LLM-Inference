@@ -1,7 +1,7 @@
 import math
 
 import pytest
-from forge_llm.runtime import IterationScheduler, KVBlockPool, SequenceState
+from instinct.runtime import IterationScheduler, KVBlockPool, SequenceState
 
 
 def test_block_boundaries_and_fragmentation() -> None:
@@ -115,13 +115,13 @@ def test_eos_completes_and_releases_capacity() -> None:
 
 
 def test_cuda_engine_does_not_fall_back_to_the_mlx_checkpoint(monkeypatch) -> None:
-    import forge_llm
+    import instinct
 
     def unexpected(*args, **kwargs):
         raise AssertionError("CUDA engine constructed without a model path")
 
-    monkeypatch.setattr(forge_llm, "CudaEngine", unexpected)
+    monkeypatch.setattr(instinct, "CudaEngine", unexpected)
     with pytest.raises(ValueError, match="exported .engine"):
-        forge_llm.create_engine()
+        instinct.create_engine()
     with pytest.raises(ValueError, match="exported .engine"):
-        forge_llm.create_engine(backend="cuda")
+        instinct.create_engine(backend="cuda")

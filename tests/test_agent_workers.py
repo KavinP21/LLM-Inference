@@ -14,21 +14,21 @@ from itertools import pairwise
 from types import SimpleNamespace
 
 import pytest
-from forge_llm.agents.backends import (
+from instinct.agents.backends import (
     AuthenticationError,
     BackendError,
     CapacityError,
     ContextLengthError,
     GenerationCancelledError,
     GenerationTimeoutError,
-    LocalForgeBackend,
+    LocalModelBackend,
     RemoteWorkerBackend,
     WorkerConfig,
     WorkerPool,
     WorkerUnavailableError,
 )
-from forge_llm.agents.protocol import ChatMessage, Generation
-from forge_llm.agents.worker import WorkerHTTPServer, WorkerService
+from instinct.agents.protocol import ChatMessage, Generation
+from instinct.agents.worker import WorkerHTTPServer, WorkerService
 
 CHAT = [ChatMessage("user", "hello")]
 TOKEN = "a-test-token-that-is-not-a-real-credential"
@@ -123,7 +123,7 @@ class FakeEngine:
 
 def local(engine=None, **config_options):
     engine = engine or FakeEngine()
-    return LocalForgeBackend(
+    return LocalModelBackend(
         WorkerConfig("fake.engine", "fake-tokenizer", **config_options),
         engine_factory=lambda: engine,
         tokenizer_factory=FakeTokenizer,
@@ -189,7 +189,7 @@ def test_local_accepts_chat_template_batch_encoding():
             }
 
     async def run():
-        backend = LocalForgeBackend(
+        backend = LocalModelBackend(
             WorkerConfig("fake.engine", "fake"),
             engine_factory=FakeEngine,
             tokenizer_factory=DictTokenizer,
@@ -219,7 +219,7 @@ def test_gemma_chat_template_preserves_system_and_merges_adjacent_evidence():
                 model_type="gemma3_text", vocab_size=100, eos_token_id=0
             )
         )
-        backend = LocalForgeBackend(
+        backend = LocalModelBackend(
             WorkerConfig("fake.engine", "fake"),
             engine_factory=lambda: engine,
             tokenizer_factory=GemmaTokenizer,
@@ -408,7 +408,7 @@ def test_local_native_catalog_reaches_template_and_is_copied_before_queue():
             return super().step()
 
     async def run():
-        backend = LocalForgeBackend(
+        backend = LocalModelBackend(
             WorkerConfig("fake.engine", "fake", native_tool_calls=True, max_pending=2),
             engine_factory=BlockedEngine,
             tokenizer_factory=NativeTokenizer,
@@ -586,7 +586,7 @@ def test_cached_qwen_native_template_and_tags_with_real_tokenizer_cpu_only():
         )
     except OSError:
         pytest.skip("local Qwen tokenizer fixture is not cached; no download permitted")
-    from forge_llm.agents.native_tools import parse_native_action
+    from instinct.agents.native_tools import parse_native_action
 
     rendered = tokenizer.apply_chat_template(
         [{"role": "user", "content": "hello"}],
@@ -613,7 +613,7 @@ def test_cached_qwen_native_template_and_tags_with_real_tokenizer_cpu_only():
             return super().submit(prompt, maximum, eos)
 
     async def run():
-        backend = LocalForgeBackend(
+        backend = LocalModelBackend(
             WorkerConfig("fake.engine", "cached-qwen", native_tool_calls=True),
             engine_factory=RecordingEngine,
             tokenizer_factory=lambda: tokenizer,
@@ -696,7 +696,7 @@ def test_live_http_health_identity_and_concurrent_generation():
             backend = client(url, max_concurrency=3)
             identity = await backend.health()
             assert identity["worker_id"] == "fake-worker" and identity["pid"] > 0
-            assert identity["schema"] == "forge_worker_v1"
+            assert identity["schema"] == "instinct_worker_v1"
             outputs = await asyncio.gather(
                 *(backend.generate(CHAT, 2, f"http-{i}") for i in range(3))
             )
@@ -1092,7 +1092,7 @@ def test_local_speculative_worker_uses_cancellation_and_measured_usage():
             pass
 
     async def run():
-        backend = LocalForgeBackend(
+        backend = LocalModelBackend(
             WorkerConfig(
                 "fake.engine", "fake", backend="mlx", speculative={"draft_tokens": 2}
             ),

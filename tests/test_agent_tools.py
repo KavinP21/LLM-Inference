@@ -8,7 +8,7 @@ import threading
 import time
 
 import pytest
-from forge_llm.agents.tools import WorkspaceTools
+from instinct.agents.tools import WorkspaceTools
 
 
 def test_read_search_and_bounded_listing(tmp_path):
@@ -234,7 +234,7 @@ def test_fifo_reads_and_writes_fail_without_blocking(tmp_path):
 
 
 def test_implicit_versions_are_agent_scoped_and_reject_stale_edits(tmp_path):
-    from forge_llm.agents.context import tool_actor
+    from instinct.agents.context import tool_actor
 
     async def run():
         path = tmp_path / "module.py"
@@ -536,7 +536,7 @@ def test_protection_registration_is_bounded_confined_and_atomic(tmp_path):
 
 
 def test_forget_terminal_scheduler_history_preserves_counters():
-    from forge_llm.runtime import IterationScheduler, KVBlockPool
+    from instinct.runtime import IterationScheduler, KVBlockPool
 
     pool = KVBlockPool(4096, 8)
     scheduler = IterationScheduler(2, 32, 64, pool)
@@ -762,7 +762,7 @@ def test_edit_lines_refuses_protected_readonly_and_invalid_python_edits(tmp_path
 def test_edit_lines_read_proofs_are_agent_and_file_scoped_and_cas_remains_stale(
     tmp_path,
 ):
-    from forge_llm.agents.context import tool_actor
+    from instinct.agents.context import tool_actor
 
     path = tmp_path / "notes.txt"
     path.write_text("original\n")

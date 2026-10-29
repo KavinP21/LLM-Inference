@@ -5,8 +5,8 @@ import json
 
 import numpy as np
 import pytest
-from forge_llm.import_mlx import _validate_packed, import_mlx_checkpoint
-from forge_llm.model_file import ModelFile
+from instinct.import_mlx import _validate_packed, import_mlx_checkpoint
+from instinct.model_file import ModelFile
 
 
 def numpy_decode(weight, scales, biases):
@@ -173,7 +173,7 @@ def test_index_and_dequantization_failure_leave_no_outputs(tmp_path):
 
 
 def test_failed_manifest_publication_removes_our_engine(tmp_path, monkeypatch):
-    import forge_llm.import_mlx as importer
+    import instinct.import_mlx as importer
 
     source, output = tmp_path / "source", tmp_path / "output.engine"
     source_checkpoint(source)

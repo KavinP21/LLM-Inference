@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from forge_llm.format import HEADER, MAGIC, ModelConfig, write_engine
+from instinct.format import HEADER, MAGIC, ModelConfig, write_engine
 
 
 def test_deterministic_engine_file(tmp_path: Path) -> None:

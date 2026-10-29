@@ -4,9 +4,9 @@ import asyncio
 import json
 
 import pytest
-from forge_llm.agents.protocol import Generation, conservative_input_tokens
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
-from forge_llm.agents.store import AgentStore
+from instinct.agents.protocol import Generation, conservative_input_tokens
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.store import AgentStore
 
 
 def call(name, **arguments):
@@ -433,10 +433,10 @@ def test_repeated_identical_tool_result_produces_no_progress_feedback():
 
 
 def test_plain_text_reply_is_the_final_answer():
-    backend = NativeBackend({"root": ["The project is called **Forge LLM**."]})
+    backend = NativeBackend({"root": ["The project is called **Instinct**."]})
     result = asyncio.run(AgentRuntime(backend).run("What is the project called?"))
     assert result.status == "completed"
-    assert result.output == "The project is called **Forge LLM**."
+    assert result.output == "The project is called **Instinct**."
 
 
 def test_prompts_only_grow_by_appending_across_turns():
@@ -503,7 +503,7 @@ def test_measured_prompt_tokens_keep_history_bytes_would_have_dropped():
 
 
 def test_full_context_is_compacted_once_into_a_model_written_summary():
-    from forge_llm.agents.runtime import COMPACT_REQUEST, SUMMARY_PREFIX
+    from instinct.agents.runtime import COMPACT_REQUEST, SUMMARY_PREFIX
 
     class Backend:
         supports_native_tools = True

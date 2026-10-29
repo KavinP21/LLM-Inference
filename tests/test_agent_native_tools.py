@@ -4,12 +4,12 @@ import copy
 import json
 
 import pytest
-from forge_llm.agents.native_tools import (
+from instinct.agents.native_tools import (
     build_tool_specs,
     parse_native_action,
     validate_tool_specs,
 )
-from forge_llm.agents.protocol import ProtocolError, parse_action
+from instinct.agents.protocol import ProtocolError, parse_action
 
 SCHEMAS = {
     "read_file": {
@@ -376,7 +376,7 @@ def test_native_finish_object_depth_and_nonfinite_values_fail_closed():
 
 
 def test_native_batch_preserves_two_typed_independent_spawn_calls():
-    from forge_llm.agents.native_tools import parse_native_actions
+    from instinct.agents.native_tools import parse_native_actions
 
     text = (
         call("spawn", {"task": "Inspect shipping.md", "tools": ["read_file"]})
@@ -393,7 +393,7 @@ def test_native_batch_preserves_two_typed_independent_spawn_calls():
 
 
 def test_native_batch_supports_raw_single_call_and_literal_tags_in_json_strings():
-    from forge_llm.agents.native_tools import parse_native_actions
+    from instinct.agents.native_tools import parse_native_actions
 
     result = 'Literal </tool_call><tool_call> tags and escaped "quoted" text.'
     text = (
@@ -429,7 +429,7 @@ def test_native_batch_supports_raw_single_call_and_literal_tags_in_json_strings(
     ],
 )
 def test_native_batch_invalid_late_call_returns_no_partial_list(second):
-    from forge_llm.agents.native_tools import parse_native_actions
+    from instinct.agents.native_tools import parse_native_actions
 
     text = call("read_file", {"path": "first.txt"}) + second
     returned = None
@@ -439,7 +439,7 @@ def test_native_batch_invalid_late_call_returns_no_partial_list(second):
 
 
 def test_native_batch_count_and_whole_response_size_are_bounded():
-    from forge_llm.agents.native_tools import parse_native_actions
+    from instinct.agents.native_tools import parse_native_actions
 
     one = call("read_file", {"path": "a"})
     assert len(parse_native_actions(one * 4, catalog())) == 4
@@ -463,14 +463,14 @@ def test_native_batch_count_and_whole_response_size_are_bounded():
     ],
 )
 def test_native_batch_rejects_nonfinite_and_duplicate_json_in_late_calls(second):
-    from forge_llm.agents.native_tools import parse_native_actions
+    from instinct.agents.native_tools import parse_native_actions
 
     with pytest.raises(ProtocolError):
         parse_native_actions(call("read_file", {"path": "a"}) + second, catalog())
 
 
 def test_native_batch_bounded_depth_applies_to_generic_tool_arguments_too():
-    from forge_llm.agents.native_tools import parse_native_actions
+    from instinct.agents.native_tools import parse_native_actions
 
     schemas = {
         "inspect_json": {
@@ -501,7 +501,7 @@ def test_native_batch_bounded_depth_applies_to_generic_tool_arguments_too():
 def test_schema_recursive_equality_keeps_booleans_distinct_from_numbers(
     keyword, actual
 ):
-    from forge_llm.agents.native_tools import _validate
+    from instinct.agents.native_tools import _validate
 
     expected = (
         {"total": 1}
@@ -522,7 +522,7 @@ def test_schema_recursive_equality_keeps_booleans_distinct_from_numbers(
 def test_schema_recursive_numeric_equality_and_object_order_follow_json_semantics(
     keyword,
 ):
-    from forge_llm.agents.native_tools import _validate
+    from instinct.agents.native_tools import _validate
 
     expected = {"numbers": [1, {"zero": 0}], "verified": True}
     equivalent = {"verified": True, "numbers": [1.0, {"zero": -0.0}]}
@@ -534,7 +534,7 @@ def test_schema_recursive_numeric_equality_and_object_order_follow_json_semantic
 
 @pytest.mark.parametrize("number", [float("nan"), float("inf"), -float("inf")])
 def test_schema_validation_checks_nonfinite_data_inside_unspecified_properties(number):
-    from forge_llm.agents.native_tools import _validate
+    from instinct.agents.native_tools import _validate
 
     schema = {"type": "object", "additionalProperties": True}
     with pytest.raises(ProtocolError, match="finite"):
@@ -542,7 +542,7 @@ def test_schema_validation_checks_nonfinite_data_inside_unspecified_properties(n
 
 
 def test_schema_unique_items_uses_the_same_json_equality():
-    from forge_llm.agents.native_tools import _validate
+    from instinct.agents.native_tools import _validate
 
     schema = {"type": "array", "uniqueItems": True}
     _validate([True, 1], schema)
@@ -554,7 +554,7 @@ def test_schema_unique_items_uses_the_same_json_equality():
 
 
 def test_schema_validation_non_json_or_cyclic_python_data_fails_closed():
-    from forge_llm.agents.native_tools import _validate
+    from instinct.agents.native_tools import _validate
 
     cyclic = []
     cyclic.append(cyclic)

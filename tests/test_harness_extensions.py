@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from forge_llm.agents.native_tools import build_tool_specs
-from forge_llm.agents.protocol import Generation
-from forge_llm.agents.runtime import AgentRuntime
-from forge_llm.harness.extensions import (
+from instinct.agents.native_tools import build_tool_specs
+from instinct.agents.protocol import Generation
+from instinct.agents.runtime import AgentRuntime
+from instinct.harness.extensions import (
     MCPError,
     MCPServerConfig,
     MCPStdioClient,
@@ -189,7 +189,7 @@ for line in sys.stdin:
         elif mode == 'input':
             reply({'resultType':'input_required','inputRequests':{}})
         else:
-            result = {'text': req['params']['arguments']['text'], 'secret_inherited': 'FORGE_TEST_SECRET' in os.environ}
+            result = {'text': req['params']['arguments']['text'], 'secret_inherited': 'INSTINCT_TEST_SECRET' in os.environ}
             reply({'resultType':'complete','content':[{'type':'text','text':json.dumps(result)}],'isError':False})
 """
     )
@@ -213,7 +213,7 @@ def _config(server_script, mode, **kwargs):
 def test_mcp_current_and_legacy_protocols_expose_native_schema(
     server_script, monkeypatch, mode, version
 ):
-    monkeypatch.setenv("FORGE_TEST_SECRET", "private")
+    monkeypatch.setenv("INSTINCT_TEST_SECRET", "private")
 
     async def run():
         async with MCPStdioClient(

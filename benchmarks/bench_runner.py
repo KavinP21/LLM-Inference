@@ -14,7 +14,7 @@ import argparse
 import json
 import statistics
 
-from forge_llm.vlm_runner import VlmRunner
+from instinct.vlm_runner import VlmRunner
 
 SYSTEM = (
     "You are a coding agent working in a Python repository. Read files before "

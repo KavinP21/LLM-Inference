@@ -5,12 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from forge_llm.agents.backends import LocalForgeBackend, WorkerConfig, validate_request
-from forge_llm.agents.media import materialize_media, media_from_file, validate_media
-from forge_llm.agents.protocol import ChatMessage
-from forge_llm.agents.runtime import AgentRuntime
-from forge_llm.agents.store import AgentStore
-from forge_llm.vlm_runner import RunnerResult
+from instinct.agents.backends import LocalModelBackend, WorkerConfig, validate_request
+from instinct.agents.media import materialize_media, media_from_file, validate_media
+from instinct.agents.protocol import ChatMessage
+from instinct.agents.runtime import AgentRuntime
+from instinct.agents.store import AgentStore
+from instinct.vlm_runner import RunnerResult
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_media_is_copied_and_materialized_only_to_private_request_files(
 def test_media_journal_deduplicates_bytes_and_restores_generation_snapshot(
     attachment, tmp_path
 ):
-    from forge_llm.agents.runtime import RuntimeConfig
+    from instinct.agents.runtime import RuntimeConfig
 
     path = tmp_path / "journal.sqlite"
     with AgentStore(path) as store:
@@ -92,7 +92,7 @@ def test_invalid_run_media_fails_before_creating_a_run():
 
 
 def test_spawn_inherits_operator_media_without_duplicating_blob(attachment):
-    from forge_llm.agents.runtime import RuntimeConfig
+    from instinct.agents.runtime import RuntimeConfig
 
     with AgentStore() as store:
         store.create_run("run", "inspect image", vars(RuntimeConfig()), "system")
@@ -108,8 +108,8 @@ def test_spawn_inherits_operator_media_without_duplicating_blob(attachment):
 
 
 def test_media_reserves_advertised_context_before_inference(attachment):
-    from forge_llm.agents.protocol import Generation
-    from forge_llm.agents.runtime import RuntimeConfig
+    from instinct.agents.protocol import Generation
+    from instinct.agents.runtime import RuntimeConfig
 
     class Native:
         supports_native_tools = True
@@ -185,7 +185,7 @@ def test_vlm_worker_passes_request_media_and_removes_it_afterwards(
     attachment, tmp_path
 ):
     runner = Runner()
-    backend = LocalForgeBackend(
+    backend = LocalModelBackend(
         WorkerConfig(
             str(tmp_path),
             str(tmp_path),

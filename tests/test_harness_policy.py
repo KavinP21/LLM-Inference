@@ -7,10 +7,10 @@ import time
 from contextlib import contextmanager
 
 import pytest
-from forge_llm.agents.context import tool_actor
-from forge_llm.agents.store import AgentStore
-from forge_llm.agents.tools import ToolValidationError, WorkspaceTools
-from forge_llm.harness.policy import ApprovalGate, HookRegistry, workspace_preview
+from instinct.agents.context import tool_actor
+from instinct.agents.store import AgentStore
+from instinct.agents.tools import ToolValidationError, WorkspaceTools
+from instinct.harness.policy import ApprovalGate, HookRegistry, workspace_preview
 
 
 @pytest.fixture

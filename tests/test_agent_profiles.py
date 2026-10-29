@@ -3,10 +3,10 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from forge_llm.agents import AgentRuntime, AgentStore, RuntimeConfig, WorkspaceTools
-from forge_llm.agents.profiles import CompletionProfile
-from forge_llm.agents.protocol import Generation
-from forge_llm.agents.tools import ToolValidationError
+from instinct.agents import AgentRuntime, AgentStore, RuntimeConfig, WorkspaceTools
+from instinct.agents.profiles import CompletionProfile
+from instinct.agents.protocol import Generation
+from instinct.agents.tools import ToolValidationError
 
 
 class Answer:
@@ -123,8 +123,8 @@ def test_criterion_files_are_protected_and_external_changes_detected(tmp_path):
 def test_cli_resume_rejects_changed_criterion_before_loading_models(
     tmp_path, monkeypatch, capsys
 ):
-    from forge_llm.agents import cli
-    from forge_llm.agents.backends import WorkerPool
+    from instinct.agents import cli
+    from instinct.agents.backends import WorkerPool
 
     class Backend(Answer):
         def health(self):
@@ -158,7 +158,7 @@ def test_cli_resume_rejects_changed_criterion_before_loading_models(
     )
     args = SimpleNamespace(
         command="run",
-        state_dir=str(tmp_path / ".forge"),
+        state_dir=str(tmp_path / ".instinct"),
         workspace=str(tmp_path),
         config=str(config),
         run_id="criterion-run",

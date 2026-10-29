@@ -1,12 +1,12 @@
 # Greedy speculative decoding
 
-Forge has an independent `SpeculativeEngine` for FP16 Qwen2 and text-only
+Instinct has an independent `SpeculativeEngine` for FP16 Qwen2 and text-only
 Gemma 3 on MLX/Metal. It is a one-request decoder; run independent instances in
 worker processes to serve concurrent agent tasks. The existing continuous
 batching engine keeps its execution policy.
 
 ```python
-from forge_llm.speculative import SpeculativeEngine
+from instinct.speculative import SpeculativeEngine
 
 with SpeculativeEngine("models/qwen2.5-0.5b.engine", draft_tokens=4) as engine:
     result = engine.generate_result(prompt_token_ids, max_new_tokens=128,
@@ -167,8 +167,8 @@ engine comparison or distributed/GPU scaling was performed.
 
 ### Optional local MLX checkpoint reconstruction
 
-`python -m forge_llm.import_mlx SOURCE_DIRECTORY NEW_ENGINE_PATH` can convert a
-local MLX affine 4-bit, group-size-64 Qwen2 checkpoint into a Forge FP16 engine.
+`python -m instinct.import_mlx SOURCE_DIRECTORY NEW_ENGINE_PATH` can convert a
+local MLX affine 4-bit, group-size-64 Qwen2 checkpoint into a Instinct FP16 engine.
 It uses `mlx.core.dequantize`, defaults to a CPU stream, verifies the exact
 Qwen2 tensor contract and publishes only fully validated output. It refuses to
 overwrite either the engine or its provenance manifest, performs no download,

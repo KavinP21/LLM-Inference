@@ -1,16 +1,16 @@
 # MLX-VLM runner (Gemma 4, Qwen3.5)
 
-`forge_llm.vlm_runner.VlmRunner` runs any checkpoint mlx-vlm can load. Its forward
+`instinct.vlm_runner.VlmRunner` runs any checkpoint mlx-vlm can load. Its forward
 pass is mlx-vlm's; what the runner adds is prompt reuse, which matters far more
 than raw decode speed for an agent. Every agent step re-sends the whole
 conversation, so a naive server re-prefills thousands of tokens per step.
 
 ```bash
-python -m forge_llm.prepare_models     # Gemma 4 26B A4B (QAT 4-bit) + drafter, Qwen3.5-4B
+python -m instinct.prepare_models     # Gemma 4 26B A4B (QAT 4-bit) + drafter, Qwen3.5-4B
 ```
 
 ```python
-from forge_llm.vlm_runner import VlmRunner
+from instinct.vlm_runner import VlmRunner
 
 runner = VlmRunner("models/gemma-4-26b-a4b-mlx",
                    draft_path="models/gemma-4-26b-a4b-assistant")
