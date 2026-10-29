@@ -157,18 +157,16 @@ class ConversationRuntime(AgentRuntime):
                     "user", message.content[len(task) + 2 :], message.media
                 )
             tail.append(message)
-        menu = (
-            self._native_state(run_id, agent_id, config)
-            if self.native_mode
-            else self._legal_menu(run_id, agent_id, config)
-        )
         projected = [
             projected[0],
             ChatMessage("user", task, current_media),
             marker,
             *tail,
-            ChatMessage("user", menu),
         ]
+        if not self.native_mode:
+            projected.append(
+                ChatMessage("user", self._legal_menu(run_id, agent_id, config))
+            )
         while len(projected) > 4 and conservative_input_tokens(projected) > limit:
             del projected[3]
         self.store.event(
