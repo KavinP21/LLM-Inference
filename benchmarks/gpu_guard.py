@@ -1,7 +1,7 @@
-"""Fail-fast, inherited process lease for cooperating GPU evidence drivers.
+"""File lock that stops two of the project's GPU benchmark scripts running at once.
 
-This protects calibration/measurement workflows, not the inference scheduler or
-unrelated applications. It is intentionally outside the timed runtime path.
+Child processes inherit the lock through FORGE_GPU_EVIDENCE_FD. It doesn't stop
+unrelated applications from using the GPU, and it isn't part of the engine.
 """
 
 from __future__ import annotations
@@ -28,12 +28,14 @@ def exclusive_gpu_workflow():
             descriptor = int(inherited)
             expected, actual = path.stat(), os.fstat(descriptor)
             if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
-                raise RuntimeError("invalid inherited GPU evidence lease")
+                raise RuntimeError(
+                    "inherited GPU lock descriptor does not match the lock file"
+                )
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise RuntimeError(
-                "Another Forge evidence workflow owns the GPU lease; wait for it to finish."
+                "Another Forge benchmark holds the GPU lock; wait for it to finish."
             ) from exc
 
         def run(command, **kwargs):

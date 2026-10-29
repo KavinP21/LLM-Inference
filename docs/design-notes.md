@@ -28,8 +28,8 @@ a continuation. Cosine similarity alone does not establish token parity.
 The optional `rowwise` policy evaluates projection rows independently while keeping
 attention batched, with a measured dispatch/weight-reuse cost. Prefix snapshots
 preserve original prefill chunk boundaries to avoid changing reduction shapes.
-These rules address execution consistency, not lossy quantization error. See the
-[policy](decode-numerics.md) and [measurements](mlx-batch-numerics-results.md).
+These rules address execution consistency, not lossy quantization error. See
+[decode-numerics.md](decode-numerics.md) for the measurements.
 
 ## Check fused-kernel eligibility
 
@@ -40,8 +40,7 @@ shapes use normal MLX dispatch. Execution errors are not swallowed.
 
 Read `_fast_attention` in [the Qwen adapter](../python/forge_llm/backends/mlx.py).
 [Metal regressions](../tests/test_prefix_cache_metal.py) cover query lengths
-1, 4, 5, 6, 7, 8, 9, and 17. The [report](mlx-prefix-cache-results.md) retains
-both the failed run and fresh validation.
+1, 4, 5, 6, 7, 8, 9, and 17.
 
 ## Measure page packing with attention
 

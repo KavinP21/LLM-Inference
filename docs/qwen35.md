@@ -1,4 +1,4 @@
-# Qwen3.5-4B daily driver
+# Qwen3.5-4B
 
 The default model for `create_engine()` and the desktop chat is the complete
 `mlx-community/Qwen3.5-4B-4bit` checkpoint, including its vision tower. Forge
@@ -95,7 +95,7 @@ from this persistent state budget.
 Defaults are a 32,768-token context, 2 GiB persistent state budget and 256-token
 prefill chunks. Prefill computes vocabulary logits only for the last prompt token.
 The checkpoint advertises 262,144 positions, but full-length execution and semantic
-quality have not been qualified here. Limits can be configured up to checkpoint
+quality haven't been tested here. Limits can be configured up to checkpoint
 capacity and are checked against expanded prompts and actual cache bytes.
 
 One active request runs per engine/physical replica. Multiple logical agents share
@@ -158,55 +158,35 @@ there is no MTP drafter.
 Block evaluation and single-token evaluation can have different floating-point
 reductions. Passing fixed greedy comparisons does not establish universal
 canonical equality. Speculation stays **off by default**: copying can benefit,
-while less repetitive workloads can be slower. See the saved qualification reports
-for exact workloads, source versions, outputs and limits.
+while less repetitive workloads can be slower.
 
-## Executed qualification
+## What's been checked
 
-The final checks on clean frozen source `35c262b` matched an independent ordinary MLX-VLM reference
-on three prompts, including a 6,860-token input. The total continuation coverage
-was 17 tokens; this is not sustained long-context decoding or original-FP16 parity.
-Synthetic image OCR, a visual follow-up, red-then-blue video order, mixed image/video,
-thinking separation, truncated thinking and request cleanup passed.
+- **Against plain MLX-VLM:** Forge's adapter matches ordinary MLX-VLM generation
+  on three prompts, one of them 6,860 tokens long. That's only 17 generated tokens
+  in total, so it checks the wiring, not long generations.
+- **Media and thinking:** OCR on a synthetic image, a follow-up question about the
+  same image, frame order in a short video, mixed image + video input, and
+  splitting out (and truncating) the thinking section all work.
+- **Long context:** a 32,766-token prompt runs at the default 32K limit. Peak
+  persistent state is ~1.05 GiB, and everything is released afterwards.
+- **Workers and the desktop app:** image bytes travel to workers correctly,
+  oversized inputs get rejected, children can read images, and the journal
+  reloads after a restart. The desktop chat's follow-ups, Stop, thinking
+  truncation, model switching and shutdown all work.
+- **Speculation:** forced rejections at every accepted-prefix length 0–4,
+  allocation edge cases, and cancellation in the middle of every recurrent
+  timeline. Image/video outputs match non-speculative decoding. Median speedups
+  over three warm runs were 1.92× for copying text, 1.01× for code and 0.92×
+  (a slowdown) for arithmetic, which is why it's off by default.
+- **Agent tasks:** both small tasks pass in single and delegated mode; see
+  [agent-runtime.md](agent-runtime.md#how-real-models-did).
 
-A 32,766-token synthetic prompt plus two outputs executed at the default 32K
-limit, with a 1,125,253,120-byte peak persistent state and full reclamation.
-This checks execution, not long-context semantic quality. A seeded ordinary
-sampling smoke check produced finite bounded output. Actual worker image transport,
-expanded-context rejection, an image-reading child, reopened journal hydration
-and cancellation/restart also passed. All nine desktop checks passed, including
-visual follow-up, thinking truncation, Stop, output clamping, draft preservation,
-model switching and shutdown.
+`with create_engine() as engine:` closes the engine even when the body raises,
+and if cleanup also fails, the original exception is the one you see.
 
-Speculative checks passed three forced rounds at every accepted prefix 0–4,
-two allocation boundaries and cancellation inside all 24 live recurrent timelines.
-Image/video block decoding also matched ordinary outputs with real n-gram proposals
-(44/27 accepted draft tokens). Three warmed alternating timing repetitions per
-text workload gave median ratios of 1.920× for copying, 1.006× for code and 0.919×
-for arithmetic. All timed continuations matched; these are workload-specific
-measurements, and reserved history bytes are not measured Metal peak memory.
-
-On the same frozen source, both single and delegated coding/document fixtures
-passed their independent gates. Each delegated case executed two completed
-children. Coding took 25.93/56.08 seconds and document analysis 8.35/51.44 seconds;
-startup was excluded. Delegation was slower. The earlier delegated document failure
-is retained alongside the revised run. These are two development fixtures, not
-broad autonomous-task qualification. The latest regression passed **1,085 tests
-without skips**, including Metal and loopback checks; a fresh C++ host build and
-all GitHub workflows passed.
-
-A subsequent public API smoke caught a missing context-manager interface.
-`with create_engine()` now closes completed or interrupted state and preserves
-an original exception if cleanup also fails. Its lifecycle tests and direct
-default-model smoke are recorded separately; this addition leaves inference
-math and the previously qualified worker/UI generation paths unchanged.
-
-The [evidence directory](../benchmarks/results/qwen35-2026-10-10/) records separate
-source identities for core inference, task workflows and speculation. Portable
-tests cover malformed checkpoints/media, context/state admission, every accepted
-prefix length, abort/error cleanup, parser validation, journaling and UI ownership.
-CUDA Qwen3.5, audio, tensor/pipeline parallelism, streaming serving and full 262K
-qualification remain outside this implementation.
+Not supported: CUDA, audio input, tensor/pipeline parallelism, streaming serving,
+and anything near the model's full 262K context.
 
 Architecture and trained formats come from the [official Qwen checkpoint](https://huggingface.co/Qwen/Qwen3.5-4B)
 and [MLX-VLM v0.7.6](https://github.com/Blaizzy/mlx-vlm/tree/v0.7.6).

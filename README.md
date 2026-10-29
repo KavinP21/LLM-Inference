@@ -1,115 +1,84 @@
-# LLM Inference
+# Forge LLM
 
-Forge LLM is a C++20 and Python inference runtime with an Apple MLX/Metal backend
-and a CUDA backend. It implements transformer execution, KV-cache allocation,
-request scheduling, and GPU kernels. PyTorch and Transformers are used for weight
-export, tokenization/processors and reference checks; neither executes the inference loop.
+An LLM inference engine written from scratch in Python and C++, with an Apple
+MLX/Metal backend and a CUDA backend. It runs Qwen2 and Gemma 3 with a paged KV
+cache, continuous batching and custom Metal kernels. PyTorch and Transformers are
+only used to export weights, tokenize and check outputs; they're never in the
+generation loop.
 
-**Qwen3.5-4B is the default daily driver**, with text, images, short video,
-optional thinking and tool-based agents. Its complete 4-bit model runs through
-the explicitly integrated MLX-VLM adapter. See the [setup and scope](docs/qwen35.md).
-The native Forge Qwen2/Gemma execution path remains available.
+The repo also has a few things built on top of the engine: speculative decoding,
+a multi-agent task runtime, a local web UI (Forge Studio), and a Qwen3.5-4B
+multimodal path.
 
-## Forge Studio agent workspace
+## What the engine does
 
-Launch `.venv/bin/python tools/forge_studio.py` (or double-click
-`Forge Studio.command` on macOS), type a prompt, and press Enter. Studio starts
-the model automatically and keeps follow-ups in the same chat. Tool activity,
-bounded sub-agents and change approvals appear inline, with skills, hooks,
-stdio MCP, recovery and trace export available underneath. A toggleable developer
-panel exposes agent tasks, files, diffs and command output. Image selection,
-clipboard paste and drag-and-drop feed the default Qwen3.5 vision model.
-Studio shares the existing inference workers and keeps its state in `.forge/`.
-The [Studio guide](docs/forge-studio.md) covers setup, controls and limitations;
-`--demo` exercises orchestration without model inference.
+- **Paged KV cache.** 16-token pages, allocated lazily. Each request reserves its
+  worst-case page count at admission, so it can't run out halfway through, and
+  pages are returned on completion, cancellation or error.
+- **Continuous batching.** Every running request decodes in the same step. Long
+  prompts are split into prefill chunks that the scheduler interleaves with
+  decoding.
+- **Metal kernels.** Fused residual + RMSNorm, RoPE fused with the KV page write,
+  SwiGLU, and a paged GQA decode attention kernel that walks per-request block
+  tables. They can be switched off to fall back to plain MLX.
+- **Model files.** A versioned, checksummed single-file format that both the
+  Python and C++ readers validate before running anything.
+- **Prefix caching** (opt-in). Reference-counted shared pages with copy-on-write
+  for the last partial page, namespaces, and LRU eviction.
+- **Speculative decoding** (opt-in). N-gram drafts verified in one forward pass,
+  with rejected KV rolled back.
+- **INT8 weights** (experimental). Per-channel W8A16 with a custom Metal kernel.
+  It saves about 35% of file size, but it doesn't match FP16 output closely
+  enough to be the default. See [docs/quantization.md](docs/quantization.md).
 
+## Performance
 
-## Native Qwen2 and Gemma runtime
+Qwen2.5-0.5B, FP16, Apple M3 Max, MLX 0.32.2. Each request generates 32 tokens.
+Throughput is total generated tokens per second, averaged over three runs after
+five warmups:
 
-- **Paged KV cache:** 16-token physical pages, lazy allocation, capacity reservations,
-  and reclamation on completion, cancellation, or failure.
-- **Continuous batching:** decode across runnable requests, with long prompts split
-  into scheduler-visible prefill chunks.
-- **Metal kernels:** fused RoPE/page writes and paged GQA decode attention; Qwen also
-  uses fused residual/RMSNorm and SwiGLU operations. The MLX fallback stays selectable.
-- **Model artifacts:** a versioned, checksummed container shared by Python and C++
-  readers, with explicit model-family validation.
-- **Prefix reuse:** opt-in FP16 caching with reference-counted pages, copy-on-write
-  tails, request namespaces, and bounded LRU retention.
-
-Read the [architecture](docs/architecture.md) for execution and memory layout,
-and [design notes](docs/design-notes.md) for tradeoffs and numerical issues.
-
-## Measured performance
-
-Qwen2.5-0.5B, FP16, Apple M3 Max, MLX 0.32.2. Each configuration generates 32 tokens
-per request, after five warmups, with three measured repetitions. Prompts are fixed
-synthetic token arrays. Throughput is aggregate generated tokens/s.
-
-| Prompt tokens | Concurrent requests | MLX fallback | Full Metal path | Ratio |
+| Prompt tokens | Concurrent requests | Plain MLX | Custom kernels | Speedup |
 | ---: | ---: | ---: | ---: | ---: |
 | 128 | 1 | 67.4 | 115.4 | 1.71× |
 | 128 | 8 | 151.9 | 376.2 | 2.48× |
 | 1,024 | 1 | 28.5 | 29.5 | 1.04× |
 | 1,024 | 8 | 36.6 | 81.7 | 2.23× |
 
-These September 23 measurements compare two execution modes of this engine on one
-machine. The benefit is largest for concurrent decode; page packing limits the
-single-request gain at 1,024 tokens. The [benchmark report](docs/resume-benchmark-results.md)
-contains latency, memory, source identity, and reproduction commands;
-[raw JSON](benchmarks/results/resume-m3-max-2026-09-23/) is checked in.
+This compares the engine with and without its own kernels on the same machine,
+not against other inference engines. The kernels help most with concurrent
+decoding. A single long request barely improves, because MLX arrays are
+immutable and the attention kernel has to copy that request's pages into one
+array first. [docs/benchmarks.md](docs/benchmarks.md) has latency, memory, a
+32K-context run and the correctness checks against Transformers. Raw JSON is in
+[benchmarks/results](benchmarks/results/fp16-m3-max-2026-09-23/).
 
-## Validation and limits
+## Status
 
-| Area | Evidence |
+| Area | Where it stands |
 | --- | --- |
-| Python regression | 1,085 tests passed on M3 Max, including Metal and loopback tests, on October 10, 2026. [QA report](benchmarks/results/qwen35-2026-10-10/context-manager-regression.json) |
-| Qwen3.5-4B | Full upstream text/image/video execution; 32K execution/reclamation, worker/desktop controls and all four small task cases pass. [Scope and evidence](docs/qwen35.md) |
-| Qwen2.5-0.5B reference parity | All 32 greedy tokens matched Transformers on each of four fixed prompts. |
-| Gemma 3 1B reference parity | Four first-token cosine gates pass; three continuations match all 32 tokens. One diverges after 25 tokens at an FP16 near-tie. |
-| 32K context | Qwen2.5-0.5B and Gemma 3 1B executed a 32,766-token prompt plus two outputs and reclaimed their pages. This checks execution and resource integrity. |
-| Prefix cache | All eight registered parity/resource gates pass. Performance and final qualification are pending. |
-| INT8 | Experimental; held-out exact-token quality gates fail. FP16 remains the default. |
-| CUDA | On-device correctness and performance are unverified. |
+| Qwen2.5 on MLX | Matches Transformers greedy output token for token (4 prompts × 32 tokens) |
+| Gemma 3 on MLX | 3 of 4 continuations match exactly; the 4th diverges after 25 tokens at an FP16 near-tie |
+| 32K context | Runs on both models and releases every page afterwards |
+| Prefix cache | Bit-identical outputs with and without reuse; timing not measured yet |
+| INT8 | Experimental. No variant matched FP16 on all 25 test prompts (best was 23) |
+| CUDA | Compiles in CI. **Hasn't been run on an NVIDIA GPU yet**, so correctness and speed are unknown |
 
-See [implementation status](STATUS.md) for the reports behind these claims.
-The native runtime uses greedy decoding, with optional MLX speculative verification and
-authenticated model-worker job endpoints. Task agents coordinate local or configured
-remote replicas. Qwen3.5's upstream adapter also supports sampling and full visual inputs.
-Native sampling, Forge-native W4A16, streaming/OpenAI-compatible serving
-and tensor/pipeline parallelism remain future work. An explicitly selected MLX-LM
-runner can execute a local upstream 4-bit checkpoint for task agents.
+The native engine is greedy-only. There's no sampling, native 4-bit weights,
+streaming server or multi-GPU support yet. See
+[docs/roadmap.md](docs/roadmap.md).
 
-## Run on Apple Silicon
+## Getting started (Apple Silicon)
 
-Use native arm64 Python 3.12 with Metal access and the Xcode command-line tools.
-From the repository root:
+You need native arm64 Python 3.11+ and the Xcode command-line tools.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 CMAKE_ARGS="-DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF" \
-  python -m pip install -e '.[mlx,qwen35,agents,test]'
-python -m forge_llm.prepare_qwen35
-python tools/forge_chat.py
+  pip install -e '.[mlx,export,test]'
+
+forge-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine
 ```
-
-```python
-from forge_llm import create_engine
-
-with create_engine() as engine:
-    answer = engine.generate_chat(
-        [{"role": "user", "content": "Explain hybrid attention briefly."}],
-        max_new_tokens=256,
-        enable_thinking=False,
-    )
-    print(answer.text)
-```
-
-The [Qwen3.5 guide](docs/qwen35.md) covers images/video, reasoning, memory limits,
-two-replica agents and optional hybrid-state speculation. For the native paged
-Qwen2 backend, install the `export` extra and run
-`forge-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine`:
 
 ```python
 from transformers import AutoTokenizer
@@ -118,82 +87,87 @@ from forge_llm import create_engine
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
 prompt = tokenizer.apply_chat_template(
     [{"role": "user", "content": "Explain paged KV caching."}],
-    tokenize=True,
-    return_dict=False,
-    add_generation_prompt=True,
+    tokenize=True, return_dict=False, add_generation_prompt=True,
 )
+
 with create_engine(
     "models/qwen2.5-0.5b.engine",
     backend="mlx",
     max_num_sequences=8,
-    max_model_length=32768,
     kv_cache_bytes=512 << 20,
     prefill_chunk_size=512,
 ) as engine:
-    output = engine.generate(
-        prompt, max_new_tokens=64, eos_token_ids=[tokenizer.eos_token_id]
-    )
+    output = engine.generate(prompt, max_new_tokens=64,
+                             eos_token_ids=[tokenizer.eos_token_id])
     print(tokenizer.decode(output, skip_special_tokens=True))
 ```
 
-For streaming or concurrent requests, use `submit`, `step`, `cancel`, and `stats`.
-[Prefix-cache examples](docs/prefix-cache.md) cover namespaces and cache clearing.
-[Apple setup](docs/setup-mlx.md) includes Gemma export and correctness commands;
-[WSL2 setup](docs/setup-wsl.md) covers CUDA. Model weights are excluded from Git.
+For several concurrent requests, use `submit()`, then call `step()` until they
+finish. `cancel()` and `stats()` are also available. [docs/setup-mlx.md](docs/setup-mlx.md)
+covers Gemma export and the correctness tools, and [docs/setup-wsl.md](docs/setup-wsl.md)
+covers building the CUDA backend under WSL2.
 
-## Tests and benchmarks
+## Also in this repo
+
+**Qwen3.5-4B (text, images, video).** `create_engine()` with no arguments loads a
+local 4-bit Qwen3.5-4B. This model uses a hybrid recurrent/attention
+architecture, and its forward pass runs through [MLX-VLM](https://github.com/Blaizzy/mlx-vlm)
+rather than Forge's own graph. Forge handles request admission, memory
+accounting for the recurrent state and KV, cancellation, thinking/answer
+splitting, and the agent and UI integration. One request runs per replica. See
+[docs/qwen35.md](docs/qwen35.md).
 
 ```bash
-# Portable C++ components; requires CMake 3.24+ and Ninja.
-cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF
-cmake --build build
-ctest --test-dir build --output-on-failure
-
-# Full suite on Apple Silicon with test/export/MLX extras installed.
-FORGE_INSPECT_MODEL=build/forge-inspect-model PYTHONPATH=python python -m pytest -q
-
-# Repeat with --mlx-kernel-mode baseline for a controlled comparison.
-PYTHONPATH=python python benchmarks/run_matrix.py \
-  --backend mlx --model models/qwen2.5-0.5b.engine \
-  --output-dir benchmark-results/full --mlx-kernel-mode full \
-  --prompt-lengths 128 1024 --output-lengths 32 --concurrencies 1 8 \
-  --warmups 5 --repetitions 3
+pip install -e '.[mlx,qwen35,agents]'
+python -m forge_llm.prepare_qwen35       # downloads the checkpoint into models/
+python tools/forge_chat.py               # simple desktop chat (Tk)
 ```
 
-Tests cover independent model references, artifact corruption, page boundaries,
-admission failure, concurrent decode, copy-on-write, and cancellation cleanup.
-GitHub Actions runs portable host and evidence-contract tests on Linux and macOS;
-Metal and CUDA checks require their respective devices.
+`tools/build_launcher.sh` builds a double-clickable `Forge LLM.app` for that chat
+window.
 
-## Code map
+**Forge Studio.** A local web UI (`python tools/forge_studio.py`, or double-click
+`Forge Studio.command`) for chatting with the model and letting it work in a
+directory. Tool calls, sub-agents and approval prompts for edits and commands
+show up inline in the conversation. It has an optional developer panel, image
+attachments, skills and stdio MCP servers. `--demo` runs the UI without loading
+a model. See [docs/forge-studio.md](docs/forge-studio.md).
 
-| Path | Contents |
+**Agent runtime.** Logical agents share a pool of model worker processes (local
+or remote over authenticated HTTP), spawn bounded child agents, and journal
+everything to SQLite so a run can resume after a crash. Workspace tools are
+confined to one directory, with version-checked edits. See
+[docs/agent-runtime.md](docs/agent-runtime.md).
+
+**Speculative decoding.** See [docs/speculative-decoding.md](docs/speculative-decoding.md).
+On Qwen2.5-0.5B it's up to 4× faster when the output repeats earlier text, and
+1.2–1.5× faster on code and arithmetic.
+
+## Tests
+
+```bash
+# C++ host components (CMake 3.24+, Ninja)
+cmake -S . -B build -G Ninja -DFORGE_ENABLE_CUDA=OFF -DFORGE_BUILD_PYTHON=OFF
+cmake --build build && ctest --test-dir build --output-on-failure
+
+# Python. Metal tests run when mlx is installed and skip otherwise.
+FORGE_INSPECT_MODEL=build/forge-inspect-model PYTHONPATH=python python -m pytest -q
+```
+
+The Metal tests check tiny random Qwen and Gemma models against independent
+references at page boundaries, with mixed-length batches, chunked prefill,
+cancellation and the custom kernels on and off. CI runs the full suite on
+Linux and macOS (without Metal), the C++ tests under ASan/UBSan, and a CUDA
+compile in the `nvidia/cuda` image.
+
+## Layout
+
+| Path | |
 | --- | --- |
-| [python/forge_llm/](python/forge_llm/) | Engine, scheduler, model adapters, physical pages, calibration tools |
-| [src/](src/) and [include/forge/](include/forge/) | Portable C++ allocator, scheduler, artifact validation |
-| [cuda/](cuda/) | CUDA Qwen graph, kernels, cuBLASLt context, memory arenas |
-| [tests/](tests/) | Numerical references, lifecycle tests, evidence audits |
-| [benchmarks/](benchmarks/) | Workloads, measurement drivers, saved reports |
-
-A local chat UI is available at [tools/forge_chat.py](tools/forge_chat.py).
-It defaults to full Qwen3.5-4B with Thinking, attachments and Stop. Its model
-picker also includes native reconstructed Qwen2.5-7B-Instruct. The
-[7B guide](docs/qwen-7b.md) also covers local 4-bit model workers, memory budgets
-and measured qualification limits.
-The [roadmap](docs/roadmap.md) tracks outstanding measurement and NVIDIA validation.
-
-## Speculation and task agents
-
-Opt-in [greedy speculative decoding](docs/speculative-decoding.md) verifies draft
-blocks and rolls back rejected K/V. The controlled local Qwen/Gemma measurements
-cover three fixed 64-token workloads; the numerical contract and limits are
-documented alongside the results.
-
-The [task agent runtime](docs/agent-runtime.md) adds supervised local/remote
-replicas, bounded child agents, durable messages and recovery, workspace tools,
-and executable completion criteria. Logical agents share physical workers.
-Task-quality evidence is tracked separately from protocol tests in
-[agent results](docs/agent-results.md).
-
-See [orchestration and other serving engines](docs/orchestration-and-serving.md)
-for the architecture boundary and comparison with vLLM, SGLang and TensorRT-LLM.
+| [python/forge_llm/](python/forge_llm/) | MLX engine, scheduler, paged KV store, model adapters, Metal kernels, quantization |
+| [python/forge_llm/agents/](python/forge_llm/agents/), [harness/](python/forge_llm/harness/) | Agent runtime and workers; Forge Studio |
+| [src/](src/), [include/forge/](include/forge/) | C++ model file reader, KV block pool, scheduler |
+| [cuda/](cuda/) | CUDA Qwen graph, kernels, cuBLASLt wrapper, memory arenas |
+| [benchmarks/](benchmarks/) | Benchmark drivers, prompt sets, saved FP16 results |
+| [tests/](tests/) | Python and C++ tests |
+| [docs/](docs/) | Design notes and write-ups ([architecture](docs/architecture.md), [design notes](docs/design-notes.md)) |

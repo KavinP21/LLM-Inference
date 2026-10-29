@@ -31,7 +31,7 @@ def test_gpu_workflow_lease_blocks_competing_driver_but_allows_children(monkeypa
             command, env=environment, capture_output=True, text=True, check=False
         )
         assert competitor.returncode != 0
-        assert "Another Forge evidence workflow" in competitor.stderr
+        assert "Another Forge benchmark holds the GPU lock" in competitor.stderr
     # Closing the owning workflow really releases the lease; no busy loop/retry.
     subsequent = subprocess.run(
         command, env=environment, capture_output=True, text=True, check=False
