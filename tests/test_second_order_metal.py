@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 import pytest
+
+pytest.importorskip("mlx.core")
+
 from forge_llm.calibrate_second_order import calibrate
 from forge_llm.mlx_engine import MlxEngine
 from forge_llm.quantization import quantize_model
@@ -11,10 +13,9 @@ from forge_llm.validate_int8 import validate
 from test_quantization import tiny_artifact
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="MLX requires Apple Silicon")
 @pytest.mark.parametrize("family", ["qwen2", "gemma3_text"])
 def test_tiny_calibration_export_and_runtime_contract(tmp_path, monkeypatch, family):
-    import transformers
+    transformers = pytest.importorskip("transformers")
 
     class Tokenizer:
         def __call__(self, text, **kwargs):

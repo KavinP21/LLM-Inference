@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import sys
-
 import numpy as np
 import pytest
+
+pytest.importorskip("mlx.core")
+
 from forge_llm.backends.mlx import MlxQwenModel
 from forge_llm.mlx_engine import MlxEngine
 from forge_llm.runtime import SequenceState
 from test_quantization import tiny_artifact
-
-pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="requires Apple Metal")
 
 
 def options(**kwargs):
