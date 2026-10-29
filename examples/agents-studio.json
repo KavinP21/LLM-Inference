@@ -2,29 +2,63 @@
   "workers": [
     {
       "type": "process",
-      "name": "studio-local",
+      "name": "gemma-4",
+      "group": "driver",
+      "model": "models/gemma-4-26b-a4b-mlx",
+      "tokenizer": "models/gemma-4-26b-a4b-mlx",
+      "backend": "mlx",
+      "runner": "vlm",
+      "max_model_length": 65536,
+      "kv_cache_bytes": 3221225472,
+      "request_timeout": 600,
+      "engine_options": {"draft_model": "models/gemma-4-26b-a4b-assistant"},
+      "native_tool_calls": true
+    },
+    {
+      "type": "process",
+      "name": "qwen-1",
+      "group": "subagent",
+      "lazy": true,
+      "idle_seconds": 600,
       "model": "models/qwen3.5-4b-mlx",
       "tokenizer": "models/qwen3.5-4b-mlx",
       "backend": "mlx",
+      "runner": "vlm",
       "max_model_length": 32768,
-      "kv_cache_bytes": 2147483648,
-      "engine_options": {"prefill_step_size": 256},
-      "native_tool_calls": true,
-      "runner": "qwen35",
-      "enable_thinking": false
+      "kv_cache_bytes": 1073741824,
+      "request_timeout": 600,
+      "native_tool_calls": true
+    },
+    {
+      "type": "process",
+      "name": "qwen-2",
+      "group": "subagent",
+      "lazy": true,
+      "idle_seconds": 600,
+      "model": "models/qwen3.5-4b-mlx",
+      "tokenizer": "models/qwen3.5-4b-mlx",
+      "backend": "mlx",
+      "runner": "vlm",
+      "max_model_length": 32768,
+      "kv_cache_bytes": 1073741824,
+      "request_timeout": 600,
+      "native_tool_calls": true
     }
   ],
   "runtime": {
-    "max_agents": 4,
-    "max_depth": 2,
-    "max_concurrent_generations": 1,
-    "max_output_tokens": 768,
-    "max_steps_per_agent": 20,
-    "max_total_tokens": 128000,
-    "max_context_tokens": 24000,
-    "deadline_seconds": 900,
+    "driver_group": "driver",
+    "subagent_group": "subagent",
+    "max_agents": 6,
+    "max_depth": 1,
+    "max_concurrent_generations": 3,
+    "max_output_tokens": 8192,
+    "max_steps_per_agent": 30,
+    "max_total_tokens": 1000000,
+    "max_context_tokens": 60000,
+    "deadline_seconds": 1800,
+    "generation_timeout_seconds": 600,
     "tool_timeout_seconds": 390,
     "completion_timeout_seconds": 390,
-    "max_tool_result_chars": 3000
+    "max_tool_result_chars": 8000
   }
 }
