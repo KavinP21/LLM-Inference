@@ -112,3 +112,16 @@ def test_eos_completes_and_releases_capacity() -> None:
     assert scheduler.append_token(request_id, 9)
     assert scheduler.request(request_id).state is SequenceState.COMPLETED
     assert cache.stats()["allocated_blocks"] == 0
+
+
+def test_cuda_engine_does_not_fall_back_to_the_mlx_checkpoint(monkeypatch) -> None:
+    import forge_llm
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("CUDA engine constructed without a model path")
+
+    monkeypatch.setattr(forge_llm, "CudaEngine", unexpected)
+    with pytest.raises(ValueError, match="exported .engine"):
+        forge_llm.create_engine()
+    with pytest.raises(ValueError, match="exported .engine"):
+        forge_llm.create_engine(backend="cuda")

@@ -56,7 +56,7 @@ CONFIG = {
 }
 TOOLS = [
     Path(__file__),
-    Path(".github/workflows/qwen-validation.yml"),
+    Path(".github/workflows/ci.yml"),
     *[
         Path("benchmarks") / name
         for name in [
