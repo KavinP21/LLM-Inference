@@ -1861,11 +1861,13 @@ class LocalProcessBackend(RemoteWorkerBackend):
             json.dumps(asdict(config)),
             "--port",
             "0",
+            "--exit-with-parent",
             *(["--defer-load"] if defer_load else []),
         ]
         process = await asyncio.create_subprocess_exec(
             *command,
             env=env,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
