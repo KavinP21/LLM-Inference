@@ -23,7 +23,7 @@ open-ended reasoning or unfamiliar prose. In that case the target uses its
 ordinary single-token decoder. Acceptance feedback reduces the proposal budget
 when rejections dominate and increases it after full acceptance.
 
-## Actual verification and rollback
+## Verification and rollback
 
 Prefill predicts the first output token. After each round, all committed history
 except the latest output token is cached. A round performs **one causal target
@@ -47,7 +47,7 @@ request elapsed time, prefill calls and peak target KV bytes. A reduced number
 of target calls alone is not evidence of a speedup; acceptance, target block
 cost, draft cost and actual wall-clock time all matter.
 
-## Numerical contract
+## Numerics
 
 `verification_mode="block"` uses native FP16 `forward_paged_chunk` to verify
 all candidates together. It is greedy with respect to those target logits and
@@ -117,7 +117,7 @@ replacement writes, draft synchronization, resource failure and cleanup.
 .venv/bin/python -m pytest -q tests/test_speculative.py tests/test_speculative_metal.py
 .venv/bin/python benchmarks/benchmark_speculative.py \
   --model models/qwen2.5-0.5b.engine --tokenizer /path/to/local/qwen/tokenizer \
-  --chat --output benchmarks/results/new-speculative-run/qwen.json \
+  --chat --output benchmark-results/speculative-qwen.json \
   --require-token-parity
 ```
 
@@ -125,15 +125,15 @@ The benchmark uses real prompt/history proposals, fixed output budgets,
 independent canonical outputs, warmups and alternating timing order. It saves
 raw output tokens, acceptance, timing and model/source/tokenizer provenance.
 Text tasks cover copying, repeated code and arithmetic explanation. Its
-`--require-token-parity` option saves the evidence and then fails if any target
+`--require-token-parity` option saves the results and then fails if any target
 greedy token output differs. Oracle/replay draft providers are used in unit
-tests only, never as performance evidence.
+tests only, never for timing.
 
 No CUDA speculative kernel path or multi-request speculative batching is
 implemented by this decoder. No remote-device speed or general speedup is
 implied by local Metal measurements.
 
-### Local evidence, 2026-10-09
+### Results
 
 On the Apple M3 Max, MLX 0.32.2, the supplied FP16 Qwen2.5-0.5B-Instruct and
 Gemma 3-1B-IT artifacts were each tested on the three text tasks above. Each
@@ -164,13 +164,6 @@ The 64-token outputs are truncated fragments. These are inference-throughput
 measurements, not evidence that the models completed the full eight-copy or
 eight-function tasks, or that orchestration improved task success. No external
 engine comparison or distributed/GPU scaling was performed.
-
-Raw outputs, timing samples, token counts, implementation hashes and provenance:
-
-- [Qwen evidence](../benchmarks/results/speculative-published-2026-10-09/qwen.json)
-- [Gemma evidence](../benchmarks/results/speculative-published-2026-10-09/gemma.json)
-
-The final speculative suite passed 105 tests (87 portable, 18 tiny Metal).
 
 ### Optional local MLX checkpoint reconstruction
 

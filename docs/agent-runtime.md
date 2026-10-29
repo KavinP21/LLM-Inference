@@ -54,12 +54,12 @@ ln -s /path/to/local/qwen3-checkpoint models/qwen3-30b-a3b-mlx
 
 For dense Qwen2.5-7B, use `examples/agents-qwen2.5-7b-mlx-lm.json` with a local
 checkpoint linked at `models/qwen2.5-7b-mlx`. This profile uses two 16K workers
-and 1 GiB persistent KV per worker. The [7B guide](qwen-7b.md) separates passing
-inference/chat checks from failed autonomous task gates.
+and 1 GiB persistent KV per worker. The [7B guide](qwen-7b.md) covers where it
+works (inference, chat) and where it doesn't (agent tasks).
 
 The Forge runner remains the default. `examples/agents-local.json` uses its
-reconstructed 7B artifact; that model failed coding qualification and should be
-treated as a diagnostic configuration. `examples/agents-local-smoke.json`
+reconstructed 7B artifact; that model fails the coding tasks, so treat it as a
+test configuration. `examples/agents-local-smoke.json`
 uses the smaller 0.5B model for transport smoke tests.
 
 For a coding task, add `--allow-write --allow-tests`. Writes require a version
@@ -104,9 +104,8 @@ request at a time, context/persistent-KV admission, cancellation, and cleanup.
 Health/resume identity includes checkpoint/config hashes and library versions.
 It reports persistent K/V separately from weights and transient arrays.
 Forge kernel, prefix-cache and speculative options are rejected for this runner.
-This adapter's measurements do not qualify Forge's own W4A16 implementation.
 The [upstream API](https://github.com/ml-explore/mlx-lm/blob/v0.28.3/mlx_lm/generate.py)
-is a dependency, not a claim of original model execution.
+is a dependency; this path doesn't use Forge's own graph.
 
 Forge can also import an already local MLX affine-4-bit Qwen2 checkpoint into
 the existing FP16 artifact format:
@@ -115,10 +114,9 @@ the existing FP16 artifact format:
 forge-import-mlx /path/to/local/mlx-qwen2-checkpoint models/qwen-reconstructed.engine
 ```
 
-The import uses actual `mlx.dequantize`, records source hashes, validates the
-tensor contract and refuses overwrite. It reconstructs the **quantized model**;
-it does not recover original FP16 weights, run native 4-bit inference, or change
-the earlier INT8 acceptance gates. The local cached 7B conversion produced a
+The import uses `mlx.dequantize`, records source hashes, validates the tensor
+names and shapes, and refuses to overwrite. It reconstructs the **quantized model**;
+it doesn't recover the original FP16 weights or run native 4-bit inference. The local cached 7B conversion produced a
 15.23 GB artifact; two replicas need substantial unified memory. Point each
 worker's `model` and `tokenizer` at the corresponding artifact/source tokenizer.
 
@@ -165,8 +163,8 @@ journal event IDs, arguments and recovery cursors let the parent check decisive
 claims. Listings, empty searches, failed reads, mutations and recursive recall
 copies are excluded. Excerpts and total payloads are bounded; full observations
 remain in the journal. Missing measurements stay unknown rather than becoming
-zeros or approval claims. Recorded source evidence does not itself certify an
-arbitrary natural-language conclusion.
+zeros or approval claims. Citing a source doesn't make a conclusion drawn
+from it correct.
 
 Spawning is bounded by total agents, hierarchy depth, actions per agent, total
 tokens, concurrency and wall-clock deadline. Capacity comes from the operator's
@@ -189,11 +187,11 @@ and lets the agent use its remaining budget. Rejections and validator timeouts a
 bounded and journaled; replay does not silently repeat a stored decision. The
 Python API also accepts an async `completion_validator` returning
 `CompletionCheck(passed, feedback)`. Select checks appropriate to the task;
-format validation does not certify factual correctness.
+a format check doesn't verify that the facts are right.
 
 Configured acceptance-test files are protected from workspace-tool edits, and
 their original hashes are checked before and after testing and across CLI resume.
-Changing the assertions cannot qualify a repair. These checks are not a sandbox
+Editing the assertions can't make a repair pass. These checks are not a sandbox
 against arbitrary repository Python code; select trusted tests that reflect the
 requested behavior. The benchmark's oracle also lives outside the agent workspace.
 
@@ -236,7 +234,7 @@ journal; an initial task that cannot fit fails explicitly.
 
 Run one worker for each desired replica on its host. Select `--backend cuda` or
 `mlx`; a process worker's `cuda_visible_devices` setting isolates its GPU choice.
-The original CUDA engine still needs NVIDIA device qualification.
+The CUDA engine hasn't been run on an NVIDIA GPU yet.
 
 ```bash
 export FORGE_WORKER_TOKEN='a-long-random-credential'
@@ -267,22 +265,48 @@ explicit FP16 numerical boundary in [speculative-decoding.md](speculative-decodi
 Use sequential verification for the canonical reduction path; it has no speculative
 speed claim. Speculation is disabled by default.
 
-## Validation
+## Testing
 
-Control tests use scripted decisions and injected faults. They exercise real
-HTTP endpoints, process ownership, concurrency, cancellation, retries, durability,
-budgets, dependency failures, safe edits, context projection and recovery. They
-establish runtime behavior, not model intelligence.
+The runtime tests drive scripted "models" through real HTTP endpoints and worker
+processes, with injected faults. They cover concurrency, cancellation, retries,
+journaling and recovery, budgets, dependency failures, version-checked edits and
+context compaction. They test the runtime's behavior, not how capable a model is
+at the tasks.
 
 ```bash
 PYTHONPATH=python pytest -q tests/test_agent_runtime.py tests/test_agent_workers.py \
   tests/test_agent_tools.py tests/test_agent_integration.py tests/test_request_history.py
 PYTHONPATH=python python benchmarks/evaluate_agents.py \
-  --config examples/agents-local.json --output benchmarks/results/new-agent-evaluation.json
+  --config examples/agents-local.json --output benchmark-results/agent-evaluation.json
 ```
 
-The task evaluator compares single-agent and delegated modes on a code repair
-graded by fresh executable tests and a two-document synthesis graded against exact
-facts. It saves model/source identity, all decisions and failures, time, token
-usage and child counts. These are two controlled tasks, not broad capability or
-multi-computer throughput evidence. See the [qualification report](agent-results.md).
+## How real models did
+
+`benchmarks/evaluate_agents.py` runs two small tasks, once with a single agent
+and once delegating to two children:
+
+- **Code repair:** fix a buggy `mean()` and its empty-input case. It's graded with
+  a separate copy of the tests the agent can't edit, plus four extra inputs the
+  agent never sees.
+- **Document analysis:** read two reports and return eight typed facts, including
+  which evidence was excluded and which claims are unverified. It's graded field
+  by field.
+
+| Model (runner) | Code, single / delegated | Docs, single / delegated |
+| --- | --- | --- |
+| Qwen3.5-4B, 4-bit (MLX-VLM) | Pass, 25.9 s / Pass, 56.1 s | Pass, 8.4 s / Pass, 51.4 s |
+| Qwen3-30B-A3B, 4-bit (MLX-LM) | Pass, 17.4 s / Pass, 110.2 s | Pass, 8.8 s / Pass, 25.6 s |
+| Qwen2.5-7B-Instruct, 4-bit (MLX-LM) | Fail / Fail | Pass / Fail |
+| Qwen2.5-0.5B (native) | Fail / Fail | Fail / Fail |
+
+Each delegated run spawned and completed two children. Delegation was slower
+every time and didn't improve correctness on these tasks, so it's only worth
+using for genuinely independent pieces of work. Qwen3.5's first delegated docs
+run failed because the strict parser rejected valid XML tool calls that had a
+sentence of explanation around them. The parser now accepts that. The 7B model
+mostly failed by making invalid edits, looping on reads, or writing an incomplete
+synthesis.
+
+These are two small tasks used during development, so they don't say much about
+general reliability. Everything ran on one M3 Max with two replicas on the same
+GPU.

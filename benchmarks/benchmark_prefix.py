@@ -14,7 +14,6 @@ from forge_llm.benchmark import (
 )
 from forge_llm.mlx_engine import MlxEngine
 from gpu_guard import exclusive_gpu_workflow
-from run_second_order_checkpoint import save
 
 
 def measure(model, mode, length, concurrency, warmups=5, repetitions=3):
@@ -117,7 +116,9 @@ def main():
         raise FileExistsError(args.output)
     with exclusive_gpu_workflow():
         report = measure(args.model, args.mode, args.prompt_length, args.concurrency)
-    save(args.output, report)
+    with args.output.open("x") as stream:
+        json.dump(report, stream, indent=2, sort_keys=True, allow_nan=False)
+        stream.write("\n")
     print(json.dumps(report["aggregate"], indent=2), flush=True)
 
 
