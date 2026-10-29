@@ -10,7 +10,7 @@ from forge_llm.agents.media import materialize_media, media_from_file, validate_
 from forge_llm.agents.protocol import ChatMessage
 from forge_llm.agents.runtime import AgentRuntime
 from forge_llm.agents.store import AgentStore
-from forge_llm.runtime import TokenEvent
+from forge_llm.vlm_runner import RunnerResult
 
 
 @pytest.fixture
@@ -142,85 +142,59 @@ def test_media_reserves_advertised_context_before_inference(attachment):
     assert result.status == "failed" and backend.calls == 0
 
 
-class Tokenizer:
-    chat_template = "fixture"
-    eos_token_id = 248044
+class Runner:
+    """Stands in for VlmRunner: records the media files it was given."""
 
-
-class Engine:
-    max_model_length = 32768
-    backend = "mlx"
-    model = SimpleNamespace(
-        config=SimpleNamespace(
-            vocab_size=248320, eos_token_id=248044, model_type="qwen3_5_text"
-        )
-    )
-    metadata = {"runner": "qwen35", "runner_version": "0.7.6"}
-    checkpoint_identity = {}
+    max_context_tokens = 32768
+    model_type = "qwen3_5"
+    tokenizer = None
 
     def __init__(self):
-        self.prepared = None
         self.paths = []
-        self.forgotten = False
-        self.submitted = 0
+        self.calls = []
         self.input_tokens = 17
-        self.discarded = 0
 
-    def set_request_guard(self, guard):
-        self.guard = guard
-
-    def prepare_chat(self, turns, **options):
-        self.guard()
-        self.prepared = (turns, options)
+    def generate(self, turns, *, max_tokens, max_context_tokens=None, **options):
+        self.calls.append((turns, options))
         for turn in turns:
-            if isinstance(turn["content"], list):
-                for part in turn["content"]:
-                    if part["type"] == "image":
-                        self.paths.append(part["image"])
-                        assert Path(part["image"]).is_file()
-        return SimpleNamespace(input_tokens=self.input_tokens)
-
-    def submit(self, prepared, maximum, eos):
-        assert prepared.input_tokens == self.input_tokens and eos == [248044]
-        self.submitted += 1
-        return 1
-
-    def step(self):
-        return [TokenEvent(1, 248044, True)]
-
-    def response_metadata(self, tokens, **options):
-        return SimpleNamespace(text="Observed the operator's image")
-
-    def forget(self, request):
-        self.forgotten = True
+            for item in turn.get("media", ()):
+                assert Path(item["path"]).is_file() and len(item["key"]) == 64
+                self.paths.append(item["path"])
+        limit = max_context_tokens or self.max_context_tokens
+        if self.input_tokens + max_tokens > limit:
+            raise ValueError(f"prompt exceeds the {limit}-token context")
+        return RunnerResult(
+            "Observed the operator's image",
+            "",
+            True,
+            "stop",
+            self.input_tokens,
+            1,
+            0,
+            "qwen3_coder_xml",
+        )
 
     def stats(self):
-        return {"active_requests": 0}
-
-    def discard_prepared(self):
-        self.discarded += 1
-        self.last_prepared = self.prepared
-        self.prepared = None
+        return {}
 
     def close(self):
         pass
 
 
-def test_qwen35_actor_uses_full_processor_and_removes_request_media(
+def test_vlm_worker_passes_request_media_and_removes_it_afterwards(
     attachment, tmp_path
 ):
-    engine = Engine()
+    runner = Runner()
     backend = LocalForgeBackend(
         WorkerConfig(
             str(tmp_path),
             str(tmp_path),
-            runner="qwen35",
+            runner="vlm",
             backend="mlx",
             max_model_length=32768,
             kv_cache_bytes=2 << 30,
         ),
-        engine_factory=lambda: engine,
-        tokenizer_factory=Tokenizer,
+        engine_factory=lambda: runner,
     )
 
     async def run():
@@ -230,11 +204,10 @@ def test_qwen35_actor_uses_full_processor_and_removes_request_media(
             )
             assert result.text == "Observed the operator's image"
             assert result.input_tokens == 17 and result.output_tokens == 1
+            assert result.dialect == "qwen3_coder_xml"
         finally:
             await backend.close()
 
     asyncio.run(run())
-    assert engine.forgotten
-    assert engine.last_prepared[1]["enable_thinking"] is False
-    assert engine.prepared is None and engine.discarded == 1
-    assert all(not Path(path).exists() for path in engine.paths)
+    assert runner.calls[0][1]["effort"] == "off"
+    assert runner.paths and all(not Path(path).exists() for path in runner.paths)
