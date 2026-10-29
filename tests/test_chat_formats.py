@@ -80,6 +80,13 @@ def test_split_thinking_for_both_families():
     assert split_thinking("<think>x</think>\n\nY", QWEN35) == ("Y", "x", True)
     assert split_thinking("<think>partial", QWEN35) == ("", "partial", False)
     assert split_thinking("Plain answer", QWEN35) == ("Plain answer", "", True)
+    # A quoted marker inside the thinking doesn't end it.
+    quoted = '<think>Qwen closes with "</think>" here.</think>\n\nAnswer'
+    assert split_thinking(quoted, QWEN35) == (
+        "Answer",
+        'Qwen closes with "</think>" here.',
+        True,
+    )
 
 
 def test_gemma_history_keeps_raw_arguments_and_names_tool_results():
