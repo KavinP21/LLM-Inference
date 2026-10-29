@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
 
 import pytest
 from forge_llm.agents.native_tools import (
@@ -272,15 +271,15 @@ def test_schema_transport_count_bytes_finiteness_and_copy_bounds():
 
 
 def test_local_qwen_pretrained_native_template_and_decode_preserve_calls():
-    directory = Path(
-        "/Users/kavinprabhakar/.cache/huggingface/hub/models--mlx-community--Qwen2.5-7B-Instruct-4bit/snapshots/c26a38f6a37d0a51b4e9a1eb3026530fa35d9fed"
-    )
-    if not (directory / "tokenizer_config.json").is_file():
-        pytest.skip("optional cached Qwen tokenizer integration")
     transformers = pytest.importorskip("transformers")
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        directory, local_files_only=True, trust_remote_code=False
-    )
+    try:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            "mlx-community/Qwen2.5-7B-Instruct-4bit",
+            local_files_only=True,
+            trust_remote_code=False,
+        )
+    except OSError:
+        pytest.skip("Qwen2.5-7B tokenizer is not in the local Hugging Face cache")
     specs = build_tool_specs(SCHEMAS, controls=["finish"])
     prompt = tokenizer.apply_chat_template(
         [{"role": "user", "content": "Read calc.py."}],
