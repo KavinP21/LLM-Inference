@@ -18,3 +18,4 @@ profiles/
 .forge/
 *.sqlite-wal
 *.sqlite-shm
+/Forge LLM.app/
