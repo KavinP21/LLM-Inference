@@ -59,7 +59,7 @@ TOOLS = [
     Path(__file__),
     Path("benchmarks/benchmark_prefix.py"),
     Path("benchmarks/gpu_guard.py"),
-    Path(".github/workflows/prefix-cache.yml"),
+    Path(".github/workflows/ci.yml"),
     Path("docs/prefix-cache.md"),
 ]
 
