@@ -378,8 +378,10 @@ class StudioService:
         runtime_options = dict(self.config.get("runtime", {}))
         for key, default, low, high in (
             ("max_agents", 4, 1, 16),
-            ("max_total_tokens", 128_000, 4000, 1_000_000),
-            ("max_steps_per_agent", 20, 2, 64),
+            # Every step counts its whole prompt, cached or not, so a long
+            # coding task goes through tens of millions of tokens.
+            ("max_total_tokens", 128_000, 4000, 200_000_000),
+            ("max_steps_per_agent", 20, 2, 500),
         ):
             value = payload.get(key, runtime_options.get(key, default))
             if type(value) is not int or not low <= value <= high:
