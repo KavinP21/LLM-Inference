@@ -26,7 +26,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +35,13 @@ from .media import MAX_MEDIA_REQUEST_BYTES, MAX_TOTAL_MEDIA_BYTES, validate_medi
 from .protocol import ChatMessage, Generation, ModelBackend
 
 DIALECTS = frozenset({"json", "qwen3_coder_xml", "gemma4"})
+
+
+def _installed_version(package: str) -> str | None:
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        return None
 
 
 def validate_options(options: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -373,12 +380,6 @@ class LocalForgeBackend:
         self.native_call_dialect = (
             "qwen3_coder_xml" if config.runner == "qwen35" else "json"
         )
-        if config.runner == "vlm":
-            from ..chat_formats import family_for
-
-            config_file = Path(config.model) / "config.json"
-            model_type = json.loads(config_file.read_text()).get("model_type", "")
-            self.native_call_dialect = family_for(model_type).dialect
         # Latest decoded text per in-flight request, for live progress.
         self.partial: dict[str, str] = {}
         self.supports_native_tools = config.native_tool_calls
@@ -417,6 +418,25 @@ class LocalForgeBackend:
             "tokenizer_signature": None,
             "draft_model_data_sha256": None,
         }
+        if config.runner == "vlm":
+            # Everything that identifies a vlm worker comes from its files, so
+            # it's known (and the same) before and after the model loads.
+            from ..chat_formats import family_for
+            from ..vlm_runner import checkpoint_fingerprint
+
+            config_file = Path(config.model) / "config.json"
+            model_type = json.loads(config_file.read_text()).get("model_type", "")
+            self.native_call_dialect = family_for(model_type).dialect
+            self._runner_metadata.update(
+                runner_version=_installed_version("mlx-vlm"),
+                family=family_for(model_type).name,
+            )
+            self._artifact_identity.update(checkpoint_fingerprint(config.model))
+            draft = config.engine_options.get("draft_model")
+            if draft:
+                self._artifact_identity["draft_model_data_sha256"] = (
+                    checkpoint_fingerprint(draft)["model_data_sha256"]
+                )
 
     def _load(self) -> None:
         if self._engine is not None:
@@ -688,7 +708,7 @@ class LocalForgeBackend:
             raise ValueError("EOS token IDs do not fit the model vocabulary")
 
     def _load_vlm(self) -> None:
-        from ..vlm_runner import VlmRunner, checkpoint_fingerprint
+        from ..vlm_runner import VlmRunner
 
         options = self.config.engine_options
         runner = VlmRunner(
@@ -706,14 +726,6 @@ class LocalForgeBackend:
         self._actual_backend = "mlx"
         self._context_limit = runner.max_context_tokens
         self._model_type = runner.model_type
-        self._runner_metadata.update(
-            runner_version=version("mlx-vlm"), family=runner.family.name
-        )
-        self._artifact_identity.update(checkpoint_fingerprint(self.config.model))
-        if options.get("draft_model"):
-            self._artifact_identity["draft_model_data_sha256"] = checkpoint_fingerprint(
-                options["draft_model"]
-            )["model_data_sha256"]
 
     async def start(self) -> LocalForgeBackend:
         with self._lock:
@@ -730,6 +742,7 @@ class LocalForgeBackend:
             "schema": "forge_worker_v1",
             "worker_id": self.config.worker_id,
             "ready": self._engine is not None and not closed,
+            "loaded": self._engine is not None,
             "model": self.config.model,
             "tokenizer": self.config.tokenizer,
             "backend": self._actual_backend,
@@ -740,7 +753,7 @@ class LocalForgeBackend:
             "capabilities": ["greedy_chat", "cancellation", "replica"],
             "native_tool_calls": self.supports_native_tools,
             "enable_thinking": self.config.enable_thinking,
-            "supports_media": self.config.runner == "qwen35",
+            "supports_media": self.config.runner in {"qwen35", "vlm"},
             "supports_context_limits": self.supports_context_limits,
             "native_call_dialect": self.native_call_dialect,
             "speculative": self.config.speculative,
@@ -1286,6 +1299,8 @@ class RemoteWorkerBackend:
         self.request_timeout = _positive(request_timeout, "request_timeout")
         self.connect_timeout = _positive(connect_timeout, "connect_timeout")
         self.poll_interval = _positive(poll_interval, "poll_interval")
+        # Latest decoded text per in-flight request, for live progress.
+        self.partial: dict[str, str] = {}
         self.max_response_bytes = max_response_bytes
         if (
             type(max_request_bytes) is not int
@@ -1511,13 +1526,18 @@ class RemoteWorkerBackend:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise GenerationTimeoutError("remote generation deadline exceeded")
-                await asyncio.sleep(min(self.poll_interval, remaining))
+                if isinstance(result.get("partial"), str):
+                    self.partial[request_id] = result["partial"]
+                # The worker holds this request until new text arrives or the
+                # job finishes, so completion is seen immediately.
+                since = len(self.partial.get(request_id, ""))
+                wait = round(min(0.5, max(0.0, remaining - 0.05)), 3)
                 result = await asyncio.to_thread(
                     self._http,
                     "GET",
-                    path,
+                    f"{path}?wait={wait}&since={since}",
                     None,
-                    min(self.connect_timeout, max(0.001, deadline - time.monotonic())),
+                    self.connect_timeout + wait,
                 )
             if result.get("status") != "completed" or not isinstance(
                 result.get("generation"), dict
@@ -1577,6 +1597,7 @@ class RemoteWorkerBackend:
             raise
         finally:
             self._active.discard(request_id)
+            self.partial.pop(request_id, None)
 
     @property
     def max_model_length(self):
@@ -1604,6 +1625,122 @@ class RemoteWorkerBackend:
         )
 
 
+class LazyBackend:
+    """Starts a worker on its first request and stops it after it has been
+    idle for ``idle_seconds``, so rarely used replicas don't hold memory.
+
+    Its identity comes from the configuration, so it's the same whether or not
+    the process is running.
+    """
+
+    def __init__(
+        self,
+        config: WorkerConfig,
+        start: Callable[[], Any],
+        *,
+        idle_seconds: float | None = 600.0,
+        prestart: bool = False,
+    ) -> None:
+        self.config = config
+        self._start = start
+        self.idle_seconds = idle_seconds
+        self.backend: Any = None
+        self._lock = asyncio.Lock()
+        # With prestart the process is launched right away (imports take most
+        # of its startup) and loads the model on its first request.
+        self._starting = asyncio.ensure_future(start()) if prestart else None
+        self._active = 0
+        self._idle_timer: asyncio.TimerHandle | None = None
+        probe = LocalForgeBackend(config)
+        self._identity = probe.health()
+        probe._executor.shutdown(wait=False)
+        self.native_call_dialect = probe.native_call_dialect
+        self.supports_native_tools = config.native_tool_calls
+        self.supports_context_limits = True
+        self.max_concurrency = 1
+        self.max_model_length = config.max_model_length
+
+    @property
+    def started(self) -> bool:
+        return self.backend is not None
+
+    @property
+    def partial(self) -> dict[str, str]:
+        return getattr(self.backend, "partial", {}) if self.backend else {}
+
+    async def _ensure(self) -> Any:
+        async with self._lock:
+            if self.backend is None:
+                starting, self._starting = self._starting, None
+                try:
+                    self.backend = await (starting or self._start())
+                except Exception:
+                    if starting is None:
+                        raise
+                    # A failed prestart shouldn't poison later requests.
+                    self.backend = await self._start()
+            return self.backend
+
+    def _arm_idle_timer(self) -> None:
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        if self.idle_seconds and self._active == 0 and self.backend is not None:
+            loop = asyncio.get_running_loop()
+            self._idle_timer = loop.call_later(
+                self.idle_seconds, lambda: asyncio.ensure_future(self._stop_if_idle())
+            )
+
+    async def _stop_if_idle(self) -> None:
+        async with self._lock:
+            if self._active == 0 and self.backend is not None:
+                backend, self.backend = self.backend, None
+                await backend.close()
+
+    async def _call(self, method: str, *args: Any, **kwargs: Any) -> Generation:
+        self._active += 1
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        try:
+            backend = await self._ensure()
+            return await getattr(backend, method)(*args, **kwargs)
+        finally:
+            self._active -= 1
+            self._arm_idle_timer()
+
+    async def generate(self, *args: Any, **kwargs: Any) -> Generation:
+        return await self._call("generate", *args, **kwargs)
+
+    async def generate_action(self, *args: Any, **kwargs: Any) -> Generation:
+        return await self._call("generate_action", *args, **kwargs)
+
+    async def cancel(self, request_id: str) -> None:
+        if self.backend is not None:
+            await self.backend.cancel(request_id)
+
+    async def health(self) -> dict[str, Any]:
+        if self.backend is None:
+            return {**self._identity, "ready": True, "started": False}
+        health = self.backend.health()
+        if asyncio.iscoroutine(health):
+            health = await health
+        return {**health, "started": True}
+
+    async def close(self) -> None:
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+        if self._starting is not None:
+            starting, self._starting = self._starting, None
+            backend = await asyncio.gather(starting, return_exceptions=True)
+            if not isinstance(backend[0], BaseException):
+                await backend[0].close()
+        async with self._lock:
+            if self.backend is not None:
+                backend, self.backend = self.backend, None
+                await backend.close()
+
+
 class WorkerPool:
     """Bounded least-loaded replica routing, optionally pinned by worker name.
 
@@ -1620,6 +1757,7 @@ class WorkerPool:
         per_worker_concurrency: int = 1,
         max_route_history: int = 1024,
         route_ttl: float = 600.0,
+        groups: Mapping[str, str] | None = None,
     ) -> None:
         if (
             type(max_pending) is not int
@@ -1658,6 +1796,38 @@ class WorkerPool:
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._closed = False
         self._cursor = 0
+        # Worker name -> group (e.g. "driver", "subagent"). Requests can ask for
+        # a group; ungrouped requests may use any replica.
+        self.groups = dict(groups or {})
+        if set(self.groups) - set(self.backends):
+            raise ValueError("groups name unknown workers")
+        # Affinity key (an agent) -> the replica that holds its prompt cache.
+        self._affinity: OrderedDict[str, str] = OrderedDict()
+
+    # The runtime passes group/affinity only to backends that route.
+    routes = True
+
+    def members(self, group: str | None) -> list[str]:
+        if group is None:
+            return list(self.backends)
+        chosen = [name for name in self.backends if self.groups.get(name) == group]
+        return chosen or list(self.backends)
+
+    def context_limit(self, group: str | None) -> int | None:
+        """Smallest context window among the replicas a group can use."""
+        limits = [
+            getattr(self.backends[name], "max_model_length", None)
+            for name in self.members(group)
+        ]
+        limits = [limit for limit in limits if type(limit) is int and limit > 0]
+        return min(limits) if limits else None
+
+    def partial(self, request_id: str) -> str | None:
+        for backend in self.backends.values():
+            text = getattr(backend, "partial", {}).get(request_id)
+            if text is not None:
+                return text
+        return None
 
     @property
     def loads(self) -> dict[str, int]:
@@ -1720,6 +1890,8 @@ class WorkerPool:
         worker: str | None = None,
         max_context_tokens: int | None = None,
         options: dict[str, Any] | None = None,
+        group: str | None = None,
+        affinity: str | None = None,
     ) -> Generation:
         return await self._dispatch(
             messages,
@@ -1728,6 +1900,8 @@ class WorkerPool:
             worker=worker,
             max_context_tokens=max_context_tokens,
             options=options,
+            group=group,
+            affinity=affinity,
         )
 
     async def generate_action(
@@ -1740,6 +1914,8 @@ class WorkerPool:
         worker: str | None = None,
         max_context_tokens: int | None = None,
         options: dict[str, Any] | None = None,
+        group: str | None = None,
+        affinity: str | None = None,
     ) -> Generation:
         if not self.supports_native_tools:
             raise RequestValidationError(
@@ -1756,6 +1932,8 @@ class WorkerPool:
             tool_specs=specs,
             max_context_tokens=max_context_tokens,
             options=options,
+            group=group,
+            affinity=affinity,
         )
 
     async def _dispatch(
@@ -1768,6 +1946,8 @@ class WorkerPool:
         tool_specs: list[dict[str, Any]] | None = None,
         max_context_tokens: int | None = None,
         options: dict[str, Any] | None = None,
+        group: str | None = None,
+        affinity: str | None = None,
     ) -> Generation:
         messages = validate_request(
             messages, max_tokens, request_id, allow_tool_messages=tool_specs is not None
@@ -1810,17 +1990,32 @@ class WorkerPool:
                 while selected is None:
                     if self._closed:
                         raise WorkerUnavailableError("worker pool is closed")
-                    names = [worker] if worker else list(self.backends)
+                    names = [worker] if worker else self.members(group)
                     available = [
                         name for name in names if self._loads[name] < self._limits[name]
                     ]
                     if available:
-                        minimum = min(self._loads[name] for name in available)
-                        ties = [
-                            name for name in available if self._loads[name] == minimum
-                        ]
-                        selected = ties[self._cursor % len(ties)]
-                        self._cursor += 1
+                        preferred = self._affinity.get(affinity) if affinity else None
+                        if preferred in available:
+                            # Same replica as last time: its cache holds this
+                            # agent's prompt.
+                            selected = preferred
+                        else:
+
+                            def rank(name: str) -> tuple[bool, int]:
+                                # Running replicas first, then the least loaded.
+                                started = getattr(self.backends[name], "started", True)
+                                return (not started, self._loads[name])
+
+                            best = min(rank(name) for name in available)
+                            ties = [name for name in available if rank(name) == best]
+                            selected = ties[self._cursor % len(ties)]
+                            self._cursor += 1
+                        if affinity:
+                            self._affinity[affinity] = selected
+                            self._affinity.move_to_end(affinity)
+                            while len(self._affinity) > self.max_route_history:
+                                self._affinity.popitem(last=False)
                         self._loads[selected] += 1
                         self._requests[request_id] = selected
                         self._routes[request_id] = (selected, time.monotonic())
@@ -1894,7 +2089,11 @@ class LocalProcessBackend(RemoteWorkerBackend):
 
     @classmethod
     async def start(
-        cls, config: WorkerConfig, *, startup_timeout: float = 120.0
+        cls,
+        config: WorkerConfig,
+        *,
+        startup_timeout: float = 120.0,
+        defer_load: bool = False,
     ) -> LocalProcessBackend:
         _positive(startup_timeout, "startup_timeout")
         token = secrets.token_urlsafe(32)
@@ -1910,6 +2109,7 @@ class LocalProcessBackend(RemoteWorkerBackend):
             json.dumps(asdict(config)),
             "--port",
             "0",
+            *(["--defer-load"] if defer_load else []),
         ]
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -1952,7 +2152,7 @@ class LocalProcessBackend(RemoteWorkerBackend):
                 max_concurrency=1,
                 request_timeout=config.request_timeout,
                 max_request_bytes=MAX_MEDIA_REQUEST_BYTES
-                if config.runner == "qwen35"
+                if config.runner in {"qwen35", "vlm"}
                 else 1 << 20,
             )
             backend.process = process
