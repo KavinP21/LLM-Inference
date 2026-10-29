@@ -18,6 +18,8 @@ add_library(forge_host
     src/kv_cache.cpp
     src/scheduler.cpp)
 target_include_directories(forge_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# Linked into the _forge Python module, so it has to be PIC on Linux too.
+set_target_properties(forge_host PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_options(forge_host PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic;-Wconversion>)
 
