@@ -1286,6 +1286,8 @@ class RemoteWorkerBackend:
         self.request_timeout = _positive(request_timeout, "request_timeout")
         self.connect_timeout = _positive(connect_timeout, "connect_timeout")
         self.poll_interval = _positive(poll_interval, "poll_interval")
+        # Latest decoded text per in-flight request, for live progress.
+        self.partial: dict[str, str] = {}
         self.max_response_bytes = max_response_bytes
         if (
             type(max_request_bytes) is not int
@@ -1511,13 +1513,18 @@ class RemoteWorkerBackend:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise GenerationTimeoutError("remote generation deadline exceeded")
-                await asyncio.sleep(min(self.poll_interval, remaining))
+                if isinstance(result.get("partial"), str):
+                    self.partial[request_id] = result["partial"]
+                # The worker holds this request until new text arrives or the
+                # job finishes, so completion is seen immediately.
+                since = len(self.partial.get(request_id, ""))
+                wait = round(min(0.5, max(0.0, remaining - 0.05)), 3)
                 result = await asyncio.to_thread(
                     self._http,
                     "GET",
-                    path,
+                    f"{path}?wait={wait}&since={since}",
                     None,
-                    min(self.connect_timeout, max(0.001, deadline - time.monotonic())),
+                    self.connect_timeout + wait,
                 )
             if result.get("status") != "completed" or not isinstance(
                 result.get("generation"), dict
@@ -1577,6 +1584,7 @@ class RemoteWorkerBackend:
             raise
         finally:
             self._active.discard(request_id)
+            self.partial.pop(request_id, None)
 
     @property
     def max_model_length(self):
