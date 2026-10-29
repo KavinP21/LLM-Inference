@@ -110,27 +110,6 @@ def validate_context_limit(value: int | None) -> int | None:
     return value
 
 
-def _qwen35_implementation_hash(directory: Path | None = None) -> str:
-    directory = directory or Path(__file__).resolve().parent.parent
-    files = (
-        "qwen35_engine.py",
-        "qwen35_checkpoint.py",
-        "qwen35_state.py",
-        "qwen35_speculative.py",
-        "speculative.py",
-        "agents/backends.py",
-        "agents/worker.py",
-        "agents/media.py",
-        "agents/protocol.py",
-        "agents/native_tools.py",
-    )
-    manifest = {
-        name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
-        for name in files
-    }
-    return hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
-
-
 def validate_request(
     messages: Sequence[ChatMessage],
     max_tokens: int,
@@ -209,12 +188,12 @@ class WorkerConfig:
             raise ValueError("model and tokenizer are required")
         if self.backend not in {"auto", "mlx", "cuda"}:
             raise ValueError("backend must be auto, mlx, or cuda")
-        if self.runner not in {"forge", "mlx_lm", "qwen35", "vlm"}:
-            raise ValueError("runner must be forge, mlx_lm, qwen35 or vlm")
+        if self.runner not in {"forge", "vlm"}:
+            raise ValueError("runner must be forge or vlm")
         if type(self.enable_thinking) is not bool:
             raise TypeError("enable_thinking must be a boolean")
-        if self.enable_thinking and self.runner not in {"qwen35", "vlm"}:
-            raise ValueError("thinking configuration requires the qwen35 or vlm runner")
+        if self.enable_thinking and self.runner != "vlm":
+            raise ValueError("thinking configuration requires the vlm runner")
         if self.runner == "vlm":
             if self.backend == "cuda" or self.cuda_visible_devices is not None:
                 raise ValueError("the vlm runner requires Apple MLX execution")
@@ -244,76 +223,6 @@ class WorkerConfig:
                 raise ValueError(
                     "vlm model and tokenizer must reference the same local directory"
                 )
-        if self.runner == "qwen35":
-            if self.backend == "cuda" or self.cuda_visible_devices is not None:
-                raise ValueError("qwen35 requires Apple MLX execution")
-            if not self.local_files_only:
-                raise ValueError("qwen35 requires an already local checkpoint")
-            if not isinstance(
-                self.engine_options, dict
-            ) or self.engine_options.keys() - {
-                "prefill_step_size",
-                "max_image_pixels",
-                "max_video_frames",
-                "max_video_seconds",
-                "temperature",
-                "top_p",
-                "top_k",
-                "presence_penalty",
-            }:
-                raise ValueError("unsupported qwen35 engine options")
-            if (
-                not Path(self.model).is_dir()
-                or Path(self.model).resolve() != Path(self.tokenizer).resolve()
-            ):
-                raise ValueError(
-                    "qwen35 model and tokenizer must reference the same local directory"
-                )
-            if self.speculative is not None and (
-                not isinstance(self.speculative, dict)
-                or set(self.speculative)
-                - {"draft_tokens", "verification_mode", "adaptive"}
-                or type(self.speculative.get("draft_tokens", 4)) is not int
-                or not 1 <= self.speculative.get("draft_tokens", 4) <= 8
-                or self.speculative.get("verification_mode", "block")
-                not in {"block", "sequential"}
-                or type(self.speculative.get("adaptive", True)) is not bool
-                or self.engine_options.get("temperature", 0) != 0
-                or self.engine_options.get("presence_penalty", 0) != 0
-            ):
-                raise ValueError(
-                    "Qwen3.5 speculation requires bounded Qwen3.5 options and unmodified greedy sampling"
-                )
-        if self.runner == "mlx_lm":
-            if self.backend == "cuda" or self.cuda_visible_devices is not None:
-                raise ValueError("mlx_lm runner requires the MLX device backend")
-            if not self.local_files_only or self.speculative is not None:
-                raise ValueError(
-                    "mlx_lm runner requires local checkpoints and does not use Forge speculation"
-                )
-            if not isinstance(
-                self.engine_options, dict
-            ) or self.engine_options.keys() - {"prefill_step_size"}:
-                raise ValueError(
-                    "mlx_lm runner accepts only prefill_step_size; Forge kernel, decode, and prefix options are unsupported"
-                )
-            chunk = self.engine_options.get("prefill_step_size", 256)
-            if (
-                type(chunk) is not int
-                or not 1 <= chunk <= 2048
-                or (256 % chunk != 0 and chunk % 256 != 0)
-            ):
-                raise ValueError(
-                    "external prefill_step_size must divide 256 or be a multiple of 256, up to 2048"
-                )
-            if (
-                not Path(self.model).is_dir()
-                or not Path(self.tokenizer).is_dir()
-                or Path(self.model).resolve() != Path(self.tokenizer).resolve()
-            ):
-                raise ValueError(
-                    "mlx_lm model and tokenizer must reference the same existing local checkpoint directory"
-                )
         for name in ("max_model_length", "kv_cache_bytes", "max_pending"):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be a positive integer")
@@ -328,7 +237,7 @@ class WorkerConfig:
             "max_num_sequences",
         } & self.engine_options.keys():
             raise ValueError("engine_options cannot override worker resource limits")
-        if self.speculative is not None and self.runner != "qwen35":
+        if self.speculative is not None:
             if not isinstance(self.speculative, dict) or self.backend == "cuda":
                 raise ValueError(
                     "speculative workers currently require an MLX configuration"
@@ -377,9 +286,7 @@ class LocalForgeBackend:
         tokenizer_factory: Callable[[], Any] | None = None,
     ) -> None:
         self.config = config
-        self.native_call_dialect = (
-            "qwen3_coder_xml" if config.runner == "qwen35" else "json"
-        )
+        self.native_call_dialect = "json"
         # Latest decoded text per in-flight request, for live progress.
         self.partial: dict[str, str] = {}
         self.supports_native_tools = config.native_tool_calls
@@ -425,7 +332,11 @@ class LocalForgeBackend:
             from ..vlm_runner import checkpoint_fingerprint
 
             config_file = Path(config.model) / "config.json"
-            model_type = json.loads(config_file.read_text()).get("model_type", "")
+            model_type = (
+                json.loads(config_file.read_text()).get("model_type", "")
+                if config_file.is_file()
+                else ""
+            )
             self.native_call_dialect = family_for(model_type).dialect
             self._runner_metadata.update(
                 runner_version=_installed_version("mlx-vlm"),
@@ -441,7 +352,7 @@ class LocalForgeBackend:
     def _load(self) -> None:
         if self._engine is not None:
             return
-        if self.config.runner == "vlm" and not self._engine_factory:
+        if self.config.runner == "vlm":
             self._load_vlm()
             return
         if self._tokenizer_factory:
@@ -489,71 +400,6 @@ class LocalForgeBackend:
         if self._engine_factory:
             engine = self._engine_factory()
             model_config = getattr(getattr(engine, "model", None), "config", None)
-        elif self.config.runner == "qwen35":
-            from ..qwen35_engine import Qwen35Engine
-
-            engine = Qwen35Engine(
-                self.config.model,
-                max_model_length=self.config.max_model_length,
-                kv_cache_bytes=self.config.kv_cache_bytes,
-                speculative=self.config.speculative,
-                **{
-                    (
-                        {
-                            "prefill_step_size": "prefill_chunk_size",
-                            "max_image_pixels": "image_pixels_limit",
-                        }.get(key, key)
-                    ): value
-                    for key, value in self.config.engine_options.items()
-                },
-            )
-            model_config = getattr(engine, "config", engine.model.config)
-            self._artifact_identity.update(engine.checkpoint_identity)
-            self._artifact_identity["tokenizer_signature"] = (
-                engine.checkpoint_identity.get("tokenizer_signature")
-                or hashlib.sha256(
-                    json.dumps(
-                        {
-                            "vocab": tokenizer.get_vocab(),
-                            "chat_template": tokenizer.chat_template,
-                        },
-                        sort_keys=True,
-                    ).encode()
-                ).hexdigest()
-            )
-        elif self.config.runner == "mlx_lm":
-            from .mlx_lm_runner import MlxLmRunner
-
-            engine = MlxLmRunner(
-                self.config.model,
-                max_model_length=self.config.max_model_length,
-                kv_cache_bytes=self.config.kv_cache_bytes,
-                **self.config.engine_options,
-            )
-            model_config = engine.model.config
-            self._artifact_identity.update(engine.checkpoint_identity)
-            vocabulary = tokenizer.get_vocab()
-            if not vocabulary or any(
-                type(token) is not int or not 0 <= token < model_config.vocab_size
-                for token in vocabulary.values()
-            ):
-                engine.close()
-                raise ValueError(
-                    "tokenizer token IDs do not fit the external runner vocabulary"
-                )
-            self._artifact_identity["tokenizer_signature"] = hashlib.sha256(
-                json.dumps(
-                    {
-                        "vocab": vocabulary,
-                        "special_ids": tokenizer.all_special_ids,
-                        "chat_template": tokenizer.chat_template,
-                        "backend": tokenizer.backend_tokenizer.to_str()
-                        if hasattr(tokenizer, "backend_tokenizer")
-                        else None,
-                    },
-                    sort_keys=True,
-                ).encode()
-            ).hexdigest()
         else:
             from forge_llm import create_engine
             from forge_llm.model_file import ModelFile
@@ -654,13 +500,6 @@ class LocalForgeBackend:
             )
         self._tokenizer = tokenizer
         self._engine = engine
-        if self.config.runner in {"mlx_lm", "qwen35"}:
-            self._runner_metadata.update(engine.metadata)
-            self._artifact_identity.update(engine.checkpoint_identity)
-        if self.config.runner == "qwen35":
-            self._artifact_identity["adapter_implementation_sha256"] = (
-                _qwen35_implementation_hash()
-            )
         self._actual_backend = (
             "mlx"
             if self.config.speculative is not None
@@ -711,15 +550,19 @@ class LocalForgeBackend:
         from ..vlm_runner import VlmRunner
 
         options = self.config.engine_options
-        runner = VlmRunner(
-            self.config.model,
-            draft_path=options.get("draft_model"),
-            draft_block_size=options.get("draft_block_size", 3),
-            max_context_tokens=self.config.max_model_length,
-            prefill_step_size=options.get("prefill_step_size", 1024),
-            cache_budget_bytes=options.get(
-                "cache_budget_bytes", self.config.kv_cache_bytes
-            ),
+        runner = (
+            self._engine_factory()
+            if self._engine_factory
+            else VlmRunner(
+                self.config.model,
+                draft_path=options.get("draft_model"),
+                draft_block_size=options.get("draft_block_size", 3),
+                max_context_tokens=self.config.max_model_length,
+                prefill_step_size=options.get("prefill_step_size", 1024),
+                cache_budget_bytes=options.get(
+                    "cache_budget_bytes", self.config.kv_cache_bytes
+                ),
+            )
         )
         self._engine = runner
         self._tokenizer = runner.tokenizer
@@ -753,7 +596,7 @@ class LocalForgeBackend:
             "capabilities": ["greedy_chat", "cancellation", "replica"],
             "native_tool_calls": self.supports_native_tools,
             "enable_thinking": self.config.enable_thinking,
-            "supports_media": self.config.runner in {"qwen35", "vlm"},
+            "supports_media": self.config.runner == "vlm",
             "supports_context_limits": self.supports_context_limits,
             "native_call_dialect": self.native_call_dialect,
             "speculative": self.config.speculative,
@@ -820,15 +663,11 @@ class LocalForgeBackend:
                 raise GenerationTimeoutError("generation deadline exceeded")
 
         check()
-        if self.config.runner not in {"qwen35", "vlm"} and any(
-            message.media for message in messages
-        ):
-            raise RequestValidationError(
-                "image/video requests require the qwen35 or vlm runner"
-            )
+        if self.config.runner != "vlm" and any(message.media for message in messages):
+            raise RequestValidationError("image/video requests require the vlm runner")
         self._load()
         check()
-        if self.config.runner == "vlm" and not self._engine_factory:
+        if self.config.runner == "vlm":
             return self._generate_vlm(
                 messages,
                 max_tokens,
@@ -838,10 +677,6 @@ class LocalForgeBackend:
                 max_context_tokens,
                 options or {},
                 request_id,
-            )
-        if self.config.runner == "qwen35":
-            return self._generate_qwen35(
-                messages, max_tokens, tool_specs, check, max_context_tokens
             )
         try:
             template_options = {"tools": tool_specs} if tool_specs is not None else {}
@@ -904,8 +739,6 @@ class LocalForgeBackend:
                 finish_reason="stop" if result.finish_reason == "eos" else "length",
                 model=self.config.model,
             )
-        if self.config.runner == "mlx_lm":
-            self._engine.set_request_guard(check)
         engine_request_id = self._engine.submit(token_ids, max_tokens, self._eos)
         output: list[int] = []
         completed = False
@@ -923,15 +756,7 @@ class LocalForgeBackend:
                 if len(output) > max_tokens:
                     raise BackendError("engine exceeded the generation token budget")
             check()
-            if self.config.runner == "mlx_lm":
-                # Preserve native function tags even if the external tokenizer
-                # marks them special; remove only the terminal EOS delimiter.
-                decoded_tokens = (
-                    output[:-1] if output and output[-1] in self._eos else output
-                )
-                text = self._tokenizer.decode(decoded_tokens, skip_special_tokens=False)
-            else:
-                text = self._tokenizer.decode(output, skip_special_tokens=True)
+            text = self._tokenizer.decode(output, skip_special_tokens=True)
             if not isinstance(text, str):
                 raise BackendError("tokenizer did not decode text")
             self._completed += 1
@@ -948,8 +773,6 @@ class LocalForgeBackend:
             if not completed:
                 self._engine.cancel(engine_request_id)
             self._forget(engine_request_id)
-            if self.config.runner == "mlx_lm":
-                self._last_runner_stats = self._engine.stats()
 
     def _generate_vlm(
         self,
@@ -1027,77 +850,6 @@ class LocalForgeBackend:
             result.reasoning,
             result.metrics,
         )
-
-    def _generate_qwen35(
-        self, messages, max_tokens, tool_specs, check, max_context_tokens
-    ):
-        from .media import materialize_media
-
-        self._engine.set_request_guard(check)
-        try:
-            with tempfile.TemporaryDirectory(prefix="forge-worker-media-") as temporary:
-                turns = []
-                for index, message in enumerate(messages):
-                    content = message.content
-                    if message.media:
-                        directory = Path(temporary) / str(index)
-                        directory.mkdir(mode=0o700)
-                        content = [
-                            {"type": "text", "text": message.content},
-                            *materialize_media(message.media, directory),
-                        ]
-                    turns.append({"role": message.role, "content": content})
-                prepared = self._engine.prepare_chat(
-                    turns, tools=tool_specs, enable_thinking=self.config.enable_thinking
-                )
-                check()
-                context_limit = min(
-                    self._context_limit, max_context_tokens or self._context_limit
-                )
-                if prepared.input_tokens + max_tokens > context_limit:
-                    raise ContextLengthError(
-                        "expanded media prompt and output exceed the context limit"
-                    )
-                request = self._engine.submit(prepared, max_tokens, self._eos)
-                output, completed = [], False
-                try:
-                    while not completed:
-                        check()
-                        for event in self._engine.step():
-                            if event.request_id != request:
-                                raise BackendError(
-                                    "engine emitted an unowned request token"
-                                )
-                            output.append(int(event.token))
-                            completed = bool(event.finished)
-                        if len(output) > max_tokens:
-                            raise BackendError("Qwen3.5 exceeded its token budget")
-                    check()
-                    response = self._engine.response_metadata(
-                        output,
-                        enable_thinking=self.config.enable_thinking,
-                        input_tokens=prepared.input_tokens,
-                    )
-                    self._completed += 1
-                    return Generation(
-                        response.text,
-                        prepared.input_tokens,
-                        len(output),
-                        "stop" if output and output[-1] in self._eos else "length",
-                        self.config.model,
-                    )
-                finally:
-                    if not completed:
-                        self._engine.cancel(request)
-                    self._forget(request)
-        finally:
-            try:
-                discard = getattr(self._engine, "discard_prepared", None)
-                if callable(discard):
-                    discard()
-            finally:
-                self._engine.set_request_guard(lambda: None)
-                self._last_runner_stats = self._engine.stats()
 
     async def generate(
         self,
@@ -2152,7 +1904,7 @@ class LocalProcessBackend(RemoteWorkerBackend):
                 max_concurrency=1,
                 request_timeout=config.request_timeout,
                 max_request_bytes=MAX_MEDIA_REQUEST_BYTES
-                if config.runner in {"qwen35", "vlm"}
+                if config.runner == "vlm"
                 else 1 << 20,
             )
             backend.process = process

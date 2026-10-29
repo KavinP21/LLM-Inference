@@ -10,7 +10,6 @@ import weakref
 from types import SimpleNamespace
 
 import pytest
-from forge_llm.agents import backends, cli
 from forge_llm.agents.backends import (
     BackendError,
     LocalForgeBackend,
@@ -23,7 +22,7 @@ from forge_llm.agents.media import media_from_file
 from forge_llm.agents.protocol import ChatMessage, Generation
 from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
 from forge_llm.agents.store import AgentStore, StoreError
-from test_agent_qwen35 import Engine, Tokenizer
+from test_agent_media import Runner
 from test_agent_workers import TOKEN, serving
 
 
@@ -39,21 +38,20 @@ def actor(tmp_path, engine):
         WorkerConfig(
             str(tmp_path),
             str(tmp_path),
-            runner="qwen35",
+            runner="vlm",
             backend="mlx",
             max_model_length=32768,
             kv_cache_bytes=2 << 30,
             native_tool_calls=True,
         ),
         engine_factory=lambda: engine,
-        tokenizer_factory=Tokenizer,
     )
 
 
 def test_runtime_worker_http_cap_rejects_expanded_prompt_before_submit_and_refunds(
     media, tmp_path
 ):
-    engine = Engine()
+    engine = Runner()
     engine.input_tokens = 18000
     with serving(actor(tmp_path, engine)) as (url, backend, service):
 
@@ -74,11 +72,6 @@ def test_runtime_worker_http_cap_rejects_expanded_prompt_before_submit_and_refun
                 result = await runtime.run("Inspect supplied media", media=[media])
                 assert result.status == "failed"
                 assert result.usage.total_tokens == 0
-                assert (
-                    engine.submitted == 0
-                    and engine.discarded == 1
-                    and engine.guard() is None
-                )
                 assert all(
                     not __import__("pathlib").Path(path).exists()
                     for path in engine.paths
@@ -255,140 +248,6 @@ def test_invalid_context_health_capability_is_not_coerced(monkeypatch):
     )
     with pytest.raises(BackendError, match="context-limit capability"):
         asyncio.run(client.health())
-
-
-def test_adapter_health_hash_is_cached_and_resume_identity_binds_it(
-    tmp_path, monkeypatch
-):
-    engine = Engine()
-    backend = actor(tmp_path, engine)
-
-    async def run():
-        await backend.start()
-        original = backend.health()["adapter_implementation_sha256"]
-        assert len(original) == 64
-        monkeypatch.setattr(
-            backends,
-            "_qwen35_implementation_hash",
-            lambda *args: (_ for _ in ()).throw(
-                AssertionError("health must not read source")
-            ),
-        )
-        assert backend.health()["adapter_implementation_sha256"] == original
-        await backend.close()
-        return original
-
-    original = asyncio.run(run())
-    health = {
-        "model_data_sha256": "a" * 64,
-        "model_config_sha256": "b" * 64,
-        "tokenizer_signature": "c" * 64,
-        "runner": "mlx_vlm",
-        "model_type": "qwen3_5",
-        "adapter_implementation_sha256": original,
-    }
-
-    class Health:
-        def health(self):
-            return dict(health)
-
-    pool = WorkerPool({"qwen": Health()})
-    first = asyncio.run(cli.worker_identities(pool))
-    health["adapter_implementation_sha256"] = "d" * 64
-    second = asyncio.run(cli.worker_identities(pool))
-    assert (
-        first != second and second["qwen"]["adapter_implementation_sha256"] == "d" * 64
-    )
-    del health["adapter_implementation_sha256"]
-    with pytest.raises(ValueError, match="adapter implementation fingerprint"):
-        asyncio.run(cli.worker_identities(pool))
-
-
-def test_adapter_implementation_hash_changes_for_decoder_or_transactions(tmp_path):
-    files = (
-        "qwen35_engine.py",
-        "qwen35_checkpoint.py",
-        "qwen35_state.py",
-        "qwen35_speculative.py",
-        "speculative.py",
-        "agents/backends.py",
-        "agents/worker.py",
-        "agents/media.py",
-        "agents/protocol.py",
-        "agents/native_tools.py",
-    )
-    for name in files:
-        (tmp_path / name).parent.mkdir(exist_ok=True)
-        (tmp_path / name).write_text(name)
-    original = backends._qwen35_implementation_hash(tmp_path)
-    (tmp_path / "qwen35_state.py").write_text("changed state selection")
-    assert backends._qwen35_implementation_hash(tmp_path) != original
-
-
-def test_qwen35_speculative_worker_plumbing_reaches_engine_without_legacy_options(
-    tmp_path, monkeypatch
-):
-    import forge_llm.qwen35_engine as module
-
-    supplied = []
-
-    def constructor(path, **options):
-        supplied.append(options)
-        engine = Engine()
-        engine.config = engine.model.config
-        engine.checkpoint_identity = {"tokenizer_signature": "a" * 64}
-        return engine
-
-    monkeypatch.setattr(module, "Qwen35Engine", constructor)
-    options = {"draft_tokens": 4, "verification_mode": "block", "adaptive": False}
-    backend = LocalForgeBackend(
-        WorkerConfig(
-            str(tmp_path),
-            str(tmp_path),
-            runner="qwen35",
-            backend="mlx",
-            speculative=options,
-            engine_options={"max_image_pixels": 1024, "prefill_step_size": 256},
-        ),
-        tokenizer_factory=Tokenizer,
-    )
-
-    async def run():
-        try:
-            await backend.start()
-        finally:
-            await backend.close()
-
-    asyncio.run(run())
-    assert supplied[0]["speculative"] == options
-    assert (
-        supplied[0]["image_pixels_limit"] == 1024
-        and supplied[0]["prefill_chunk_size"] == 256
-    )
-
-
-@pytest.mark.parametrize(
-    "spec,engine_options",
-    [
-        ({"draft_tokens": True}, {}),
-        ({"verification_mode": "loose"}, {}),
-        ({"adaptive": 1}, {}),
-        ({"draft_model_path": "unsupported"}, {}),
-        ({"draft_tokens": 4}, {"temperature": 0.7}),
-        ({"draft_tokens": 4}, {"presence_penalty": 1.5}),
-    ],
-)
-def test_qwen35_speculation_rejects_unsupported_drafts_and_modified_sampling(
-    tmp_path, spec, engine_options
-):
-    with pytest.raises(ValueError, match="Qwen3.5 speculation"):
-        WorkerConfig(
-            str(tmp_path),
-            str(tmp_path),
-            runner="qwen35",
-            speculative=spec,
-            engine_options=engine_options,
-        )
 
 
 @pytest.mark.parametrize("fail", [False, True])
