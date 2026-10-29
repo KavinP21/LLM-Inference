@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import platform
 from pathlib import Path
 
@@ -22,7 +21,7 @@ from .mlx_engine import MlxEngine
 from .mlx_engine import SequenceState as MlxSequenceState
 from .speculative import SpeculativeEngine
 
-DEFAULT_MODEL_PATH = "models/qwen3.5-4b-mlx"
+DEFAULT_MODEL_PATH = "models/gemma-4-26b-a4b-mlx"
 
 
 def create_engine(
@@ -44,22 +43,13 @@ def create_engine(
             raise RuntimeError("the MLX backend requires Apple Silicon")
         path = Path(DEFAULT_MODEL_PATH if model_path is None else model_path)
         if path.is_dir():
-            with (path / "config.json").open("rb") as stream:
-                config_data = stream.read((1 << 20) + 1)
-            if len(config_data) > 1 << 20:
-                raise ValueError("checkpoint configuration exceeds 1 MiB")
-            config = json.loads(config_data)
-            if not isinstance(config, dict) or config.get("model_type") != "qwen3_5":
-                raise ValueError(
-                    "directory model loading requires a Qwen3.5 checkpoint"
-                )
-            if kwargs.pop("max_num_sequences", 1) != 1:
-                raise ValueError(
-                    "Qwen3.5 uses one active request per replica; use a worker pool for concurrency"
-                )
-            from .qwen35_engine import Qwen35Engine
+            # A checkpoint directory (Gemma 4, Qwen3.5, ...) runs through mlx-vlm.
+            from .vlm_runner import VlmRunner
 
-            return Qwen35Engine(path, **kwargs)
+            options = dict(kwargs)
+            if "max_model_length" in options:
+                options["max_context_tokens"] = options.pop("max_model_length")
+            return VlmRunner(path, **options)
         return MlxEngine(model_path, **kwargs)
     raise ValueError(f"unknown backend {backend!r}; expected 'auto', 'cuda', or 'mlx'")
 

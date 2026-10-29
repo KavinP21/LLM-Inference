@@ -86,7 +86,10 @@ def _identity(message: dict) -> dict:
     return {
         "role": message["role"],
         "content": message.get("content", ""),
-        "media": [(item["type"], item["key"]) for item in message.get("media", ())],
+        "media": [
+            (item["type"], item.get("key") or item["path"])
+            for item in message.get("media", ())
+        ],
     }
 
 
@@ -101,6 +104,8 @@ def checkpoint_fingerprint(path: str | Path) -> dict[str, str]:
         entries = []
         for name in sorted(names):
             file = directory / name
+            if not file.is_file():
+                continue
             size = file.stat().st_size
             with file.open("rb") as stream:
                 head = stream.read(1 << 20)
@@ -252,6 +257,14 @@ class VlmRunner:
     def _key(self) -> int:
         self._next_key += 1
         return self._next_key
+
+    def _fresh_cache(self) -> list:
+        language = self.model.language_model
+        if hasattr(language, "make_cache"):
+            return list(language.make_cache())
+        from mlx_vlm.models.cache import make_prompt_cache
+
+        return list(make_prompt_cache(language))
 
     def _snapshot(self, cache: list) -> list:
         mx = self.mx
@@ -480,7 +493,7 @@ class VlmRunner:
                 restored = len(cache_tokens)
                 source = "snapshot"
             else:
-                cache = list(self.model.language_model.make_cache())
+                cache = self._fresh_cache()
             boundary = self._stable_boundary(messages, tools, thinking, ids)
             if boundary - len(cache_tokens) >= MIN_SNAPSHOT_TOKENS:
                 self._prime_positions()
@@ -701,3 +714,9 @@ class VlmRunner:
     def close(self) -> None:
         self.clear()
         self.model = self.processor = self.draft_model = None
+
+    def __enter__(self) -> VlmRunner:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
