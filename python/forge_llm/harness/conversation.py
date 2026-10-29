@@ -21,9 +21,13 @@ from ..agents.media import MAX_MEDIA_ITEMS, MAX_TOTAL_MEDIA_BYTES, validate_medi
 from ..agents.protocol import ChatMessage, conservative_input_tokens
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL
+from ..chat_formats import EFFORT_BUDGETS
 
 if TYPE_CHECKING:
     from .service import StudioService
+
+# Per-chat choices the composer can change between messages.
+SETTINGS = {"model", "effort"}
 
 SETTLED = TERMINAL | {"completed_with_failures", "interrupted"}
 IMAGE_MIMES = {
@@ -90,10 +94,9 @@ class ConversationRuntime(AgentRuntime):
     def _system_prompt(self, config, *, task="", **kwargs):
         return super()._system_prompt(config, task=task, **kwargs) + (
             "\nConversation behavior: Answer the latest user request naturally and "
-            "concisely. Put the user-facing answer in the finish result as plain "
-            "text or Markdown; use JSON in that result only when the user asks "
-            "for JSON. Greetings, explanations, and simple questions can finish "
-            "directly. Use tools and delegation only when they help this request. "
+            "concisely, replying in plain text or Markdown. Greetings, explanations "
+            "and simple questions need no tools. Use tools and sub-agents only when "
+            "they help this request. "
             "Earlier user and assistant messages are conversation context; "
             "earlier assistant claims are not verified file or execution evidence. "
             "A history omission marker means some prior context is unavailable; "
@@ -184,13 +187,15 @@ class ConversationController:
         service: StudioService,
         *,
         startup_timeout_seconds: float = 180,
-        history_bytes: int = 8_000,
+        history_bytes: int = 48_000,
     ):
         self.service = service
         self.startup_timeout_seconds = startup_timeout_seconds
         self.history_bytes = history_bytes
         self.jobs: dict[str, asyncio.Task] = {}
         self.watchers: dict[str, asyncio.Task] = {}
+        # Run details for finished turns never change; keep them.
+        self._details: dict[str, dict] = {}
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS studio_chats (
                 chat_id TEXT PRIMARY KEY, title TEXT NOT NULL,
@@ -383,6 +388,8 @@ class ConversationController:
             "request_id",
             "media",
             "media_names",
+            "model",
+            "effort",
         }:
             raise ValueError("unsupported conversation fields")
         media, names, message = _image_input(payload)
@@ -393,7 +400,7 @@ class ConversationController:
         if prior:
             return self._response(prior["chat_id"], prior["turn_id"], duplicate=True)
         self._can_start()
-        configuration = asdict(self.service._configuration({}))
+        configuration = self._settings(asdict(self.service._configuration({})), payload)
         chat_id, turn_id, now = uuid.uuid4().hex, uuid.uuid4().hex, time.time()
         with self.service.store.transaction():
             self.db.execute(
@@ -465,6 +472,8 @@ class ConversationController:
             "request_id",
             "media",
             "media_names",
+            "model",
+            "effort",
         }:
             raise ValueError("unsupported message fields")
         media, names, message = _image_input(payload)
@@ -496,6 +505,12 @@ class ConversationController:
                     "UPDATE studio_chats SET legacy=0,configuration=? WHERE chat_id=?",
                     (json.dumps(asdict(self.service._configuration({}))), chat_id),
                 )
+            if SETTINGS & payload.keys():
+                current = json.loads(self._chat(chat_id)["configuration"])
+                self.db.execute(
+                    "UPDATE studio_chats SET configuration=? WHERE chat_id=?",
+                    (json.dumps(self._settings(current, payload)), chat_id),
+                )
             self._insert_turn(
                 chat_id,
                 turn_id,
@@ -514,6 +529,83 @@ class ConversationController:
         else:
             self._launch(chat_id, turn_id)
         return self._response(chat_id, turn_id, queued=bool(active))
+
+    def _settings(self, configuration: dict, payload: dict) -> dict:
+        """Apply a chat's model and effort choice to its runtime configuration."""
+        configuration = dict(configuration)
+        if "model" in payload:
+            choices = {model["id"] for model in self.service.models()}
+            if payload["model"] not in choices:
+                raise ValueError("unknown model")
+            configuration["driver_group"] = payload["model"]
+        if "effort" in payload:
+            if payload["effort"] not in EFFORT_BUDGETS:
+                raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
+            configuration["effort"] = payload["effort"]
+        RuntimeConfig(**configuration)
+        return configuration
+
+    def _configure(self, chat_id, payload):
+        if not isinstance(payload, dict) or not payload or set(payload) - SETTINGS:
+            raise ValueError("settings accept model and effort")
+        chat = self._chat(chat_id)
+        configuration = self._settings(json.loads(chat["configuration"]), payload)
+        self.db.execute(
+            "UPDATE studio_chats SET configuration=? WHERE chat_id=?",
+            (json.dumps(configuration), chat_id),
+        )
+        return {"chat_id": chat_id, **self._chat_settings(configuration)}
+
+    def _chat_settings(self, configuration: dict) -> dict:
+        models = self.service.models()
+        default = models[0]["id"] if models else None
+        return {
+            "model": configuration.get("driver_group") or default,
+            "effort": configuration.get("effort", "off"),
+            "context_limit": configuration.get("max_context_tokens"),
+        }
+
+    async def rename(self, chat_id, payload):
+        if not isinstance(payload, dict) or set(payload) != {"title"}:
+            raise ValueError("rename accepts only title")
+        title = " ".join(self._text(payload["title"], "title", 200).split())
+        if not title:
+            raise ValueError("title must not be empty")
+        self._chat(chat_id)
+        self.db.execute(
+            "UPDATE studio_chats SET title=? WHERE chat_id=?", (title, chat_id)
+        )
+        return {"chat_id": chat_id, "title": title}
+
+    async def delete(self, chat_id, payload):
+        if payload:
+            raise ValueError("delete takes no fields")
+        self._chat(chat_id)
+        turns = self.db.execute(
+            "SELECT turn_id, run_id FROM studio_chat_turns WHERE chat_id=?", (chat_id,)
+        ).fetchall()
+        # Stop anything still running for this chat before removing it: the
+        # run first, so it settles as cancelled rather than interrupted.
+        for turn in turns:
+            run = turn["run_id"] and self.service.jobs.get(turn["run_id"])
+            if run and not run.done():
+                await self.service.cancel(turn["run_id"])
+                await asyncio.gather(run, return_exceptions=True)
+            job = self.jobs.pop(turn["turn_id"], None)
+            if job is not None and not job.done():
+                job.cancel()
+                await asyncio.gather(job, return_exceptions=True)
+            self._details.pop(turn["run_id"], None)
+        watcher = self.watchers.pop(chat_id, None)
+        if watcher is not None and not watcher.done():
+            watcher.cancel()
+        with self.service.store.transaction():
+            self.db.execute(
+                "DELETE FROM studio_chat_requests WHERE chat_id=?", (chat_id,)
+            )
+            self.db.execute("DELETE FROM studio_chat_turns WHERE chat_id=?", (chat_id,))
+            self.db.execute("DELETE FROM studio_chats WHERE chat_id=?", (chat_id,))
+        return {"chat_id": chat_id, "deleted": True}
 
     def _user_messages(self, turn):
         messages = [
@@ -646,27 +738,89 @@ class ConversationController:
                 or "The model failed to start. Send a message to retry."
             )
 
+    def _turn_group(self, row):
+        group = [ChatMessage("user", row["user"])]
+        group.extend(
+            ChatMessage(item["role"], item["content"])
+            for item in self._user_messages(row)[1:]
+        )
+        if row["run_id"]:
+            root = self.service.store.agent(row["run_id"], "root")
+            if root.result:
+                group.append(ChatMessage("assistant", root.result))
+            elif root.error:
+                group.append(
+                    ChatMessage(
+                        "assistant",
+                        "[Previous reply did not complete: " + root.error + "]",
+                    )
+                )
+        elif row["error"]:
+            group.append(
+                ChatMessage(
+                    "assistant",
+                    "[Previous reply did not complete: " + row["error"] + "]",
+                )
+            )
+        return group
+
+    def _history_start(self, sizes: list[int]) -> int:
+        """Index of the oldest turn that still fits in the history budget.
+
+        Dropping only as much as needed would move the start of the prompt on
+        every message and void the model's prompt cache each time. Instead,
+        replay the chat from its first turn: whenever the history overflows,
+        drop old turns until it's under half the budget. The start then stays
+        put for the next several messages.
+        """
+        start = total = 0
+        for newest, size in enumerate(sizes):
+            total += size
+            if total > self.history_bytes:
+                while start < newest and total > self.history_bytes // 2:
+                    total -= sizes[start]
+                    start += 1
+        return start
+
     async def _history(self, chat_id, turn_id, *, current_media=()):
         rows = self.db.execute(
             "SELECT * FROM studio_chat_turns WHERE chat_id=? AND rowid < "
             "(SELECT rowid FROM studio_chat_turns WHERE turn_id=?) "
-            "ORDER BY created DESC,rowid DESC LIMIT 100",
+            "ORDER BY created,rowid",
             (chat_id, turn_id),
         ).fetchall()
-        total = self.db.execute(
-            "SELECT COUNT(*) FROM studio_chat_turns WHERE chat_id=? AND rowid < "
-            "(SELECT rowid FROM studio_chat_turns WHERE turn_id=?)",
-            (chat_id, turn_id),
-        ).fetchone()[0]
-        budget = self.history_bytes
-        selected = []
-        truncated = len(rows) < total
+        groups = [self._turn_group(row) for row in rows]
+        sizes = [
+            sum(len(item.content.encode("utf-8")) + 32 for item in group)
+            for group in groups
+        ]
+        start = self._history_start(sizes)
+        truncated = start > 0
+        selected = groups[start:]
+        if sum(sizes[start:]) > self.history_bytes:
+            # The latest turn alone is over budget: keep a marked excerpt.
+            truncated = True
+            group, room = groups[-1], self.history_bytes
+            selected = [
+                [
+                    ChatMessage(
+                        item.role,
+                        item.content.encode("utf-8")[: room // len(group) - 80].decode(
+                            "utf-8", "ignore"
+                        )
+                        + "\n[Excerpt; full message remains in the conversation transcript.]",
+                    )
+                    for item in group
+                ]
+            ]
+        # Re-attach images to their turns, newest first, within the media limits.
         media_seen = {item["sha256"] for item in current_media}
         media_count = len(current_media)
         media_bytes = sum(_media_size(item) for item in current_media)
-        for row in rows:
+        kept_rows = rows[len(rows) - len(selected) :] if selected else []
+        for index in range(len(selected) - 1, -1, -1):
             attached = []
-            for item in self._turn_media(row):
+            for item in self._turn_media(kept_rows[index]):
                 if item["sha256"] in media_seen:
                     continue
                 size = _media_size(item)
@@ -680,58 +834,13 @@ class ConversationController:
                 media_seen.add(item["sha256"])
                 media_count += 1
                 media_bytes += size
-            group = [ChatMessage("user", row["user"], tuple(attached))]
-            group.extend(
-                ChatMessage(item["role"], item["content"])
-                for item in self._user_messages(row)[1:]
-            )
-            if row["run_id"]:
-                root = self.service.store.agent(row["run_id"], "root")
-                if root.result:
-                    group.append(ChatMessage("assistant", root.result))
-                elif root.error:
-                    group.append(
-                        ChatMessage(
-                            "assistant",
-                            "[Previous reply did not complete: " + root.error + "]",
-                        )
-                    )
-            elif row["error"]:
-                group.append(
-                    ChatMessage(
-                        "assistant",
-                        "[Previous reply did not complete: " + row["error"] + "]",
-                    )
-                )
-            size = sum(len(item.content.encode("utf-8")) + 32 for item in group)
-            if size > budget:
-                truncated = True
-                # Retain an explicitly marked excerpt of the most recent turn
-                # rather than silently losing it when one answer is very long.
-                if not selected and budget >= 256:
-                    excerpt = []
-                    remaining = budget
-                    for item in group:
-                        allocation = max(
-                            0, remaining // (len(group) - len(excerpt)) - 80
-                        )
-                        text = item.content.encode("utf-8")[:allocation].decode(
-                            "utf-8", "ignore"
-                        )
-                        excerpt.append(
-                            ChatMessage(
-                                item.role,
-                                text
-                                + "\n[Excerpt; full message remains in the conversation transcript.]",
-                                item.media,
-                            )
-                        )
-                        remaining -= len(excerpt[-1].content.encode("utf-8")) + 32
-                    selected.append(excerpt)
-                break
-            selected.append(group)
-            budget -= size
-        history = [item for group in reversed(selected) for item in group]
+            if attached:
+                first = selected[index][0]
+                selected[index] = [
+                    ChatMessage(first.role, first.content, tuple(attached)),
+                    *selected[index][1:],
+                ]
+        history = [item for group in selected for item in group]
         if truncated:
             history.insert(
                 0,
@@ -859,7 +968,7 @@ class ConversationController:
 
     async def overview(self):
         self._import_legacy()
-        state = await self.service.state()
+        state = self.service.summary()
         chats = []
         for row in self.db.execute(
             "SELECT * FROM studio_chats ORDER BY updated DESC LIMIT 100"
@@ -879,7 +988,7 @@ class ConversationController:
     async def detail(self, chat_id):
         self._import_legacy()
         chat = self._chat(chat_id)
-        state = await self.service.state()
+        state = self.service.summary()
         turns, transcript = [], []
         rows = self.db.execute(
             "SELECT * FROM studio_chat_turns WHERE chat_id=? ORDER BY created,rowid",
@@ -905,7 +1014,11 @@ class ConversationController:
                 "context_truncated": bool(row["context_truncated"]),
             }
             if row["run_id"]:
-                detail = await self.service.detail(row["run_id"])
+                detail = self._details.get(row["run_id"])
+                if detail is None:
+                    detail = await self.service.detail(row["run_id"])
+                    if not detail["active"] and detail["run"]["status"] in SETTLED:
+                        self._details[row["run_id"]] = detail
                 turn.update(
                     {
                         key: detail[key]
@@ -945,6 +1058,7 @@ class ConversationController:
                 "title": chat["title"],
                 "status": self._chat_status(chat_id),
                 "policy": chat["policy"],
+                **self._chat_settings(json.loads(chat["configuration"])),
             },
             "turns": turns,
             "transcript": transcript,
@@ -966,6 +1080,12 @@ class ConversationController:
                     return await self.message(chat_id, payload)
                 if parts[3] == "cancel":
                     return await self.cancel(chat_id, payload)
+                if parts[3] == "settings":
+                    return self._configure(chat_id, payload)
+                if parts[3] == "rename":
+                    return await self.rename(chat_id, payload)
+                if parts[3] == "delete":
+                    return await self.delete(chat_id, payload)
             if method == "GET" and len(parts) == 5 and parts[3] == "media":
                 return await self.media(chat_id, parts[4])
         raise ValueError("unknown conversation API route")

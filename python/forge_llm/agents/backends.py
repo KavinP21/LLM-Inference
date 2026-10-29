@@ -1473,7 +1473,12 @@ class LazyBackend:
 
     async def health(self) -> dict[str, Any]:
         if self.backend is None:
-            return {**self._identity, "ready": True, "started": False}
+            return {
+                **self._identity,
+                "ready": True,
+                "started": False,
+                "starting": self._active > 0,
+            }
         health = self.backend.health()
         if asyncio.iscoroutine(health):
             health = await health

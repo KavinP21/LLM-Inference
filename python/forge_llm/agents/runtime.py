@@ -1723,9 +1723,11 @@ class AgentRuntime:
         self._assert_lease(run_id)
         with self.store.transaction():
             self.store.add_message(run_id, agent_id, "assistant", generation.text)
-            self.store.event(
-                run_id, agent_id, "model_response", {"text": generation.text}
-            )
+            response = {"text": generation.text}
+            if generation.reasoning:
+                # Kept for display only; it never re-enters the prompt.
+                response["reasoning"] = generation.reasoning[-8000:]
+            self.store.event(run_id, agent_id, "model_response", response)
         try:
             if tool_specs is not None:
                 dialect = generation.dialect or getattr(
