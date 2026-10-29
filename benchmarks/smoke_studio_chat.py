@@ -105,7 +105,7 @@ async def execute(args):
                 and event["payload"].get("name") == "read_file"
             ]
             report = {
-                "scope": "One local Qwen3.5-4B chat, three sequential turns: automatic startup, conversational recall and a real file read. Not broad reliability evidence.",
+                "scope": "One local main-model chat, three sequential turns: automatic startup, conversational recall and a real file read. Not broad reliability evidence.",
                 "source_revision": source_revision,
                 "harness_file_sha256": source_identity,
                 "recipe_sha256": hashlib.sha256(

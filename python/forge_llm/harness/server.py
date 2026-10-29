@@ -7,6 +7,7 @@ import concurrent.futures
 import hmac
 import json
 import secrets
+import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -128,6 +129,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "error": "Open Studio from its launcher to authorize this browser"
                     },
                 )
+            if path == "/api/events":
+                return self._events()
             return self._dispatch("GET", path, {})
         files = {
             "/": ("index.html", "text/html; charset=utf-8"),
@@ -179,6 +182,37 @@ class StudioHandler(BaseHTTPRequestHandler):
                 ],
             )
         self._dispatch("POST", path, body)
+
+    def _events(self):
+        """Server-sent events: push the live snapshot whenever it changes."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+
+        async def snapshot():
+            return self.server.service.live()
+
+        last, quiet = None, 0.0
+        try:
+            while not self.server.service.closing:
+                future = asyncio.run_coroutine_threadsafe(snapshot(), self.server.loop)
+                data = json.dumps(future.result(timeout=5), ensure_ascii=False)
+                if data != last:
+                    self.wfile.write(f"data: {data}\n\n".encode())
+                    self.wfile.flush()
+                    last, quiet = data, 0.0
+                elif quiet >= 15:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    quiet = 0.0
+                time.sleep(0.1)
+                quiet += 0.1
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            return
+        except concurrent.futures.TimeoutError:
+            return
 
     def _dispatch(self, method, path, body):
         future = asyncio.run_coroutine_threadsafe(

@@ -1,4 +1,4 @@
-"""Real Qwen3.5 image upload, follow-up vision context and developer tools smoke."""
+"""Real image upload, follow-up vision context and developer tools smoke."""
 
 import argparse
 import asyncio
@@ -88,7 +88,7 @@ async def execute(args):
                 }
             )
             print(
-                "Image prompt accepted; starting actual local Qwen3.5 vision worker.",
+                "Image prompt accepted; starting the local main-model worker.",
                 flush=True,
             )
             chat = first["chat_id"]
@@ -156,7 +156,7 @@ async def execute(args):
                 for event in command_receipts
             )
             report = {
-                "scope": "Two image turns plus one narrowly approved Python command through local Qwen3.5; not broad vision or coding capability evidence",
+                "scope": "Two image turns plus one narrowly approved Python command through the local main model; not broad vision or coding capability evidence",
                 "source_revision": revision,
                 "file_sha256": identity,
                 "image_sha256": item["sha256"],

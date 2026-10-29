@@ -56,7 +56,7 @@ async def execute(args):
             if service.backend_status != "ready":
                 raise RuntimeError(service.backend_error)
             print(
-                "Local Qwen3.5 worker ready; submitting delegated inspection.",
+                "Local main-model worker ready; submitting delegated inspection.",
                 flush=True,
             )
             task = "Delegate exactly one child agent to read README.md and report its project title. Wait for the child result, then finish with the project title and say this is only an integration fixture. Use only observed file evidence. Do not create any files."
@@ -81,7 +81,7 @@ async def execute(args):
                 and e["payload"].get("name") == "read_file"
             ]
             report = {
-                "scope": "One local Qwen3.5-4B mission using actual model inference; not a broad capability evaluation",
+                "scope": "One local main-model mission using actual model inference; not a broad capability evaluation",
                 "source_revision": source_revision,
                 "harness_file_sha256": source_identity,
                 "recipe_sha256": recipe_sha256,
