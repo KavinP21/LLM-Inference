@@ -1076,48 +1076,12 @@ def test_pool_live_http_two_distinct_worker_identities():
         asyncio.run(run())
 
 
-def test_local_speculative_worker_uses_cancellation_and_measured_usage():
-    class SpecEngine:
-        max_model_length = 128
-
-        def generate_result(self, tokens, maximum, eos, *, cancelled):
-            assert not cancelled()
-            return SimpleNamespace(
-                tokens=[17, 18],
-                finish_reason="length",
-                stats=SimpleNamespace(to_dict=lambda: {"accepted_draft_tokens": 1}),
-            )
-
-        def close(self):
-            pass
-
-    async def run():
-        backend = LocalModelBackend(
-            WorkerConfig(
-                "fake.engine", "fake", backend="mlx", speculative={"draft_tokens": 2}
-            ),
-            engine_factory=SpecEngine,
-            tokenizer_factory=FakeTokenizer,
-        )
-        try:
-            output = await backend.generate(CHAT, 2, "spec")
-            assert output.text == "17,18" and output.output_tokens == 2
-            assert backend.health()["last_speculative_stats"] == {
-                "accepted_draft_tokens": 1
-            }
-        finally:
-            await backend.close()
-
-    asyncio.run(run())
-
-
 @pytest.mark.parametrize(
     "options",
     [
         {"max_pending": 0},
         {"request_timeout": float("nan")},
         {"max_model_length": True},
-        {"backend": "cuda", "speculative": {}},
         {"engine_options": {"max_num_sequences": 99}},
     ],
 )

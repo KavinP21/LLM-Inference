@@ -30,7 +30,7 @@ macos/build.sh --install                # ~/Applications/Instinct.app
 
 Underneath is an LLM inference engine written from scratch in Python and C++,
 with an Apple MLX/Metal backend and a CUDA backend. It runs Qwen2 and Gemma 3
-with a paged KV cache, continuous batching and custom Metal kernels. PyTorch and
+with paged KV arenas, continuous batching and custom Metal kernels. PyTorch and
 Transformers are only used to export weights, tokenize and check outputs;
 they're never in the generation loop. The app's Gemma 4 and Qwen3.5 models run
 through mlx-vlm instead (see below), because their architectures aren't in the
@@ -38,42 +38,38 @@ engine.
 
 ### What the engine does
 
-- **Paged KV cache.** 16-token pages, allocated lazily. Each request reserves its
-  worst-case page count at admission, so it can't run out halfway through, and
-  pages are returned on completion, cancellation or error.
-- **Continuous batching.** Every running request decodes in the same step. Long
-  prompts are split into prefill chunks that the scheduler interleaves with
-  decoding.
-- **Metal kernels.** Fused residual + RMSNorm, RoPE fused with the KV page write,
-  SwiGLU, and a paged GQA decode attention kernel that walks per-request block
-  tables. They can be switched off to fall back to plain MLX.
+- **Continuous batching.** Every running request decodes in the same forward
+  pass, each with its own sampling settings. Long prompts are prefilled in
+  chunks between decode steps.
+- **Paged KV arenas.** One preallocated K/V arena per layer, addressed through
+  per-request page tables, so there's no padding and no per-step copying.
+  Sliding-window layers hand pages back as the window moves. Each request
+  reserves its pages at admission, so it can't run out halfway through.
+- **Split-K paged decode attention.** A Metal kernel that reads K/V straight
+  from the arena, splits long contexts across threadgroups and serves every
+  query head of a GQA group from one read.
+- **Prefix caching** (opt-in). Finished requests and requested checkpoints
+  keep their pages, so the next agent step or a sibling sharing a system prompt
+  skips that prefill.
 - **Model files.** A versioned, checksummed single-file format that both the
   Python and C++ readers validate before running anything.
-- **Prefix caching** (opt-in). Reference-counted shared pages with copy-on-write
-  for the last partial page, namespaces, and LRU eviction.
-- **Speculative decoding** (opt-in). N-gram drafts verified in one forward pass,
-  with rejected KV rolled back.
 
 ### Performance
 
-Qwen2.5-0.5B, FP16, Apple M3 Max, MLX 0.32.2. Each request generates 32 tokens.
-Throughput is total generated tokens per second, averaged over three runs after
-five warmups:
+Qwen2.5-0.5B, FP16, Apple M3 Max, MLX 0.32.2. Each request generates 32 tokens;
+throughput is total generated tokens per second over three runs after five
+warmups. "Before" is the previous version of the engine on the same machine.
 
-| Prompt tokens | Concurrent requests | Plain MLX | Custom kernels | Speedup |
-| ---: | ---: | ---: | ---: | ---: |
-| 128 | 1 | 67.4 | 115.4 | 1.71× |
-| 128 | 8 | 151.9 | 376.2 | 2.48× |
-| 1,024 | 1 | 28.5 | 29.5 | 1.04× |
-| 1,024 | 8 | 36.6 | 81.7 | 2.23× |
+| Prompt tokens | Concurrent requests | Before | Now |
+| ---: | ---: | ---: | ---: |
+| 128 | 1 | 115.4 | 152.3 |
+| 128 | 8 | 376.2 | 681.2 |
+| 1,024 | 1 | 29.5 | 104.0 |
+| 1,024 | 8 | 81.7 | 238.7 |
 
-This compares the engine with and without its own kernels on the same machine,
-not against other inference engines. The kernels help most with concurrent
-decoding. A single long request barely improves, because MLX arrays are
-immutable and the attention kernel has to copy that request's pages into one
-array first. [docs/benchmarks.md](docs/benchmarks.md) has latency, memory, a
-32K-context run and the correctness checks against Transformers. Raw JSON is in
-[benchmarks/results](benchmarks/results/fp16-m3-max-2026-09-23/).
+A 32K-token prompt prefills in 7 seconds. [docs/benchmarks.md](docs/benchmarks.md)
+has latency, memory and the correctness checks against Transformers; raw JSON is
+in [benchmarks/results](benchmarks/results/paged-arena-m3-max-2026-10-30/).
 
 ### Status
 
@@ -82,12 +78,9 @@ array first. [docs/benchmarks.md](docs/benchmarks.md) has latency, memory, a
 | Qwen2.5 on MLX | Matches Transformers greedy output token for token (4 prompts × 32 tokens) |
 | Gemma 3 on MLX | 3 of 4 continuations match exactly; the 4th diverges after 25 tokens at an FP16 near-tie |
 | 32K context | Runs on both models and releases every page afterwards |
-| Prefix cache | Bit-identical outputs with and without reuse; timing not measured yet |
 | CUDA | Compiles in CI. **Hasn't been run on an NVIDIA GPU yet**, so correctness and speed are unknown |
 
-The native engine is greedy-only. There's no sampling, native 4-bit weights,
-streaming server or multi-GPU support yet. See
-[docs/roadmap.md](docs/roadmap.md).
+See [docs/roadmap.md](docs/roadmap.md) for what's next.
 
 ### Running the engine
 
@@ -148,10 +141,6 @@ or remote over authenticated HTTP), spawn bounded child agents, and journal
 everything to SQLite so a run can resume after a crash. Workspace tools are
 confined to one directory, with version-checked edits. See
 [docs/agent-runtime.md](docs/agent-runtime.md).
-
-**Speculative decoding.** See [docs/speculative-decoding.md](docs/speculative-decoding.md).
-On Qwen2.5-0.5B it's up to 4× faster when the output repeats earlier text, and
-1.2–1.5× faster on code and arithmetic.
 
 ## Tests
 

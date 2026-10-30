@@ -1,12 +1,6 @@
-"""Execution backends and model-family adapters exposed by Instinct."""
+"""Model adapters and Metal kernels for the MLX engine."""
 
-from .factory import create_mlx_model
-from .gemma3 import MlxGemma3Model
-from .mlx import MlxQwenModel, mlx_build_info
+from .base import mlx_build_info
+from .factory import load_model
 
-__all__ = [
-    "MlxGemma3Model",
-    "MlxQwenModel",
-    "create_mlx_model",
-    "mlx_build_info",
-]
+__all__ = ["load_model", "mlx_build_info"]

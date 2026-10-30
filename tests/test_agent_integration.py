@@ -1255,7 +1255,6 @@ def identity():
         "model_config_sha256": "b" * 64,
         "tokenizer_signature": "c" * 64,
         "draft_model_data_sha256": None,
-        "speculative": None,
         "native_tool_calls": False,
         "runner": "engine",
         "runner_version": "0.1.0",
