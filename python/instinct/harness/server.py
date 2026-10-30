@@ -92,6 +92,14 @@ class StudioHandler(BaseHTTPRequestHandler):
             raise ValueError("chunked requests are not supported")
         size = int(self.headers.get("Content-Length", "0"))
         if not 1 <= size <= limit:
+            if limit < size <= MAX_MEDIA_REQUEST_BYTES:
+                # Read what an image send could carry, so the client gets the
+                # 400 rather than a reset from closing mid-upload.
+                self.connection.settimeout(1)
+                try:
+                    self.rfile.read(size)
+                except OSError:
+                    pass
             raise ValueError(f"request body must contain 1 to {limit} bytes")
         self.connection.settimeout(5)
         data = self.rfile.read(size)
