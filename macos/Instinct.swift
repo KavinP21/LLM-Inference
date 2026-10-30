@@ -39,14 +39,14 @@ final class Backend {
         FileManager.default.fileExists(atPath: root.appendingPathComponent("models/gemma-4-26b-a4b-mlx/config.json").path)
     }
 
-    func start(workspace: URL) throws {
+    func start(workspace: URL, demo: Bool = false, state: URL? = nil) throws {
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             throw AppError("No Python environment at \(python.path). Run `macos/build.sh` from the repository after installing it.")
         }
         stopping = false
         port = nil
         token = Self.randomToken()
-        let state = Self.stateDirectory(for: workspace)
+        let state = state ?? Self.stateDirectory(for: workspace)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
 
         let process = Process()
@@ -54,7 +54,7 @@ final class Backend {
         process.currentDirectoryURL = root
         var arguments = ["-m", "instinct.harness.cli", "--app", "--port", "0",
                          "--workspace", workspace.path, "--state-dir", state.path]
-        arguments += modelsReady ? ["--config", config.path] : ["--demo"]
+        arguments += modelsReady && !demo ? ["--config", config.path] : ["--demo"]
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment["INSTINCT_APP_TOKEN"] = token
@@ -188,26 +188,72 @@ final class StartupView: NSView {
     @objc private func openLog() { NSWorkspace.shared.open(Backend.logURL) }
 }
 
+// MARK: - UI tests
+
+/// Set INSTINCT_TEST_SCRIPT to run a JavaScript test inside the app's own web
+/// view: the app opens INSTINCT_TEST_WORKSPACE (demo mode unless
+/// INSTINCT_TEST_MODELS=1), runs the script as an async function body once the
+/// page loads, writes its result to INSTINCT_TEST_OUTPUT/result.json and
+/// quits. The script can call `await snapshot(name)` to save the window,
+/// title bar included, as a PNG. The window stays transparent and ignores
+/// clicks, so a test run doesn't get in the way. macos/test.sh drives this.
+struct UITest {
+    let script: String
+    let output: URL
+    let workspace: URL
+    let models: Bool
+
+    static func fromEnvironment() -> UITest? {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["INSTINCT_TEST_SCRIPT"],
+              let script = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let output = URL(fileURLWithPath: environment["INSTINCT_TEST_OUTPUT"] ?? NSTemporaryDirectory())
+        let workspace = URL(fileURLWithPath: environment["INSTINCT_TEST_WORKSPACE"] ?? NSTemporaryDirectory())
+        try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        return UITest(script: script, output: output, workspace: workspace, models: environment["INSTINCT_TEST_MODELS"] == "1")
+    }
+
+    // Helpers every test script can use.
+    static let prelude = """
+        const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+        const until = async (test, ms = 15000) => {
+          for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) { const value = await test(); if (value) return value; }
+          throw new Error("timed out: " + test.toString().slice(0, 120));
+        };
+        const snapshot = (name) => window.webkit.messageHandlers.instinctTest.postMessage({ type: "snapshot", name });
+        const results = [];
+        const check = async (name, body) => {
+          try { await body(); results.push({ name, ok: true }); }
+          catch (error) { results.push({ name, ok: false, error: String(error && error.message || error) }); }
+        };
+        """
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate,
-    WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate
+    WKUIDelegate, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, WKDownloadDelegate
 {
     var window: NSWindow!
     var webView: WKWebView!
     let startup = StartupView()
     var backend: Backend!
     var workspace: URL!
+    let test = UITest.fromEnvironment()
+    var testStarted = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let root = Bundle.main.object(forInfoDictionaryKey: "InstinctRoot") as? String else {
             fatalError("Info.plist has no InstinctRoot; build the app with macos/build.sh")
         }
         backend = Backend(root: URL(fileURLWithPath: root))
-        workspace = Self.savedWorkspace()
+        workspace = test?.workspace ?? Self.savedWorkspace()
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(self, name: "instinct")
+        if test != nil {
+            configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "instinctTest")
+        }
         configuration.applicationNameForUserAgent = "InstinctApp/0.1"
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -223,6 +269,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.title = "Instinct"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        // An empty unified toolbar gives a 52-point title bar with the window
+        // buttons centred in it, matching the page's header.
+        window.toolbar = NSToolbar(identifier: "main")
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
         window.backgroundColor = background
         window.minSize = NSSize(width: 760, height: 520)
         window.delegate = self
@@ -240,8 +291,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.contentView = content
         window.center()
         window.setFrameAutosaveName("Main")
-        window.makeKeyAndOrderFront(nil)
-        layoutWindowButtons()
+        if test != nil {
+            window.alphaValue = 0
+            window.ignoresMouseEvents = true
+            window.orderFrontRegardless()
+        } else {
+            window.makeKeyAndOrderFront(nil)
+        }
 
         startup.onRetry = { [weak self] in self?.launch() }
         backend.onReady = { [weak self] port in self?.load(port: port) }
@@ -252,28 +308,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSApp.mainMenu = makeMenu()
         launch()
     }
-
-    /// Centre the close/minimize/zoom buttons on the page's 64-point header
-    /// instead of the default 28-point title bar.
-    func layoutWindowButtons() {
-        guard !window.styleMask.contains(.fullScreen),
-              let close = window.standardWindowButton(.closeButton),
-              let minimize = window.standardWindowButton(.miniaturizeButton),
-              let zoom = window.standardWindowButton(.zoomButton),
-              let container = close.superview?.superview else { return }
-        let top = 32 - close.frame.height / 2
-        var frame = container.frame
-        frame.size.height = close.frame.height + top
-        frame.origin.y = window.frame.height - frame.size.height
-        container.frame = frame
-        let spacing = minimize.frame.minX - close.frame.minX
-        for (index, button) in [close, minimize, zoom].enumerated() {
-            button.setFrameOrigin(NSPoint(x: 22 + CGFloat(index) * spacing, y: button.frame.minY))
-        }
-    }
-
-    func windowDidResize(_ notification: Notification) { layoutWindowButtons() }
-    func windowDidExitFullScreen(_ notification: Notification) { layoutWindowButtons() }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ notification: Notification) { backend.stop() }
@@ -296,7 +330,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         webView.isHidden = true
         window.subtitle = workspace.path
         startup.show(backend.modelsReady ? "Starting in \(workspace.lastPathComponent)…" : "Models not found; starting in demo mode…")
-        do { try backend.start(workspace: workspace) } catch {
+        do {
+            try backend.start(workspace: workspace, demo: test.map { !$0.models } ?? false,
+                              state: test?.output.appendingPathComponent("state"))
+        } catch {
             startup.show(error.localizedDescription, failed: true)
         }
     }
@@ -414,6 +451,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     // MARK: Messages from the page
 
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage,
+                               replyHandler: @escaping (Any?, String?) -> Void) {
+        guard let test, let body = message.body as? [String: Any] else { return replyHandler(nil, "unknown test message") }
+        if body["type"] as? String == "hit", let x = body["x"] as? Double, let y = body["y"] as? Double,
+           let frame = window.contentView?.superview {
+            let view = frame.hitTest(NSPoint(x: x, y: frame.bounds.height - y))
+            return replyHandler(view.map { String(describing: type(of: $0)) } ?? "none", nil)
+        }
+        guard body["type"] as? String == "snapshot", let name = body["name"] as? String else {
+            return replyHandler(nil, "unknown test message")
+        }
+        snapshotWindow { data in
+            let file = test.output.appendingPathComponent("\(name).png")
+            if let data, (try? data.write(to: file)) != nil { replyHandler(file.path, nil) }
+            else { replyHandler(nil, "snapshot failed") }
+        }
+    }
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
@@ -485,6 +540,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webView.isHidden = false
         window.makeFirstResponder(webView)
+        if let test, !testStarted {
+            testStarted = true
+            runTest(test)
+        }
+    }
+
+    func runTest(_ test: UITest) {
+        let body = UITest.prelude + test.script + "\nreturn JSON.stringify(results);"
+        webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { [weak self] outcome in
+            let report: String
+            switch outcome {
+            case .success(let value): report = value as? String ?? "[]"
+            case .failure(let error):
+                report = "[{\"name\": \"script\", \"ok\": false, \"error\": \(Self.jsString(error.localizedDescription))}]"
+            }
+            try? report.write(to: test.output.appendingPathComponent("result.json"), atomically: true, encoding: .utf8)
+            self?.backend.stop()
+            exit(report.contains("\"ok\":false") ? 1 : 0)
+        }
+    }
+
+    /// The page as WebKit draws it, with the window's title bar buttons on top.
+    func snapshotWindow(_ completion: @escaping (Data?) -> Void) {
+        webView.takeSnapshot(with: nil) { [weak self] page, _ in
+            guard let self, let page else { return completion(nil) }
+            let size = self.window.frame.size
+            let image = NSImage(size: size)
+            image.lockFocus()
+            background.setFill()
+            NSRect(origin: .zero, size: size).fill()
+            page.draw(in: self.webView.frame)
+            if let close = self.window.standardWindowButton(.closeButton),
+               let bar = close.superview?.superview,
+               let rep = bar.bitmapImageRepForCachingDisplay(in: bar.bounds) {
+                bar.cacheDisplay(in: bar.bounds, to: rep)
+                let buttons = NSImage(size: bar.bounds.size)
+                buttons.addRepresentation(rep)
+                buttons.draw(in: bar.frame)
+            }
+            image.unlockFocus()
+            let png = image.tiffRepresentation
+                .flatMap(NSBitmapImageRep.init(data:))?
+                .representation(using: .png, properties: [:])
+            completion(png)
+        }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
@@ -523,6 +623,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.regular)
-app.activate(ignoringOtherApps: true)
+if delegate.test == nil {
+    app.setActivationPolicy(.regular)
+    app.activate(ignoringOtherApps: true)
+} else {
+    app.setActivationPolicy(.accessory)  // No Dock icon or focus change during tests.
+}
 app.run()
