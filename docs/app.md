@@ -134,7 +134,7 @@ The app is a native window around a local server, which also runs on its own:
 ```bash
 .venv/bin/python tools/instinct.py                 # this repo as the workspace
 .venv/bin/python tools/instinct.py --demo          # no models needed
-instinct --workspace ~/code/project --config examples/agents-studio.json
+instinct --workspace ~/code/project --config examples/instinct.json
 ```
 
 It opens your browser with a one-time link and serves only on 127.0.0.1. Ctrl-C
@@ -167,7 +167,7 @@ reviewed, and they don't inherit credentials from the environment.
 ## State and limits
 
 Chats, images, the agent journal, checkpoints and artifacts live in the state
-folder: Application Support for the app, `.instinct/studio/` in the workspace
+folder: Application Support for the app, `.instinct/` in the workspace
 for the command line. The file tools can't read it. The server binds to
 127.0.0.1 and checks the Host and Origin of every request. It authenticates the
 page with an HttpOnly cookie and serves a strict content security policy.

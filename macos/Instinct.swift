@@ -34,7 +34,7 @@ final class Backend {
     init(root: URL) { self.root = root }
 
     var python: URL { root.appendingPathComponent(".venv/bin/python") }
-    var config: URL { root.appendingPathComponent("examples/agents-studio.json") }
+    var config: URL { root.appendingPathComponent("examples/instinct.json") }
     var modelsReady: Bool {
         FileManager.default.fileExists(atPath: root.appendingPathComponent("models/gemma-4-26b-a4b-mlx/config.json").path)
     }

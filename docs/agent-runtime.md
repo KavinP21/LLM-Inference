@@ -14,11 +14,11 @@ parallelism: each worker must fit a complete model on its selected device.
 ```bash
 pip install -e '.[mlx,vlm,agents,test]'
 python -m instinct.prepare_models
-instinct-agents --state-dir .instinct run --config examples/agents-studio.json \
+instinct-agents --state-dir .instinct run --config examples/instinct.json \
   --workspace . --task 'Review the architecture and explain its resource limits.'
 ```
 
-`examples/agents-studio.json` is the setup Studio uses: Gemma 4 26B A4B runs
+`examples/instinct.json` is the setup the app uses: Gemma 4 26B A4B runs
 every root agent, and two Qwen3.5-4B workers handle sub-agents (see
 [models.md](models.md)). `examples/agents-gemma4.json` is Gemma alone, and
 `examples/agents-qwen35.json` is two Qwen3.5 replicas. Add `--image FILE` or
