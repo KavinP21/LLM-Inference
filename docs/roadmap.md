@@ -13,9 +13,10 @@
   isn't wired in. Several users at once are much faster than before.
 - **Small batches of 4-bit matmuls** cost about twice a single row in MLX at
   eight rows, which limits how well eight users scale.
-- **No OpenAI-compatible server** and no tensor/pipeline parallelism.
-- **Long context is only smoke-tested.** The 32K runs show it executes and frees
-  memory, not that output quality holds up or how fast sustained decoding is.
+- **No tensor or pipeline parallelism.**
+- **Long prompts are slow to prefill.** 262K tokens take 29 minutes on Gemma, and
+  a long prompt arriving stalls other users' decoding by about half a second a
+  token while it prefills.
 
 ## Next
 

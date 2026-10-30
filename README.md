@@ -77,7 +77,7 @@ in [benchmarks/results](benchmarks/results/paged-arena-m3-max-2026-10-30/).
 | --- | --- |
 | Qwen2.5 on MLX | Matches Transformers greedy output token for token (4 prompts × 32 tokens) |
 | Gemma 3 on MLX | 3 of 4 continuations match exactly; the 4th diverges after 25 tokens at an FP16 near-tie |
-| 32K context | Runs on both models and releases every page afterwards |
+| 256K context | Gemma 4 answers from a 262K-token prompt and releases every page afterwards; prefill takes 29 minutes |
 | CUDA | Compiles in CI. **Hasn't been run on an NVIDIA GPU yet**, so correctness and speed are unknown |
 
 See [docs/roadmap.md](docs/roadmap.md) for what's next.

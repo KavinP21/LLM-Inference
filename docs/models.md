@@ -68,6 +68,8 @@ The engine also runs FP16 Qwen2 and Gemma 3 `.engine` files.
   stops after ten idle minutes.
 - Gemma's MTP drafter isn't wired into the engine yet, so Gemma decodes without
   speculation. Qwen3.5's vision tower isn't ported, so sub-agents take text only.
-- Gemma 4's audio input and its 262K context haven't been tried here. The app's
-  configuration caps the driver at a 60K context and sub-agents at 32K.
+- Both models run with their full 262,144-token context, but prefilling a long
+  prompt is slow: 29 minutes for 262K tokens on Gemma (see
+  [benchmarks](benchmarks.md#256k-context)). Gemma 4's audio input hasn't been
+  tried here.
 - Nothing here runs on CUDA.
