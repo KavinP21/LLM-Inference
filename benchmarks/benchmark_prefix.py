@@ -30,15 +30,12 @@ def measure(model, mode, length, concurrency, warmups=5, repetitions=3):
         max_num_sequences=concurrency,
         kv_cache_bytes=512 << 20,
         prefill_chunk_size=512,
-        decode_mode="rowwise",
         prefix_cache_bytes=0 if mode == "disabled" else 64 << 20,
     )
     requests, trials = [], []
     with MlxEngine(model, **options) as engine:
         mx = engine.model.mx
-        prompt = [
-            (17 + i * 104729) % engine.model.config.vocab_size for i in range(length)
-        ]
+        prompt = [(17 + i * 104729) % engine.model.vocab_size for i in range(length)]
         for trial in range(-warmups, repetitions):
             engine.clear_prefix_cache()
             if mode == "primed":
@@ -80,7 +77,6 @@ def measure(model, mode, length, concurrency, warmups=5, repetitions=3):
             "output_tokens": 32,
             "warmups": warmups,
             "repetitions": repetitions,
-            "decode_mode": "rowwise",
             "prefill_chunk_size": 512,
             "workload": prompt,
             "prefix_cache_bytes": options["prefix_cache_bytes"],

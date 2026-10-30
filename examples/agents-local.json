@@ -9,7 +9,6 @@
       "max_model_length": 16384,
       "kv_cache_bytes": 1073741824,
       "engine_options": {
-        "decode_mode": "rowwise",
         "prefix_cache_bytes": 268435456
       },
       "native_tool_calls": true
@@ -23,7 +22,6 @@
       "max_model_length": 16384,
       "kv_cache_bytes": 1073741824,
       "engine_options": {
-        "decode_mode": "rowwise",
         "prefix_cache_bytes": 268435456
       },
       "native_tool_calls": true

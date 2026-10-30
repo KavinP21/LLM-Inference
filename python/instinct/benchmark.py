@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import build_info, create_engine
-from .format import HEADER, MAGIC
+from .format import HEADER, MAGIC, PREVIOUS_MAGIC
 
 
 @dataclass
@@ -141,7 +141,7 @@ def model_provenance(path: Path) -> dict[str, str | int]:
     if len(header) != HEADER.size:
         raise ValueError("model file is shorter than its fixed header")
     magic, version, _, _, _, _, data_digest = HEADER.unpack(header)
-    if magic != MAGIC:
+    if magic not in {MAGIC, PREVIOUS_MAGIC}:
         raise ValueError("model file has invalid magic")
     return {
         "model_format_version": version,
@@ -177,7 +177,21 @@ def run_once(
             output_counts[event.request_id] += 1
             if event.finished:
                 finished[event.request_id] = now
-        cache = engine.stats()["kv_cache"]
+        stats = engine.stats()
+        # The CUDA engine reports blocks; the MLX engine reports page pools.
+        cache = stats.get("kv_cache") or {
+            "allocated_blocks": sum(
+                p["used_pages"] for p in stats["kv_pools"].values()
+            ),
+            "reserved_blocks": sum(
+                p["reserved_pages"] for p in stats["kv_pools"].values()
+            ),
+            "internal_fragmentation_tokens": 0,
+            "occupancy": max(
+                p["used_pages"] / p["capacity_pages"]
+                for p in stats["kv_pools"].values()
+            ),
+        }
         for key, peak in peak_cache.items():
             peak_cache[key] = max(peak, cache[key])
     wall_ms = (time.perf_counter_ns() - start) / 1e6
@@ -211,9 +225,7 @@ def benchmark(
     kv_cache_mib: int,
     stop_on_eos: bool = False,
     backend: str = "auto",
-    mlx_kernel_mode: str = "full",
     capture_path: Path | None = None,
-    decode_mode: str = "batched",
 ) -> dict:
     if output_length <= 0 or repetitions <= 0 or warmups < 0:
         raise ValueError(
@@ -249,14 +261,6 @@ def benchmark(
         "max_model_length": max_model_length,
         "kv_cache_bytes": kv_cache_mib << 20,
     }
-    if backend == "mlx" or (backend == "auto" and platform.system() == "Darwin"):
-        if mlx_kernel_mode not in {"baseline", "fused", "full"}:
-            raise ValueError("unknown MLX kernel mode")
-        engine_options["custom_metal"] = mlx_kernel_mode != "baseline"
-        engine_options["metal_paged_attention"] = mlx_kernel_mode == "full"
-        engine_options["decode_mode"] = decode_mode
-    elif decode_mode != "batched":
-        raise ValueError("rowwise decode is only supported by the MLX backend")
     engine = create_engine(model_path, backend=backend, **engine_options)
     if stop_on_eos:
         from transformers import AutoTokenizer
@@ -321,8 +325,7 @@ def benchmark(
     result = {
         "schema_version": 1,
         "implementation": (
-            f"instinct-mlx-fp16-paged-{mlx_kernel_mode}"
-            + ("-rowwise" if decode_mode == "rowwise" else "")
+            "instinct-mlx-paged"
             if getattr(engine, "backend", "cuda") == "mlx"
             else "instinct-cuda-fp16-paged"
         ),
@@ -340,8 +343,6 @@ def benchmark(
             "kv_cache_mib": kv_cache_mib,
             "stop_on_eos": stop_on_eos,
             "backend": getattr(engine, "backend", "cuda"),
-            "mlx_kernel_mode": mlx_kernel_mode,
-            "decode_mode": decode_mode,
             "warmup_output_length": output_length,
             "capture_path": str(capture_path) if capture_path is not None else None,
         },
@@ -385,7 +386,7 @@ def benchmark(
         "peak_kv_cache": {
             key: max(item[key] for item in cache_peaks) for key in cache_peaks[0]
         },
-        "peak_kv_cache_bytes": engine_stats.get("kv_peak_device_bytes"),
+        "peak_kv_cache_bytes": engine_stats.get("kv_device_bytes"),
         "mlx_memory": mlx_memory,
         "engine_stats": engine_stats,
         "requests": [asdict(item) for item in all_metrics],
@@ -416,21 +417,9 @@ def main() -> None:
     parser.add_argument("--max-model-length", type=int, default=2048)
     parser.add_argument("--kv-cache-mib", type=int, default=512)
     parser.add_argument(
-        "--decode-mode",
-        choices=["batched", "rowwise"],
-        default="batched",
-        help="MLX decode projections: batched throughput or single-row reductions",
-    )
-    parser.add_argument(
         "--stop-on-eos",
         action="store_true",
         help="allow EOS to shorten requests (disabled for fixed-length benchmarks)",
-    )
-    parser.add_argument(
-        "--mlx-kernel-mode",
-        choices=["baseline", "fused", "full"],
-        default="full",
-        help="select the MLX custom-kernel ablation",
     )
     parser.add_argument(
         "--capture",
@@ -450,9 +439,7 @@ def main() -> None:
         args.kv_cache_mib,
         args.stop_on_eos,
         args.backend,
-        args.mlx_kernel_mode,
         args.capture,
-        args.decode_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

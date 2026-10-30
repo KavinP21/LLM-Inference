@@ -26,86 +26,39 @@ consume the same validated container and expose the same `submit`/`step`/`cancel
 
 ## MLX execution
 
-Gemma 4 and Qwen3.5 checkpoints run through the [VLM runner](vlm-runner.md): mlx-vlm executes
-the model, and Instinct handles prompt reuse (per-conversation sessions and boundary snapshots),
-drafting, effort, media and worker integration. Their caches aren't the native paged store
-described below. One request runs per replica; worker groups provide concurrency. See
-[models.md](models.md).
+Gemma 4 and Qwen3.5 checkpoints still run through the [VLM runner](vlm-runner.md) (mlx-vlm with
+Instinct's prompt reuse) until their native adapters land. See [models.md](models.md).
 
-The Apple backend implements complete Qwen2 and Gemma 3 text graphs with MLX operations. A
-validated artifact selects a family adapter; the engine, scheduler, and physical K/V owner depend
-only on the adapter protocol. Qwen uses biased projections, standard RMSNorm, SiLU gating, and a
-uniform RoPE base. Gemma uses an explicit attention width, bias-free projections, head-wise Q/K
-normalization, offset RMSNorm, scaled embeddings, tanh-GELU, four norms per block, two RoPE bases,
-and a regular five-local/one-global attention pattern.
+`MlxEngine` is a continuous-batching engine. Each `step()` decodes one token for every running
+request in a single batched forward pass, then prefills one chunk of a waiting prompt (512 tokens
+while others are decoding, 2,048 when nothing else is), so a new long prompt delays the others by
+at most a chunk. A request is admitted only when a sequence slot and K/V pages for its whole budget
+are free, so a request that starts always finishes.
 
-Model
-weights are copied from read-only memory-mapped NumPy views and materialized before inference.
-Aliased tied embeddings share one MLX array. FP32 is used for RMSNorm statistics, attention scores,
-softmax, and returned logits; activations remain FP16. The MLX backend runs FP16 artifacts only.
+**K/V storage** (`paged_kv.py`). Every attention layer keeps keys and values in one arena of token
+rows, `[rows, kv_heads, head_dim]`, and a page is 64 consecutive rows. Each sequence has a page
+table per layer group, so sequences of any length share one buffer with no padding. Writes are
+scatter updates that MLX applies in place. Arenas start small and double as pages are first used,
+up to the configured budget. Layers with the same shape and window form a group with its own page
+pool, and a sliding-window group returns pages as soon as they fall out of the window, so its
+memory stays bounded however long a sequence gets. Recurrent layers keep per-sequence state in
+slot arrays.
 
-The cache allocator assigns stable physical IDs in 16-token units. Each physical block owns an
-independently replaceable MLX layer-page with shape
-`[K_or_V][token_in_block][kv_head][head_dimension]` for every materialized layer. A per-request
-logical table routes positions to those arrays. Pages materialize lazily, reject overwrites, and
-return to a shared free list on completion, cancellation, or failure. Admission reserves worst-case
-block capacity so an accepted request cannot be evicted halfway through generation.
+**Attention** (`batches.py`, `backends/metal_kernels.py`). Prefill gathers the sequence's rows and
+runs MLX's attention with a causal (or window) mask, in query tiles when the score matrix would be
+large. Decode uses a split-K paged kernel that reads the arena through the page tables: a
+threadgroup per sequence, KV head and slice of the key range serves every query head of that KV
+head, and a second pass merges the slices. Model adapters see one interface for both
+(`rope`, `attend`, `state`), so each is written once.
 
-Opt-in FP16 [prefix caching](prefix-cache.md) replaces private-page ownership with
-`SharedKVBlockPool` and a bounded `PrefixCache`. Immutable snapshots pin physical pages
-independently of requests. Multiple logical tables may share one page; admission counts
-unique pages plus future private and partial-tail COW reservations. A shared tail is cloned
-before append, and only the final reference returns its ID to the free list. The device store
-also rejects direct shared-page writes. Cache eviction/clear drops pins, not active references.
-This is engine-local and namespace-scoped; CUDA does not inherit it.
+**Prefix cache** (`prefix_cache.py`, opt-in). See [prefix-cache.md](prefix-cache.md).
 
-Cache lookup retains original prefill chunk shapes: exact full-prompt snapshots can bypass
-prefill, while changed suffixes reuse only original chunk boundaries. Each snapshot copies one
-final FP32 logit row to bounded host memory rather than retaining a whole GPU vocabulary matrix.
-Execution identity binds artifact/configuration and kernel/numerical settings; changing settings
-requires another engine. The default remains disabled, including in the desktop application.
+**Sampling** (`sampling.py`). Each request brings its own temperature, top-k, top-p, min-p and
+seed, so a greedy agent step and a sampled chat share a batch. `force()` makes a request emit given
+tokens next, which is how thinking budgets end a thought.
 
-Prompt work is limited to one configurable chunk per scheduler iteration. For supported production
-head dimensions, prefill uses MLX fused causal GQA attention; the exact online-softmax tiled path is
-kept as a bounded-workspace reference and small-shape/soft-cap fallback. Gemma sliding layers gather
-only the page range visible to the current chunk, while global layers retain full-prefix attention.
-Decode combines embeddings, projections, attention, and MLPs for all runnable sequences in one
-batched model call.
-
-`decode_mode="rowwise"` optionally splits only projection reductions (including the tied head)
-into independent single-row operations. The scheduler, norm/activation chains, page writes, and
-paged attention remain batched; prefill and single-request numerics are unchanged. This addresses
-native FP16 GEMM batch-shape drift at a measured dispatch/weight-reuse cost. Reconstruction modes
-share one temporary matrix among the row GEMVs. The default remains `batched`; see
-[decode-numerics.md](decode-numerics.md).
-
-Three Qwen custom-Metal chains reduce elementwise launches and intermediate traffic: residual add
-plus RMSNorm, RoPE plus physical layer-page write, and SiLU-times-up. Gemma safely reuses the
-RoPE/page-write chain but keeps its different norm and activation topology in MLX. Decode attention
-packs the live
-layer-pages once for the launch, remaps logical block tables into that tensor, and runs one
-simdgroup per request/query-head with online FP32 softmax. This avoids per-request logical-history
-concatenation and longest-sequence padding. It is not a zero-copy page pool: because MLX arrays are immutable, the layer-page stack is still
-needed, and it's the main cost for single long requests.
-
-## Speculative execution
-
-Gemma 4 can draft with its MTP assistant model through the VLM runner; see
-[vlm-runner.md](vlm-runner.md).
-
-The [greedy speculative controller](speculative-decoding.md) owns one request and a private paged
-cache. Prompt/history n-grams supply proposals without another model; an optional compatible draft
-model has its own cache. The target evaluates the pending output token and proposals in one causal
-`forward_paged_chunk` call. Matching proposals are accepted, followed by the target correction or
-bonus token. Rejected K/V slots lose both their occupancy masks and underlying values before reuse.
-Context, output and KV budgets apply before execution; completion, cancellation and failure release
-request caches.
-
-Native FP16 block projections and attention can use different reductions from one-token decoding.
-So block verification can't promise token-for-token parity with ordinary decoding in every case. A sequential verification mode and no-draft baseline use ordinary decode
-calls. The existing continuous scheduler and prefix-cache snapshots are not shared with this
-standalone decoder. CUDA verification, probabilistic speculation and multi-request speculative
-batching remain separate implementation work.
+The `.engine` adapter (`backends/dense.py`) runs FP16 Qwen2 and Gemma 3 files; tests compare it with
+a NumPy reference and with Transformers.
 
 ## Task agents and worker replicas
 
