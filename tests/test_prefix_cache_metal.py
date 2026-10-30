@@ -5,10 +5,10 @@ import pytest
 
 pytest.importorskip("mlx.core")
 
+from conftest import tiny_artifact
 from instinct.backends.mlx import MlxQwenModel
 from instinct.mlx_engine import MlxEngine
 from instinct.runtime import SequenceState
-from test_quantization import tiny_artifact
 
 
 def options(**kwargs):
@@ -116,10 +116,8 @@ def test_shared_decode_pages_cancel_evict_failure_and_close(tmp_path, family):
         engine.submit(prompt, 1)
 
 
-def test_namespace_execution_identity_and_rejected_int8(tmp_path):
-    from instinct.quantization import quantize_model
-
-    path, packed = tmp_path / "model.engine", tmp_path / "int8.engine"
+def test_namespace_execution_identity(tmp_path):
+    path = tmp_path / "model.engine"
     tiny_artifact(path)
     with MlxEngine(path, prefix_cache_bytes=1 << 18, **options()) as engine:
         prompt = list(range(15))
@@ -135,9 +133,6 @@ def test_namespace_execution_identity_and_rejected_int8(tmp_path):
         engine.prefill_chunk_size = 8
         with pytest.raises(RuntimeError, match="settings changed"):
             engine.submit(prompt, 1)
-    quantize_model(path, packed)
-    with pytest.raises(ValueError, match="FP16"):
-        MlxEngine(packed, prefix_cache_bytes=1 << 18, **options())
 
 
 def test_clone_aliases_immutable_arrays_and_store_rejects_direct_shared_write(tmp_path):

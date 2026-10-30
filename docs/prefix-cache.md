@@ -2,7 +2,7 @@
 
 Opt-in reuse of KV pages for repeated prompt prefixes in the MLX engine. It's
 FP16-only and per engine: no disk cache, nothing shared across workers, and no
-CUDA or INT8 support. With the default `prefix_cache_bytes=0` the engine uses the
+CUDA support. With the default `prefix_cache_bytes=0` the engine uses the
 plain private-page allocator, exactly as before.
 
 ```python

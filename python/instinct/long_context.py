@@ -58,7 +58,6 @@ def validate_contexts(
     output_tokens: int,
     prefill_chunk_size: int,
     kv_cache_bytes: int,
-    int8_mode: str = "auto",
     decode_mode: str = "batched",
 ) -> dict[str, object]:
     if output_tokens <= 0:
@@ -72,7 +71,6 @@ def validate_contexts(
         max_model_length=maximum,
         kv_cache_bytes=kv_cache_bytes,
         prefill_chunk_size=prefill_chunk_size,
-        int8_mode=int8_mode,
         decode_mode=decode_mode,
     )
     mx = engine.model.mx
@@ -173,7 +171,6 @@ def validate_contexts(
             "prefill_chunk_size": prefill_chunk_size,
             "kv_cache_bytes": kv_cache_bytes,
             "block_tokens": engine.block_tokens,
-            "int8_mode": int8_mode,
             "decode_mode": decode_mode,
         },
         "observations": [asdict(item) for item in observations],
@@ -200,11 +197,6 @@ def main() -> None:
         default="batched",
     )
     parser.add_argument(
-        "--int8-mode",
-        choices=["auto", "metal", "reconstruct", "dequantize"],
-        default="auto",
-    )
-    parser.add_argument(
         "--output-tokens",
         type=int,
         default=2,
@@ -220,7 +212,6 @@ def main() -> None:
         output_tokens=args.output_tokens,
         prefill_chunk_size=args.prefill_chunk_size,
         kv_cache_bytes=args.kv_cache_mib << 20,
-        int8_mode=args.int8_mode,
         decode_mode=args.decode_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

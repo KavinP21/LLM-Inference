@@ -62,9 +62,7 @@ models. Tested: Qwen3-30B-A3B (4-bit, 93 tok/s) and Qwen2.5-7B-Instruct (4-bit,
 73 tok/s). Tool calls in the plain JSON (Hermes) format are parsed for those.
 
 The native engine still runs FP16 Qwen2 and Gemma 3 `.engine` files with its own
-paged KV cache and Metal kernels. `instinct-import-mlx` can rebuild an FP16 engine
-file from an MLX 4-bit Qwen2 checkpoint (not the original weights, since the
-quantization error stays).
+paged KV cache and Metal kernels.
 
 ## Limits
 

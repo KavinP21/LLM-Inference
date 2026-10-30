@@ -53,9 +53,6 @@ engine.
   for the last partial page, namespaces, and LRU eviction.
 - **Speculative decoding** (opt-in). N-gram drafts verified in one forward pass,
   with rejected KV rolled back.
-- **INT8 weights** (experimental). Per-channel W8A16 with a custom Metal kernel.
-  It saves about 35% of file size, but it doesn't match FP16 output closely
-  enough to be the default. See [docs/quantization.md](docs/quantization.md).
 
 ### Performance
 
@@ -86,7 +83,6 @@ array first. [docs/benchmarks.md](docs/benchmarks.md) has latency, memory, a
 | Gemma 3 on MLX | 3 of 4 continuations match exactly; the 4th diverges after 25 tokens at an FP16 near-tie |
 | 32K context | Runs on both models and releases every page afterwards |
 | Prefix cache | Bit-identical outputs with and without reuse; timing not measured yet |
-| INT8 | Experimental. No variant matched FP16 on all 25 test prompts (best was 23) |
 | CUDA | Compiles in CI. **Hasn't been run on an NVIDIA GPU yet**, so correctness and speed are unknown |
 
 The native engine is greedy-only. There's no sampling, native 4-bit weights,
@@ -178,7 +174,7 @@ compile in the `nvidia/cuda` image.
 
 | Path | |
 | --- | --- |
-| [python/instinct/](python/instinct/) | MLX engine, scheduler, paged KV store, model adapters, Metal kernels, quantization |
+| [python/instinct/](python/instinct/) | MLX engine, scheduler, paged KV store, model adapters, Metal kernels |
 | [macos/](macos/) | The Mac app (Swift, WKWebView) and its build script |
 | [python/instinct/harness/](python/instinct/harness/) | The app's server: chats, sandbox, terminal, web tools, checkpoints, UI |
 | [python/instinct/agents/](python/instinct/agents/) | Agent runtime, workspace tools and model workers |

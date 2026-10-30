@@ -28,4 +28,3 @@
 | Prefix-cache timing | Disabled/cold/primed runs at 128 and 1,024 tokens, concurrency 1 and 8, for both models, with insertion and reuse cost reported separately |
 | Cheaper page packing | Profile the per-layer page stack on its own, then compare alternatives at the same workload and memory accounting |
 | Qwen3.5 | Longer contexts, more varied visual and agent tasks, and load testing. Speculation stays off until it helps on more than copying |
-| INT8 / W4A16 | A new calibration approach checked against a held-out prompt set it never saw. See [quantization.md](quantization.md) |

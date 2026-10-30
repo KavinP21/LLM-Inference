@@ -42,22 +42,7 @@ and a regular five-local/one-global attention pattern.
 Model
 weights are copied from read-only memory-mapped NumPy views and materialized before inference.
 Aliased tied embeddings share one MLX array. FP32 is used for RMSNorm statistics, attention scores,
-softmax, and returned logits; activations remain FP16. FP16 is the validated weight path; optional
-version-3 artifacts store internal projections as signed INT8 plus FP32 per-output-channel scales.
-Small decode batches use a fused Metal W8A16 linear kernel; prefill reconstructs ephemeral FP16
-matrices for MLX GEMM. No dense second model is retained. The INT8 quality checkpoint remains
-experimental; see [quantization.md](quantization.md).
-
-Mixed-precision version-3 artifacts preserve sensitive projections in their original FP16 form.
-An offline, source-bound policy chooses the partition; inference reads tensor descriptors only.
-`int8_mode="reconstruct"` uses one-pass Metal unpacking and native GEMM for decode as well as prefill,
-preserving the composed numerical path at the cost of temporary dense matrices and extra launches.
-The original direct small-batch kernel remains independently selectable and experimental.
-
-The offline calibration tools (mixed precision, second-order fitting, and calibrating through the
-real paged decode path) only decide which projections stay FP16 and how the INT8 weights are
-fitted. Inference never loads their statistics. [quantization.md](quantization.md) has the
-results.
+softmax, and returned logits; activations remain FP16. The MLX backend runs FP16 artifacts only.
 
 The cache allocator assigns stable physical IDs in 16-token units. Each physical block owns an
 independently replaceable MLX layer-page with shape
@@ -72,7 +57,7 @@ independently of requests. Multiple logical tables may share one page; admission
 unique pages plus future private and partial-tail COW reservations. A shared tail is cloned
 before append, and only the final reference returns its ID to the free list. The device store
 also rejects direct shared-page writes. Cache eviction/clear drops pins, not active references.
-This is engine-local and namespace-scoped; CUDA and INT8 do not inherit it.
+This is engine-local and namespace-scoped; CUDA does not inherit it.
 
 Cache lookup retains original prefill chunk shapes: exact full-prompt snapshots can bypass
 prefill, while changed suffixes reuse only original chunk boundaries. Each snapshot copies one
