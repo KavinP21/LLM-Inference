@@ -217,7 +217,13 @@ def test_image_nonce_dedup_persists_through_reload_and_preview_scope_is_chat_loc
             )
             detail = await settle(service, sent["chat_id"])
             assert detail["turns"][-1]["status"] == "completed"
-            assert any(message.media for message in service.backend.calls[-1])
+            # The unrelated chat runs concurrently; find this follow-up's call.
+            followup = next(
+                call
+                for call in reversed(service.backend.calls)
+                if any("Use the original image" in m.content for m in call)
+            )
+            assert any(message.media for message in followup)
         finally:
             await service.close()
 
