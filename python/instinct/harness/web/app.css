@@ -333,6 +333,7 @@ details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
 
 /* Mac app: the window's traffic-light buttons sit over the top-left corner. */
 .app-mac .topbar, .app-mac .sidebar-heading { user-select: none; -webkit-user-select: none; }
+.app-mac .topbar { height: 52px; flex-basis: 52px; }
 .app-mac .app:not(.sidebar-open) .topbar { padding-left: 84px; }
 .app-mac .sidebar { padding-top: 14px; }
 .app-mac .sidebar-heading { padding-left: 72px; min-height: 36px; }
