@@ -10,6 +10,7 @@ keys and values to the cache, and return attention output as
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,7 @@ class PrefillBatch:
         start: int,
         tables: dict[str, np.ndarray],
         slot: int = -1,
+        images: Sequence[tuple[int, Any]] = (),
     ) -> None:
         mx = cache.mx
         self.cache = cache
@@ -42,6 +44,9 @@ class PrefillBatch:
         self.start = start
         self.slot = slot
         end = start + self.count
+        # Image soft tokens inside this chunk (the scheduler never splits one)
+        # replace the placeholder embeddings and attend to each other both ways.
+        self.images = [(at, emb) for at, emb in images if start <= at < end]
         self._write: dict[str, Any] = {}
         self._read: dict[str, tuple[Any, int]] = {}
         for name, group in cache.groups.items():
@@ -53,6 +58,13 @@ class PrefillBatch:
     @property
     def positions(self) -> Any:
         return self.mx.arange(self.start, self.start + self.count)
+
+    def inject(self, x: Any) -> Any:
+        """Put image embeddings in place of their placeholder tokens."""
+        for at, embeddings in self.images:
+            offset = at - self.start
+            x[offset : offset + int(embeddings.shape[0])] = embeddings.astype(x.dtype)
+        return x
 
     def rope(
         self, x: Any, dims: int, *, base: float | None = None, freqs: Any = None
@@ -88,10 +100,11 @@ class PrefillBatch:
         for begin in range(0, self.count, tile):
             end = min(self.count, begin + tile)
             # Keys up to this tile's last query; the causal mask is aligned to
-            # the bottom-right corner, i.e. to the newest key.
-            stop = self.start + end - first
+            # the bottom-right corner, i.e. to the newest key. An image in the
+            # chunk also sees its own later tokens, so it needs every key.
+            stop = length if self.images else self.start + end - first
             mask: Any = "causal"
-            if group.window or softcap:
+            if group.window or softcap or self.images:
                 query_positions = mx.arange(self.start + begin, self.start + end)[
                     :, None
                 ]
@@ -99,6 +112,12 @@ class PrefillBatch:
                 mask = key_positions <= query_positions
                 if group.window:
                     mask = mask & (key_positions > query_positions - group.window)
+                for at, embeddings in self.images:
+                    span_end = at + int(embeddings.shape[0])
+                    inside = (query_positions >= at) & (query_positions < span_end)
+                    mask = mask | (
+                        inside & (key_positions >= at) & (key_positions < span_end)
+                    )
             outputs.append(
                 _attention(
                     mx,
@@ -123,6 +142,9 @@ class PrefillBatch:
 
 class DecodeBatch:
     prefill = False
+
+    def inject(self, x: Any) -> Any:
+        return x
 
     def __init__(
         self,

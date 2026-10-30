@@ -126,3 +126,50 @@ def test_follow_up_turn_from_the_prefix_cache_matches_a_cold_start(pair, monkeyp
     assert (
         float(np.dot(warm, cold) / np.linalg.norm(warm) / np.linalg.norm(cold)) > 0.99
     )
+
+
+def test_image_input_matches_mlx_vlm(pair):
+    engine, reference, tokenizer = pair
+    if getattr(engine.model, "vision", None) is None:
+        pytest.skip("this model has no native vision tower")
+    from instinct.backends.gemma4_vision import load_image
+    from mlx_vlm.utils import load, prepare_inputs
+
+    image = Path(__file__).resolve().parents[1] / "docs" / "images" / "app-chat.jpg"
+    ours = engine.model.vision.encode(load_image(image))
+    model, processor = load(str(MODELS / "gemma-4-26b-a4b-mlx"))
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": "What app is this?"},
+            ],
+        }
+    ]
+    prompt = processor.tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    inputs = prepare_inputs(
+        processor,
+        images=[str(image)],
+        prompts=prompt,
+        image_token_index=model.config.image_token_id,
+        add_special_tokens=False,
+    )
+    theirs = model.encode_image(inputs["pixel_values"]).reshape(ours.shape)
+    a = np.array(ours.astype(mx.float32))
+    b = np.array(theirs.astype(mx.float32))
+    cosine = (a * b).sum(-1) / np.linalg.norm(a, axis=-1) / np.linalg.norm(b, axis=-1)
+    assert cosine.mean() > 0.99
+
+    ids = inputs["input_ids"].flatten().tolist()
+    start = ids.index(model.config.image_token_id)
+    extra = {
+        k: v for k, v in inputs.items() if k not in ("input_ids", "attention_mask")
+    }
+    expected = int(mx.argmax(model(inputs["input_ids"], **extra).logits[0, -1]).item())
+    request = engine.submit(ids, 1, images=[(start, ours)], cache_namespace="image")
+    while engine.has_work():
+        engine.step()
+    assert engine.request(request).output == [expected]

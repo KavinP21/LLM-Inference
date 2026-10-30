@@ -79,6 +79,8 @@ class _Job:
     open_token: int
     close: list[int]
     counting: bool = False
+    # (position, content key, pixels) for each image in the prompt.
+    images: list[tuple[int, str, Any]] = field(default_factory=list)
     tokens: queue.Queue = field(default_factory=queue.Queue)
     request_id: int | None = None
     error: BaseException | None = None
@@ -132,7 +134,15 @@ def checkpoint_fingerprint(path: str | Path) -> dict[str, str]:
 
 
 def _identity(message: dict) -> dict:
-    return {"role": message["role"], "content": message.get("content", "")}
+    """The parts of a message that affect the prompt (media by content hash)."""
+    return {
+        "role": message["role"],
+        "content": message.get("content", ""),
+        "media": [
+            (item["type"], item.get("key") or item["path"])
+            for item in message.get("media", ())
+        ],
+    }
 
 
 class ChatRunner:
@@ -198,6 +208,7 @@ class ChatRunner:
         self.max_sessions = max_sessions
         self._sessions: OrderedDict[int, _Session] = OrderedDict()
         self._session_key = 0
+        self._image_cache: OrderedDict[str, Any] = OrderedDict()
         self.totals = {
             "requests": 0,
             "prompt_tokens": 0,
@@ -248,6 +259,10 @@ class ChatRunner:
                     break
                 if kind == "submit":
                     try:
+                        images = [
+                            (at, self._embed(key, pixels))
+                            for at, key, pixels in job.images
+                        ]
                         job.request_id = engine.submit(
                             job.ids,
                             job.max_tokens,
@@ -255,6 +270,7 @@ class ChatRunner:
                             sampling=job.sampling,
                             cache_namespace=job.namespace,
                             checkpoints=job.checkpoints,
+                            images=images,
                         )
                         jobs[job.request_id] = job
                     except Exception as exc:  # Reported to the caller, not the loop.
@@ -291,6 +307,17 @@ class ChatRunner:
                 if event.finished:
                     self._close_job(jobs.pop(event.request_id))
 
+    def _embed(self, key: str, pixels: Any) -> Any:
+        """Image soft tokens, kept for the images of recent conversations."""
+        embeddings = self._image_cache.pop(key, None)
+        if embeddings is None:
+            embeddings = self.engine.model.vision.encode(pixels)
+            self.mx.eval(embeddings)
+        self._image_cache[key] = embeddings
+        while len(self._image_cache) > 32:
+            self._image_cache.popitem(last=False)
+        return embeddings
+
     def _budget(self, job: _Job, token: int) -> None:
         if not job.budget or job.closed:
             return
@@ -316,9 +343,13 @@ class ChatRunner:
     # --- prompts --------------------------------------------------------------
 
     def _template_messages(self, messages: Sequence[dict]) -> list[dict]:
-        converted = [
-            {"role": m["role"], "content": m.get("content", "")} for m in messages
-        ]
+        converted = []
+        for m in messages:
+            content = m.get("content", "")
+            if m.get("media"):
+                content = [{"type": item["type"]} for item in m["media"]]
+                content.append({"type": "text", "text": m.get("content", "")})
+            converted.append({"role": m["role"], "content": content})
         if self.family.name == "gemma4":
             return to_gemma_messages(converted)
         if self.model_type == "gemma3_text":
@@ -379,6 +410,8 @@ class ChatRunner:
                 or identity[:n] != session.messages
             ):
                 continue
+            if any(m.get("media") for m in messages[n:]):
+                break  # New images need their tokens expanded; render it all.
             previous = [dict(m) for m in messages[:n]]
             previous[-1] = {**previous[-1], "content": session.messages[-1]["content"]}
             suffix = incremental_suffix(
@@ -393,6 +426,8 @@ class ChatRunner:
                 self._sessions.pop(key, None)
             return session.tokens + self._encode(suffix), suffix, "session", []
         text = self.render(messages, tools, thinking)
+        if any(m.get("media") for m in messages):
+            return self._encode(self._expand_images(text, messages)), text, "cold", []
         ids = self._encode(text)
         boundary = self._boundary(messages, tools, thinking, ids)
         return (
@@ -401,6 +436,41 @@ class ChatRunner:
             "cold",
             [boundary] if boundary >= MIN_CHECKPOINT_TOKENS else [],
         )
+
+    def _images(self, messages: Sequence[dict]) -> list[tuple[str, Any]]:
+        """(key, pixels) for every image in the conversation, in order."""
+        from .backends.gemma4_vision import load_image
+
+        vision = getattr(self.engine.model, "vision", None)
+        found = []
+        for message in messages:
+            for item in message.get("media", ()):
+                if item["type"] != "image" or vision is None:
+                    raise ValueError(
+                        f"{self.model_type} doesn't take {item['type']} input"
+                    )
+                found.append(
+                    (item.get("key") or item["path"], load_image(item["path"]))
+                )
+        return found
+
+    def _expand_images(self, text: str, messages: Sequence[dict]) -> str:
+        """Replace each image placeholder with its run of soft-token placeholders."""
+        tokenizer, vision = self.tokenizer, self.engine.model.vision
+        counts = iter(
+            vision.soft_tokens(pixels) for _, pixels in self._images(messages)
+        )
+        marker = tokenizer.image_token
+        pieces = text.split(marker)
+        out = [pieces[0]]
+        for piece in pieces[1:]:
+            out.append(
+                tokenizer.boi_token
+                + marker * next(counts)
+                + tokenizer.eoi_token
+                + piece
+            )
+        return "".join(out)
 
     # --- generation -----------------------------------------------------------
 
@@ -419,8 +489,6 @@ class ChatRunner:
         max_context_tokens: int | None = None,
         namespace: str = "",
     ) -> RunnerResult:
-        if any(m.get("media") for m in messages):
-            raise ValueError("this model runner doesn't take images yet")
         started = time.perf_counter()
         messages = list(messages)
         budget = thinking_budget(effort)
@@ -449,6 +517,26 @@ class ChatRunner:
                 f"prompt has {len(ids)} tokens; with {max_tokens} output tokens it exceeds the {limit}-token context"
             )
         opens_thinking = thinking and text.rstrip().endswith(family.think_open.strip())
+        images = []
+        if any(m.get("media") for m in messages):
+            media = self._images(messages)
+            token = self.engine.model.image_token_id
+            starts = [
+                i
+                for i, t in enumerate(ids)
+                if t == token and (i == 0 or ids[i - 1] != token)
+            ]
+            if len(starts) != len(media):
+                raise ValueError(
+                    "the prompt's image placeholders don't match its images"
+                )
+            images = [(at, key, pixels) for at, (key, pixels) in zip(starts, media)]
+            # Every image uses the same placeholder token, so cached prefixes
+            # are kept apart by the images they contain.
+            digest = hashlib.sha256(
+                "\n".join(key for _, key, _ in images).encode()
+            ).hexdigest()
+            namespace = f"{namespace}:images:{digest[:16]}"
         job = _Job(
             ids,
             max_tokens,
@@ -459,6 +547,7 @@ class ChatRunner:
             self._encode(family.think_open)[0],
             self._encode(family.think_close),
             counting=opens_thinking,
+            images=images,
         )
         if self._closed:
             raise RuntimeError("the model runner is closed")
@@ -514,8 +603,10 @@ class ChatRunner:
         with self._lock:
             self._session_key += 1
             self._sessions[self._session_key] = _Session(
-                [_identity(m) for m in messages]
-                + [{"role": "assistant", "content": answer}],
+                [
+                    _identity(m)
+                    for m in messages + [{"role": "assistant", "content": answer}]
+                ],
                 render_key,
                 tokens,
                 stop_text,

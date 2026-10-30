@@ -197,6 +197,19 @@ class WorkerConfig:
             and platform.machine() == "arm64"
         )
 
+    @property
+    def takes_media(self) -> bool:
+        """Image input: mlx-vlm, or a Gemma 4 checkpoint on the engine."""
+        if self.runner == "vlm":
+            return True
+        config = Path(self.model) / "config.json"
+        if not (self.chat_runner and config.is_file()):
+            return False
+        settings = json.loads(config.read_text())
+        return settings.get("model_type") == "gemma4" and bool(
+            settings.get("vision_config")
+        )
+
     def __post_init__(self) -> None:
         if not self.model or not self.tokenizer:
             raise ValueError("model and tokenizer are required")
@@ -561,7 +574,7 @@ class LocalModelBackend:
             "capabilities": ["greedy_chat", "cancellation", "replica"],
             "native_tool_calls": self.supports_native_tools,
             "enable_thinking": self.config.enable_thinking,
-            "supports_media": self.config.runner == "vlm",
+            "supports_media": self.config.takes_media,
             "supports_context_limits": self.supports_context_limits,
             "native_call_dialect": self.native_call_dialect,
             **self._artifact_identity,
@@ -626,8 +639,8 @@ class LocalModelBackend:
                 raise GenerationTimeoutError("generation deadline exceeded")
 
         check()
-        if self.config.runner != "vlm" and any(message.media for message in messages):
-            raise RequestValidationError("image/video requests require the vlm runner")
+        if not self.config.takes_media and any(message.media for message in messages):
+            raise RequestValidationError("this worker's model doesn't take images")
         self._load()
         check()
         if self.config.runner == "vlm" or self._chat:
@@ -1848,7 +1861,7 @@ class LocalProcessBackend(RemoteWorkerBackend):
                 max_concurrency=config.max_pending if config.chat_runner else 1,
                 request_timeout=config.request_timeout,
                 max_request_bytes=MAX_MEDIA_REQUEST_BYTES
-                if config.runner == "vlm"
+                if config.takes_media
                 else 1 << 20,
             )
             backend.process = process

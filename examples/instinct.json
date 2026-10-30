@@ -7,14 +7,11 @@
       "model": "models/gemma-4-26b-a4b-mlx",
       "tokenizer": "models/gemma-4-26b-a4b-mlx",
       "backend": "mlx",
-      "runner": "vlm",
       "max_model_length": 65536,
-      "kv_cache_bytes": 3221225472,
+      "kv_cache_bytes": 8589934592,
       "request_timeout": 600,
-      "engine_options": {
-        "draft_model": "models/gemma-4-26b-a4b-assistant"
-      },
-      "native_tool_calls": true
+      "native_tool_calls": true,
+      "max_pending": 4
     },
     {
       "type": "process",
