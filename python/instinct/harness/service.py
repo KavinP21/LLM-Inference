@@ -20,6 +20,7 @@ from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
 from ..chat_formats import EFFORT_BUDGETS
+from ..common import text_field as _text
 from . import sandbox
 from .api_keys import ApiKeys
 from .checkpoints import Checkpoints
@@ -68,12 +69,6 @@ class AppWorkspaceTools(WorkspaceTools):
         for candidate in super()._files(path):
             if not candidate.resolve().is_relative_to(self.state_dir):
                 yield candidate
-
-
-def _text(value: Any, label: str, limit: int = 12_000) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value) > limit:
-        raise ValueError(f"{label} must contain 1 to {limit} characters")
-    return value.strip()
 
 
 def _digest(value: Any) -> str:

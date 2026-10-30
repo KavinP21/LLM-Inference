@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 from ..agents.cli import load_config
-from ..agents.protocol import _unique_object
+from ..common import strict_json
 from .api_keys import ApiKeys
 from .extensions import MCPServerConfig, MCPStdioClient, SkillRegistry
 from .projects import Projects, state_folder
@@ -41,13 +41,7 @@ def load_mcp_config(path: str | Path, workspace: Path) -> list[MCPServerConfig]:
     finally:
         os.close(descriptor)
     try:
-        definitions = json.loads(
-            data,
-            object_pairs_hook=_unique_object,
-            parse_constant=lambda _: (_ for _ in ()).throw(
-                ValueError("nonfinite JSON")
-            ),
-        )
+        definitions = strict_json(data)
     except (ValueError, UnicodeError, RecursionError) as exc:
         raise ValueError("MCP configuration contains invalid JSON") from exc
     if not isinstance(definitions, list) or len(definitions) > 8:

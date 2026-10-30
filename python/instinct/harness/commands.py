@@ -16,27 +16,37 @@ import time
 from pathlib import Path
 
 from ..agents.tools import ToolValidationError
+from ..common import Toolset, ToolSpec
 from . import sandbox
 
 
-class CommandTools:
-    schemas = {
-        "run_command": {
-            "type": "object",
-            "properties": {
-                "argv": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "minItems": 1,
-                    "maxItems": 64,
+class CommandTools(Toolset):
+    specs = (
+        ToolSpec(
+            "run_command",
+            lambda tools: tools.description(),
+            {
+                "type": "object",
+                "properties": {
+                    "argv": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                        "maxItems": 64,
+                    },
+                    "cwd": {"type": "string"},
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 600,
+                    },
                 },
-                "cwd": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
+                "required": ["argv"],
+                "additionalProperties": False,
             },
-            "required": ["argv"],
-            "additionalProperties": False,
-        }
-    }
+            "run_command",
+        ),
+    )
 
     def __init__(
         self,
@@ -48,17 +58,6 @@ class CommandTools:
         self.workspace = Path(workspace).resolve(strict=True)
         self.max_output_bytes = max_output_bytes
         self.network = network
-
-    def mapping(self):
-        return {"run_command": self.run_command}
-
-    def tool_descriptions(self):
-        return {
-            "run_command": {
-                "description": self.description(),
-                "parameters": self.schemas["run_command"],
-            }
-        }
 
     def description(self) -> str:
         confinement = (
