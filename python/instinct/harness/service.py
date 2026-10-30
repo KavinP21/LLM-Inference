@@ -21,6 +21,7 @@ from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
 from ..chat_formats import EFFORT_BUDGETS
 from . import sandbox
+from .checkpoints import Checkpoints
 from .commands import CommandTools
 from .conversation import ConversationController, ConversationRuntime
 from .demo import DemoBackend
@@ -131,6 +132,7 @@ class StudioService:
         )
         self.config = json.loads(json.dumps(config or {}))
         self.terminals = Terminals(self.workspace)
+        self.checkpoints = Checkpoints(self.workspace, self.state_dir)
         self.settings_path = self.state_dir / "settings.json"
         try:
             saved = json.loads(self.settings_path.read_text())

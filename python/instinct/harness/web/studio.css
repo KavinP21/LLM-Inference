@@ -370,3 +370,19 @@ details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
 .toggle-row input { margin-top: 4px; accent-color: var(--accent); }
 .toggle-row strong { display: block; font-size: 13px; font-weight: 500; }
 .toggle-row small { display: block; color: var(--faint); font-size: 11px; line-height: 1.5; }
+
+/* Edit and rewind on your own messages. */
+.message-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; margin-top: -6px; }
+.turn:hover .message-actions, .message-actions:focus-within { opacity: 1; }
+.message-actions button { background: transparent; color: var(--faint); font-size: 11px; padding: 2px 7px; border-radius: 4px; }
+.message-actions button:hover { color: var(--ink); background: var(--raised); }
+.message-editor { width: min(640px, 92%); display: flex; flex-direction: column; gap: 9px; }
+.message-editor textarea { width: 100%; resize: vertical; background: var(--surface); border: 1px solid #688d7f; border-radius: 10px; padding: 11px 14px; line-height: 1.6; outline: none; }
+.message-editor label { font-size: 11px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.primary-button { background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 12px; padding: 6px 14px; border-radius: 7px; }
+.confirm-dialog { width: min(440px, 92vw); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+.confirm-dialog::backdrop { background: #0008; }
+.confirm-dialog h2 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.confirm-dialog p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+.confirm-dialog .dialog-actions { margin-top: 18px; }
