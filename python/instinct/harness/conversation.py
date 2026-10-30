@@ -12,6 +12,7 @@ import base64
 import hashlib
 import inspect
 import json
+import subprocess
 import time
 import uuid
 from dataclasses import asdict
@@ -22,6 +23,7 @@ from ..agents.protocol import ChatMessage, conservative_input_tokens
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL
 from ..chat_formats import EFFORT_BUDGETS
+from .checkpoints import CheckpointError
 from .policy import POLICIES
 
 if TYPE_CHECKING:
@@ -274,6 +276,9 @@ class ConversationController:
                 self.db.execute(
                     f"ALTER TABLE studio_chat_turns ADD COLUMN {name} TEXT NOT NULL DEFAULT '[]'"
                 )
+        if "checkpoint" not in columns:
+            # The workspace commit taken before the turn ran; see checkpoints.py.
+            self.db.execute("ALTER TABLE studio_chat_turns ADD COLUMN checkpoint TEXT")
         # There is no live controller after a process restart. Preserve pending
         # user messages and make the interruption visible instead of re-sending.
         self.db.execute(
@@ -629,16 +634,81 @@ class ConversationController:
         )
         return {"chat_id": chat_id, "title": title}
 
-    async def delete(self, chat_id, payload):
-        if payload:
-            raise ValueError("delete takes no fields")
+    async def rewind(self, chat_id, payload):
+        """Drop a message and everything after it, optionally putting the
+        workspace files back as they were before it ran. With ``message`` the
+        edited text is sent in its place, keeping the original images."""
+        if not isinstance(payload, dict) or set(payload) - {
+            "turn_id",
+            "restore_files",
+            "message",
+        }:
+            raise ValueError("rewind accepts turn_id, restore_files and message")
+        restore = payload.get("restore_files", False)
+        if not isinstance(restore, bool):
+            raise ValueError("restore_files must be true or false")
         self._chat(chat_id)
-        turns = self.db.execute(
-            "SELECT turn_id, run_id FROM studio_chat_turns WHERE chat_id=?", (chat_id,)
+        rows = self.db.execute(
+            "SELECT * FROM studio_chat_turns WHERE chat_id=? ORDER BY created,rowid",
+            (chat_id,),
         ).fetchall()
-        # Stop anything still running for this chat before removing it: the
-        # run first, so it settles as cancelled rather than interrupted.
-        for turn in turns:
+        index = next(
+            (
+                i
+                for i, row in enumerate(rows)
+                if row["turn_id"] == payload.get("turn_id")
+            ),
+            None,
+        )
+        if index is None:
+            raise ValueError("that message is not in this chat")
+        target, dropped = rows[index], rows[index:]
+        if restore and not target["checkpoint"]:
+            raise ValueError("there is no file checkpoint from before that message")
+        await self._stop_turns(dropped)
+        restored = None
+        if restore:
+            restored = await asyncio.to_thread(
+                self.service.checkpoints.restore, target["checkpoint"]
+            )
+        with self.service.store.transaction():
+            for row in dropped:
+                self.db.execute(
+                    "DELETE FROM studio_chat_requests WHERE turn_id=?",
+                    (row["turn_id"],),
+                )
+                self.db.execute(
+                    "DELETE FROM studio_chat_turns WHERE turn_id=?", (row["turn_id"],)
+                )
+            self.db.execute(
+                "UPDATE studio_chats SET updated=? WHERE chat_id=?",
+                (time.time(), chat_id),
+            )
+        result = {
+            "chat_id": chat_id,
+            "message": target["user"],
+            "removed": len(dropped),
+            "restored": restored,
+        }
+        if "message" in payload:
+            media = self._turn_media(target)
+            sent = await self.message(
+                chat_id,
+                {
+                    "message": payload["message"],
+                    "media": [
+                        {key: item[key] for key in ("type", "mime", "data")}
+                        for item in media
+                    ],
+                    "media_names": json.loads(target["media_names"]),
+                },
+            )
+            result["sent"] = sent
+        return result
+
+    async def _stop_turns(self, rows):
+        # The run first, so it settles as cancelled rather than interrupted.
+        for turn in rows:
             run = turn["run_id"] and self.service.jobs.get(turn["run_id"])
             if run and not run.done():
                 await self.service.cancel(turn["run_id"])
@@ -648,6 +718,15 @@ class ConversationController:
                 job.cancel()
                 await asyncio.gather(job, return_exceptions=True)
             self._details.pop(turn["run_id"], None)
+
+    async def delete(self, chat_id, payload):
+        if payload:
+            raise ValueError("delete takes no fields")
+        self._chat(chat_id)
+        turns = self.db.execute(
+            "SELECT turn_id, run_id FROM studio_chat_turns WHERE chat_id=?", (chat_id,)
+        ).fetchall()
+        await self._stop_turns(turns)
         watcher = self.watchers.pop(chat_id, None)
         if watcher is not None and not watcher.done():
             watcher.cancel()
@@ -913,6 +992,17 @@ class ConversationController:
                 if turn["status"] != "loading":
                     return
                 chat = self._chat(chat_id)
+                if chat["policy"] != "read_only":
+                    try:
+                        checkpoint = await asyncio.to_thread(
+                            self.service.checkpoints.snapshot, f"before turn {turn_id}"
+                        )
+                    except (CheckpointError, OSError, subprocess.SubprocessError):
+                        checkpoint = None  # Rewind still works; files stay as they are.
+                    self.db.execute(
+                        "UPDATE studio_chat_turns SET checkpoint=? WHERE turn_id=?",
+                        (checkpoint, turn_id),
+                    )
                 current_media = self._turn_media(turn)
                 history, truncated = await self._history(
                     chat_id, turn_id, current_media=current_media
@@ -1064,6 +1154,7 @@ class ConversationController:
                 "messages": messages,
                 "media": self._media_metadata(row),
                 "context_truncated": bool(row["context_truncated"]),
+                "checkpoint": bool(row["checkpoint"]),
             }
             if row["run_id"]:
                 detail = self._details.get(row["run_id"])
@@ -1144,6 +1235,8 @@ class ConversationController:
                     return await self.rename(chat_id, payload)
                 if parts[3] == "delete":
                     return await self.delete(chat_id, payload)
+                if parts[3] == "rewind":
+                    return await self.rewind(chat_id, payload)
             if method == "GET" and len(parts) == 5 and parts[3] == "media":
                 return await self.media(chat_id, parts[4])
         raise ValueError("unknown conversation API route")

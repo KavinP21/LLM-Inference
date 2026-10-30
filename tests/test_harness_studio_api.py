@@ -8,7 +8,7 @@ import threading
 
 import pytest
 from instinct.harness.server import StudioHTTPServer
-from instinct.harness.service import worker_state
+from instinct.harness.service import StudioService, worker_state
 from test_harness_conversation import ChatBackend, make_service, settle
 
 WORKERS = [
@@ -244,6 +244,55 @@ def test_terminal_runs_a_shell_in_the_workspace(tmp_path):
             text = output.decode("utf-8", "replace")
             assert "ready-42" in text and str(tmp_path.resolve()) in text
             assert terminal.closed
+        finally:
+            await service.close()
+
+    asyncio.run(check())
+
+
+@pytest.mark.skipif(not __import__("shutil").which("git"), reason="needs git")
+def test_rewind_drops_later_turns_and_can_restore_files(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    notes = workspace / "notes.txt"
+
+    async def check():
+        service = StudioService(
+            workspace, tmp_path / "state", demo=True, backend=ChatBackend()
+        )
+        try:
+            chat = (await service.conversations.create({"message": "First"}))["chat_id"]
+            await settle(service, chat)
+            notes.write_text("before second\n")
+            await service.conversations.message(chat, {"message": "Second"})
+            await settle(service, chat)
+            notes.write_text("after second\n")
+            (workspace / "made-later.txt").write_text("new\n")
+            await service.conversations.message(chat, {"message": "Third"})
+            detail = await settle(service, chat)
+            second = detail["turns"][1]["turn_id"]
+
+            result = await service.dispatch(
+                "POST",
+                f"/api/chats/{chat}/rewind",
+                {"turn_id": second, "restore_files": True},
+            )
+            assert result["message"] == "Second" and result["removed"] == 2
+            assert notes.read_text() == "before second\n"
+            assert not (workspace / "made-later.txt").exists()
+            detail = await service.dispatch("GET", f"/api/chats/{chat}", {})
+            assert [turn["user"] for turn in detail["turns"]] == ["First"]
+
+            # Editing: rewind to the first message and send new text instead.
+            first = detail["turns"][0]["turn_id"]
+            await service.dispatch(
+                "POST",
+                f"/api/chats/{chat}/rewind",
+                {"turn_id": first, "message": "First, reworded"},
+            )
+            detail = await settle(service, chat)
+            assert [turn["user"] for turn in detail["turns"]] == ["First, reworded"]
+            assert notes.read_text() == "before second\n"  # Files untouched.
         finally:
             await service.close()
 

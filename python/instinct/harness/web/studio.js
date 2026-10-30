@@ -430,7 +430,12 @@
       const node = state.turns.get(key) || createTurn(key);
       if (!node.isConnected) $("transcript").appendChild(node);
       const messages = userMessages(turn);
-      patch(node.querySelector(".user-messages"), `${messages[0] ? `<div class="user-message">${escape(messages[0])}</div>` : ""}${mediaMarkup(turn.media || turn.messages?.[0]?.media)}`);
+      const editing = state.editing === turn.turn_id;
+      const actions = turn.turn_id && !editing ? `<div class="message-actions"><button type="button" data-edit-turn="${escape(turn.turn_id)}">Edit</button><button type="button" data-rewind-turn="${escape(turn.turn_id)}">Rewind</button></div>` : "";
+      const bubble = editing
+        ? `<form class="message-editor" data-edit-form="${escape(turn.turn_id)}"><textarea rows="3">${escape(messages[0] || "")}</textarea>${turn.checkpoint ? '<label><input type="checkbox" name="restore" checked> Also restore files to before this message</label>' : ""}<div class="dialog-actions"><button class="text-button" type="button" data-edit-cancel>Cancel</button><button class="primary-button" type="submit">Send</button></div></form>`
+        : messages[0] ? `<div class="user-message">${escape(messages[0])}</div>` : "";
+      patch(node.querySelector(".user-messages"), `${bubble}${editing ? "" : mediaMarkup(turn.media || turn.messages?.[0]?.media)}${actions}`);
       patch(node.querySelector(".turn-directions"), messages.slice(1).map((message) => `<div class="user-message steering">${escape(message)}</div>`).join(""));
       patch(node.querySelector(".turn-activity"), activityMarkup(turn));
       patch(node.querySelector(".turn-agents"), agentsMarkup(turn));
@@ -624,6 +629,7 @@
     const existingPolicy = state.detail?.chat?.policy;
     $("policy-note").textContent = existingPolicy ? `This chat uses ${policyNames[existingPolicy] || policyNames.review}. Changes here apply to new chats.` : "Applies to new chats.";
     $("command-network").checked = Boolean(state.settings?.command_network);
+    $("web-access").checked = state.settings?.web_access !== false;
     document.querySelectorAll('input[name="policy"]').forEach((input) => { input.checked = input.value === state.policy; });
     const turns = (state.detail?.turns || []).filter((turn) => turn.run_id);
     $("trace-section").hidden = !turns.length;
@@ -1486,8 +1492,46 @@
       const turn = state.detail?.turns?.find((entry, i) => String(entry.turn_id || entry.run_id || `turn-${i}`) === response.dataset.copyResponse);
       copy(outputText(turn?.output), response); return;
     }
+    const edit = event.target.closest("[data-edit-turn]");
+    if (edit) { state.editing = edit.dataset.editTurn; renderTranscript(); document.querySelector(`[data-edit-form="${CSS.escape(state.editing)}"] textarea`)?.focus(); return; }
+    if (event.target.closest("[data-edit-cancel]")) { state.editing = null; renderTranscript(); return; }
+    const rewindButton = event.target.closest("[data-rewind-turn]");
+    if (rewindButton) { askRewind(rewindButton.dataset.rewindTurn); return; }
     const artifact = event.target.closest("[data-artifact]");
     if (artifact) downloadArtifact(artifact);
+  });
+  document.addEventListener("submit", async (event) => {
+    const form = event.target.closest("[data-edit-form]");
+    if (!form) return;
+    event.preventDefault();
+    const message = form.querySelector("textarea").value.trim();
+    if (!message) return;
+    const restore = Boolean(form.querySelector('input[name="restore"]')?.checked);
+    try {
+      await api(`/api/chats/${encodeURIComponent(state.selected)}/rewind`, { turn_id: form.dataset.editForm, restore_files: restore, message });
+      state.editing = null;
+      if (restore) toast("Files restored to before that message");
+      await refresh();
+    } catch (error) { toast(error.message, true); }
+  });
+  function askRewind(turnId) {
+    const turn = state.detail?.turns?.find((entry) => entry.turn_id === turnId);
+    state.rewinding = turnId;
+    $("rewind-files-row").hidden = !turn?.checkpoint;
+    $("rewind-files").checked = Boolean(turn?.checkpoint);
+    $("rewind-dialog").showModal();
+  }
+  $("rewind-cancel").addEventListener("click", () => $("rewind-dialog").close());
+  $("rewind-confirm").addEventListener("click", async () => {
+    $("rewind-dialog").close();
+    const restore = !$("rewind-files-row").hidden && $("rewind-files").checked;
+    try {
+      const result = await api(`/api/chats/${encodeURIComponent(state.selected)}/rewind`, { turn_id: state.rewinding, restore_files: restore });
+      await refresh();
+      $("message").value = result.message;
+      saveDraft(); renderComposer(); $("message").focus();
+      toast(restore ? `Rewound ${result.removed} message${result.removed === 1 ? "" : "s"} and restored files` : `Rewound ${result.removed} message${result.removed === 1 ? "" : "s"}`);
+    } catch (error) { toast(error.message, true); }
   });
   $("model-select").addEventListener("change", (event) => changeSetting("model", event.target.value));
   $("effort-select").addEventListener("change", (event) => changeSetting("effort", event.target.value));
@@ -1680,10 +1724,12 @@
       $("terminal-badge").hidden = !result.sandbox;
     } catch {}
   }
-  $("command-network").addEventListener("change", async (event) => {
-    try { state.settings = (await api("/api/settings", { command_network: event.target.checked })).settings; }
-    catch (error) { event.target.checked = !event.target.checked; toast(error.message); }
-  });
+  for (const [id, key] of [["command-network", "command_network"], ["web-access", "web_access"]]) {
+    $(id).addEventListener("change", async (event) => {
+      try { state.settings = (await api("/api/settings", { [key]: event.target.checked })).settings; }
+      catch (error) { event.target.checked = !event.target.checked; toast(error.message, true); }
+    });
+  }
 
   // Terminal: a sandboxed login shell in the workspace, drawn with xterm.js.
   const term = { xterm: null, fit: null, id: null, offset: 0, source: null, exited: false, assets: null };
