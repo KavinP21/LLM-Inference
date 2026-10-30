@@ -14,7 +14,7 @@ def run(command: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the canonical Forge benchmark matrix"
+        description="Run the canonical Instinct benchmark matrix"
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--backend", choices=["auto", "cuda", "mlx"], default="auto")
@@ -77,7 +77,7 @@ def main() -> None:
                     [
                         sys.executable,
                         "-m",
-                        "forge_llm.benchmark",
+                        "instinct.benchmark",
                         "--model",
                         str(args.model),
                         "--backend",
@@ -87,7 +87,7 @@ def main() -> None:
                         "--tokenizer",
                         args.tokenizer,
                         "--output",
-                        str(args.output_dir / f"forge-{stem}.json"),
+                        str(args.output_dir / f"instinct-{stem}.json"),
                         "--max-sequences",
                         str(max(args.concurrencies)),
                         "--max-model-length",
@@ -102,7 +102,7 @@ def main() -> None:
                         [
                             sys.executable,
                             "-m",
-                            "forge_llm.benchmark_reference",
+                            "instinct.benchmark_reference",
                             "--model",
                             args.tokenizer,
                             "--output",

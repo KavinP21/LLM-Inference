@@ -6,7 +6,7 @@ import threading
 from itertools import product
 
 import pytest
-from forge_llm.speculative import (
+from instinct.speculative import (
     GenerationCancelled,
     GreedySpeculator,
     NGramDraft,
@@ -265,7 +265,7 @@ def test_reentrant_generation_and_close_are_rejected():
 
 def test_truncate_clears_values_masks_pages_and_preserves_prefix():
     import numpy as np
-    from forge_llm.paged_kv import MlxPagedKVStore, _DeviceBlock
+    from instinct.paged_kv import MlxPagedKVStore, _DeviceBlock
 
     store = MlxPagedKVStore(np, num_layers=2, num_kv_heads=1, head_dim=2)
     pages = [np.arange(64, dtype=np.float16).reshape(2, 16, 1, 2) for _ in range(2)]
@@ -283,7 +283,7 @@ def test_truncate_clears_values_masks_pages_and_preserves_prefix():
 
 def test_truncate_rejects_shared_pages_before_mutating_anything():
     import numpy as np
-    from forge_llm.paged_kv import MlxPagedKVStore, _DeviceBlock
+    from instinct.paged_kv import MlxPagedKVStore, _DeviceBlock
 
     store = MlxPagedKVStore(
         np, num_layers=1, num_kv_heads=1, head_dim=2, is_shared=lambda page: page == 1

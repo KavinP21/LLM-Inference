@@ -56,11 +56,11 @@ The model is downloaded only for local validation and the `models/` directory is
 
 ```bash
 mkdir -p models benchmark-results
-forge-export \
+instinct-export \
   Qwen/Qwen2.5-0.5B-Instruct \
   models/qwen2.5-0.5b.engine
 
-forge-correctness \
+instinct-correctness \
   --backend mlx \
   --reference-device mps \
   --engine-model models/qwen2.5-0.5b.engine \
@@ -78,11 +78,11 @@ Gemma 3 1B uses the same exporter, artifact, engine, and correctness runner. Hug
 accepting Google's Gemma license before the first download.
 
 ```bash
-forge-export \
+instinct-export \
   google/gemma-3-1b-it \
   models/gemma-3-1b-it.engine
 
-forge-correctness \
+instinct-correctness \
   --backend mlx \
   --reference-device mps \
   --engine-model models/gemma-3-1b-it.engine \
@@ -98,7 +98,7 @@ one prompt after 25 tokens at an FP16 near-tie (see [benchmarks.md](benchmarks.m
 ## Long-context check
 
 ```bash
-forge-validate-long-context \
+instinct-validate-long-context \
   --model models/qwen2.5-0.5b.engine \
   --output benchmark-results/mlx-long-context-ladder.json \
   --context-lengths 2048 4096 8192 16384 32768 \
@@ -113,7 +113,7 @@ one paged-attention decode iteration after the first token produced by prefill.
 Gemma's wider K/V heads require more than the default 512 MiB pool at 32K. The validated command is:
 
 ```bash
-forge-validate-long-context \
+instinct-validate-long-context \
   --model models/gemma-3-1b-it.engine \
   --output benchmark-results/mlx-gemma3-32k.json \
   --context-lengths 32768 \
@@ -125,12 +125,12 @@ forge-validate-long-context \
 ## Attention profile and optional GPU trace
 
 ```bash
-forge-profile-attention \
+instinct-profile-attention \
   --model models/qwen2.5-0.5b.engine \
   --output benchmark-results/mlx-attention-ab.json \
   --key-lengths 512 2048 8192 --query-tokens 512
 
-MTL_CAPTURE_ENABLED=1 forge-profile-attention \
+MTL_CAPTURE_ENABLED=1 instinct-profile-attention \
   --model models/qwen2.5-0.5b.engine \
   --output benchmark-results/mlx-attention-capture.json \
   --key-lengths 512 --capture profiles/mlx-fused-attention.gputrace
@@ -142,7 +142,7 @@ the capture layer was not inserted.
 ## Benchmark smoke test
 
 ```bash
-forge-bench \
+instinct-bench \
   --backend mlx \
   --model models/qwen2.5-0.5b.engine \
   --prompts benchmarks/prompts.json \
@@ -160,7 +160,7 @@ Use `--mlx-kernel-mode baseline`, `fused`, or `full` for kernel ablations. Captu
 measured repetition with:
 
 ```bash
-MTL_CAPTURE_ENABLED=1 forge-bench \
+MTL_CAPTURE_ENABLED=1 instinct-bench \
   --backend mlx --mlx-kernel-mode full \
   --model models/qwen2.5-0.5b.engine \
   --prompts benchmark-results/workloads/p128-c1.json \
@@ -174,6 +174,6 @@ performance.
 
 ## Experimental INT8
 
-`forge-quantize FP16.engine INT8.engine` converts an artifact; load the result with
+`instinct-quantize FP16.engine INT8.engine` converts an artifact; load the result with
 `int8_mode="metal"`, `"reconstruct"` or `"dequantize"`. It doesn't match FP16 output
 closely enough to replace it, so read [quantization.md](quantization.md) first.

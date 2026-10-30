@@ -49,9 +49,9 @@ python -m pip install '.[export,test]'
 
 ```bash
 mkdir -p models correctness-results
-forge-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine
-build/cuda-release/forge-inspect-model models/qwen2.5-0.5b.engine
-forge-correctness \
+instinct-export Qwen/Qwen2.5-0.5B-Instruct models/qwen2.5-0.5b.engine
+build/cuda-release/instinct-inspect-model models/qwen2.5-0.5b.engine
+instinct-correctness \
   --engine-model models/qwen2.5-0.5b.engine \
   --prompts benchmarks/prompts.json \
   --max-new-tokens 32 \
@@ -75,11 +75,11 @@ Use a release build and keep all other GPU workloads closed:
 ```bash
 mkdir -p profiles benchmark-results
 nsys profile --trace=cuda,nvtx,cublas --sample=none \
-  -o profiles/forge-p128-o32-c1 \
-  python -m forge_llm.benchmark \
+  -o profiles/instinct-p128-o32-c1 \
+  python -m instinct.benchmark \
     --model models/qwen2.5-0.5b.engine \
     --prompts benchmark-results/workloads/p128-c1.json \
-    --output benchmark-results/forge-p128-o32-c1.json
+    --output benchmark-results/instinct-p128-o32-c1.json
 ```
 
 Run a short matrix first (`--prompt-lengths 32 128 --output-lengths 32 --concurrencies 1 4`) before

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from forge_llm.backends.mlx import MlxQwenModel
-from forge_llm.mlx_engine import MlxEngine
+from instinct.backends.mlx import MlxQwenModel
+from instinct.mlx_engine import MlxEngine
 
 
 def test_invalid_decode_mode_rejected_before_device_initialization():

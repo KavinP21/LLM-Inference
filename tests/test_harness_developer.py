@@ -9,10 +9,10 @@ import sys
 from urllib.parse import quote
 
 import pytest
-from forge_llm.agents.protocol import Generation
-from forge_llm.agents.tools import ToolValidationError
-from forge_llm.harness.developer import MAX_FILE_BYTES, DeveloperWorkspace
-from forge_llm.harness.service import StudioService
+from instinct.agents.protocol import Generation
+from instinct.agents.tools import ToolValidationError
+from instinct.harness.developer import MAX_FILE_BYTES, DeveloperWorkspace
+from instinct.harness.service import StudioService
 
 
 class ScriptBackend:
@@ -34,7 +34,7 @@ class ScriptBackend:
 def service_for(tmp_path, backend=None):
     return StudioService(
         tmp_path,
-        tmp_path / ".forge",
+        tmp_path / ".instinct",
         demo=True,
         backend=backend or ScriptBackend(),
         config={"runtime": {"max_agents": 1}},
@@ -89,7 +89,7 @@ def test_workspace_browser_search_content_hash_limits_and_privacy(tmp_path):
                     part in entry["path"]
                     for part in (
                         ".env",
-                        ".forge",
+                        ".instinct",
                         "models",
                         ".venv",
                         "secrets",
@@ -110,7 +110,7 @@ def test_workspace_browser_search_content_hash_limits_and_privacy(tmp_path):
                 ".ENV",
                 "models/hidden.txt",
                 ".venv/hidden.txt",
-                ".forge/studio.sqlite",
+                ".instinct/studio.sqlite",
                 "secrets/hidden.txt",
                 "../escape",
             ):

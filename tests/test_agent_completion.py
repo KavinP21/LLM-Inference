@@ -5,9 +5,9 @@ import json
 import sys
 
 import pytest
-from forge_llm.agents.runtime import AgentRuntime, CompletionCheck, RuntimeConfig
-from forge_llm.agents.store import AgentStore
-from forge_llm.agents.tools import WorkspaceTools
+from instinct.agents.runtime import AgentRuntime, CompletionCheck, RuntimeConfig
+from instinct.agents.store import AgentStore
+from instinct.agents.tools import WorkspaceTools
 from test_agent_runtime import ScriptBackend, action
 
 

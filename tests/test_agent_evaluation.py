@@ -10,7 +10,7 @@ def evaluator(monkeypatch):
     directory = Path(__file__).resolve().parents[1] / "benchmarks"
     monkeypatch.syspath_prepend(str(directory))
     spec = importlib.util.spec_from_file_location(
-        "forge_evaluate_agents", directory / "evaluate_agents.py"
+        "instinct_evaluate_agents", directory / "evaluate_agents.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -63,7 +63,7 @@ def test_research_grader_checks_types_and_unresolved_run(tmp_path, monkeypatch):
 def test_completion_steering_does_not_reveal_additional_code_cases(
     tmp_path, monkeypatch
 ):
-    from forge_llm.agents.store import AgentStore
+    from instinct.agents.store import AgentStore
 
     module = evaluator(monkeypatch)
     # A fabricated lookup satisfies the visible examples but fails general mean
@@ -84,9 +84,9 @@ def test_qwen35_example_admits_coding_catalog_and_independent_review_prompt(
     tmp_path, monkeypatch
 ):
 
-    from forge_llm.agents import AgentRuntime, RuntimeConfig, WorkspaceTools
-    from forge_llm.agents.cli import load_config
-    from forge_llm.agents.protocol import Generation
+    from instinct.agents import AgentRuntime, RuntimeConfig, WorkspaceTools
+    from instinct.agents.cli import load_config
+    from instinct.agents.protocol import Generation
 
     module = evaluator(monkeypatch)
     example = Path(__file__).resolve().parents[1] / "examples/agents-qwen35.json"

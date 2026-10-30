@@ -1,7 +1,7 @@
 """Long-lived workers may discard terminal histories without losing accounting."""
 
 import pytest
-from forge_llm.runtime import IterationScheduler, KVBlockPool
+from instinct.runtime import IterationScheduler, KVBlockPool
 
 
 def test_forgetting_active_requests_is_rejected():

@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from forge_llm.validate_int8 import compare_logits, quality_gates
+from instinct.validate_int8 import compare_logits, quality_gates
 
 
 def test_logit_comparison_reports_real_argmax_and_margin():

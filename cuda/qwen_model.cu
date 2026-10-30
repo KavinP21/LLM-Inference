@@ -1,16 +1,16 @@
-#include "forge/qwen_model.h"
+#include "instinct/qwen_model.h"
 
-#include "forge/cuda_utils.h"
-#include "forge/error.h"
-#include "forge/kernels.h"
-#include "forge/nvtx.h"
+#include "instinct/cuda_utils.h"
+#include "instinct/error.h"
+#include "instinct/kernels.h"
+#include "instinct/nvtx.h"
 
 #include <cuda_fp16.h>
 
 #include <algorithm>
 #include <string>
 
-namespace forge {
+namespace instinct {
 namespace {
 
 std::size_t activation_bytes(const ModelConfig& c, std::uint32_t rows,
@@ -46,7 +46,7 @@ QwenModel::QwenModel(const ModelFile& file, std::uint32_t max_batch,
   check(kv_blocks > 0, "KV cache needs at least one block");
   const auto& c = config();
   kv_bytes_ = kv_cache_.capacity();
-  FORGE_CUDA(cudaMemsetAsync(kv_cache_.data(), 0, kv_bytes_, context_.stream()));
+  INSTINCT_CUDA(cudaMemsetAsync(kv_cache_.data(), 0, kv_bytes_, context_.stream()));
 
   device_tokens_ = static_cast<std::int32_t*>(activations_.allocate(activation_rows_ * sizeof(std::int32_t)));
   device_positions_ = static_cast<std::int32_t*>(activations_.allocate(max_batch_ * sizeof(std::int32_t)));
@@ -92,10 +92,10 @@ std::vector<std::int32_t> QwenModel::forward(
     check(context_lengths[i] == positions[i] + 1, "decode context length must equal position + 1");
   }
   const auto stream = context_.stream();
-  FORGE_CUDA(cudaMemcpyAsync(device_tokens_, tokens.data(), tokens.size_bytes(), cudaMemcpyHostToDevice, stream));
-  FORGE_CUDA(cudaMemcpyAsync(device_positions_, positions.data(), positions.size_bytes(), cudaMemcpyHostToDevice, stream));
-  FORGE_CUDA(cudaMemcpyAsync(device_lengths_, context_lengths.data(), context_lengths.size_bytes(), cudaMemcpyHostToDevice, stream));
-  FORGE_CUDA(cudaMemcpyAsync(device_tables_, block_tables.data(), block_tables.size_bytes(), cudaMemcpyHostToDevice, stream));
+  INSTINCT_CUDA(cudaMemcpyAsync(device_tokens_, tokens.data(), tokens.size_bytes(), cudaMemcpyHostToDevice, stream));
+  INSTINCT_CUDA(cudaMemcpyAsync(device_positions_, positions.data(), positions.size_bytes(), cudaMemcpyHostToDevice, stream));
+  INSTINCT_CUDA(cudaMemcpyAsync(device_lengths_, context_lengths.data(), context_lengths.size_bytes(), cudaMemcpyHostToDevice, stream));
+  INSTINCT_CUDA(cudaMemcpyAsync(device_tables_, block_tables.data(), block_tables.size_bytes(), cudaMemcpyHostToDevice, stream));
 
   const auto& c = config();
   const auto hidden_elements = static_cast<std::int64_t>(batch) * c.hidden_size;
@@ -141,7 +141,7 @@ std::vector<std::int32_t> QwenModel::forward(
     launch_argmax(logits_, device_output_tokens_, batch, c.vocab_size, stream);
   }
   std::vector<std::int32_t> output(tokens.size());
-  FORGE_CUDA(cudaMemcpyAsync(output.data(), device_output_tokens_, output.size() * sizeof(std::int32_t),
+  INSTINCT_CUDA(cudaMemcpyAsync(output.data(), device_output_tokens_, output.size() * sizeof(std::int32_t),
                             cudaMemcpyDeviceToHost, stream));
   context_.synchronize();
   return output;
@@ -156,8 +156,8 @@ std::int32_t QwenModel::prefill(std::span<const std::int32_t> tokens,
     check(token >= 0 && token < static_cast<std::int32_t>(config().vocab_size), "token id out of range");
   }
   const auto stream = context_.stream();
-  FORGE_CUDA(cudaMemcpyAsync(device_tokens_, tokens.data(), tokens.size_bytes(), cudaMemcpyHostToDevice, stream));
-  FORGE_CUDA(cudaMemcpyAsync(device_tables_, block_table.data(), block_table.size_bytes(),
+  INSTINCT_CUDA(cudaMemcpyAsync(device_tokens_, tokens.data(), tokens.size_bytes(), cudaMemcpyHostToDevice, stream));
+  INSTINCT_CUDA(cudaMemcpyAsync(device_tables_, block_table.data(), block_table.size_bytes(),
                             cudaMemcpyHostToDevice, stream));
 
   const auto& c = config();
@@ -201,7 +201,7 @@ std::int32_t QwenModel::prefill(std::span<const std::int32_t> tokens,
                        weight("lm_head.weight"), nullptr, logits_, 1, c.vocab_size, c.hidden_size);
   launch_argmax(logits_, device_output_tokens_, 1, c.vocab_size, stream);
   std::int32_t output{};
-  FORGE_CUDA(cudaMemcpyAsync(&output, device_output_tokens_, sizeof(output),
+  INSTINCT_CUDA(cudaMemcpyAsync(&output, device_output_tokens_, sizeof(output),
                             cudaMemcpyDeviceToHost, stream));
   context_.synchronize();
   return output;
@@ -212,7 +212,7 @@ std::vector<float> QwenModel::copy_logits(std::uint32_t batch_index) {
   const auto count = config().vocab_size;
   std::vector<half> host(count);
   const auto* source = logits_ + static_cast<std::uint64_t>(batch_index) * count;
-  FORGE_CUDA(cudaMemcpyAsync(host.data(), source, host.size() * sizeof(half),
+  INSTINCT_CUDA(cudaMemcpyAsync(host.data(), source, host.size() * sizeof(half),
                             cudaMemcpyDeviceToHost, context_.stream()));
   context_.synchronize();
   std::vector<float> result(count);
@@ -221,4 +221,4 @@ std::vector<float> QwenModel::copy_logits(std::uint32_t batch_index) {
   return result;
 }
 
-}  // namespace forge
+}  // namespace instinct

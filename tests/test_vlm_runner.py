@@ -32,7 +32,7 @@ TOOLS = [
 def runner(path, **options):
     if not (path / "config.json").is_file():
         pytest.skip(f"{path.name} is not downloaded")
-    from forge_llm.vlm_runner import VlmRunner
+    from instinct.vlm_runner import VlmRunner
 
     return VlmRunner(path, **options)
 
@@ -118,10 +118,10 @@ def test_gemma_tool_round_trip_with_drafting():
         assert "<|tool_call>call:read_file" in call.text
         messages += [
             {"role": "assistant", "content": call.text},
-            {"role": "tool", "content": "# Forge LLM\nAn inference engine."},
+            {"role": "tool", "content": "# Instinct\nAn inference engine."},
         ]
         answer = gemma.generate(messages, max_tokens=60, tools=TOOLS)
         assert answer.metrics["cache_source"] == "session"
-        assert "Forge" in answer.text
+        assert "Instinct" in answer.text
     finally:
         gemma.close()

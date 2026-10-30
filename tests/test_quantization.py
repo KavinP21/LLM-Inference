@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from forge_llm.format import HEADER, ModelConfig, QuantizationSpec, write_engine
-from forge_llm.model_file import ModelFile
-from forge_llm.quantization import quantize_model, quantize_per_channel
+from instinct.format import HEADER, ModelConfig, QuantizationSpec, write_engine
+from instinct.model_file import ModelFile
+from instinct.quantization import quantize_model, quantize_per_channel
 
 
 def tiny_artifact(path: Path, family: str = "qwen2") -> None:
@@ -159,7 +159,7 @@ def test_quantized_reader_rejects_malformed_artifacts(tmp_path, case):
     )
     with pytest.raises((ValueError, KeyError)):
         ModelFile(path)
-    inspector = os.environ.get("FORGE_INSPECT_MODEL")
+    inspector = os.environ.get("INSTINCT_INSPECT_MODEL")
     if inspector:
         assert (
             subprocess.run(
@@ -184,9 +184,9 @@ def test_quantized_metadata_truncation_is_checked(tmp_path):
 
 
 def test_cpp_inspector_accepts_quantized_family(tmp_path):
-    inspector = os.environ.get("FORGE_INSPECT_MODEL")
+    inspector = os.environ.get("INSTINCT_INSPECT_MODEL")
     if not inspector:
-        pytest.skip("set FORGE_INSPECT_MODEL to cross-check the C++ artifact reader")
+        pytest.skip("set INSTINCT_INSPECT_MODEL to cross-check the C++ artifact reader")
     for family in ["qwen2", "gemma3_text"]:
         source, output = (
             tmp_path / f"{family}.engine",
@@ -198,4 +198,4 @@ def test_cpp_inspector_accepts_quantized_family(tmp_path):
             [inspector, output], capture_output=True, text=True, check=False
         )
         assert result.returncode == 0, result.stderr
-        assert "Forge LLM v3" in result.stdout
+        assert "Instinct v3" in result.stdout

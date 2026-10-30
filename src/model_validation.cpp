@@ -1,14 +1,14 @@
-#include "forge/model_validation.h"
+#include "instinct/model_validation.h"
 
-#include "forge/error.h"
-#include "forge/qwen_validation.h"
+#include "instinct/error.h"
+#include "instinct/qwen_validation.h"
 
 #include <initializer_list>
 #include <string>
 #include <vector>
 #include <unordered_set>
 
-namespace forge {
+namespace instinct {
 
 void validate_gemma3_weights(const ModelFile& file) {
   const auto& config = file.config();
@@ -68,4 +68,4 @@ void validate_model_weights(const ModelFile& file) {
   throw Error("no tensor contract for model type");
 }
 
-}  // namespace forge
+}  // namespace instinct

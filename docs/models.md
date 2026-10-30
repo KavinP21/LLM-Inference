@@ -12,17 +12,17 @@ Studio and the agent runtime use two models:
 | Inputs | Text, images | Text, images, short video |
 
 Both run through [the VLM runner](vlm-runner.md), which wraps mlx-vlm 0.7.6 and
-adds prompt reuse, so neither uses Forge's native Qwen2/Gemma 3 graph.
+adds prompt reuse, so neither uses Instinct's native Qwen2/Gemma 3 graph.
 
 ```bash
 pip install -e '.[mlx,vlm,agents]'
-python -m forge_llm.prepare_models    # ~18 GB into models/, pinned revisions
+python -m instinct.prepare_models    # ~18 GB into models/, pinned revisions
 ```
 
 ## Using a model directly
 
 ```python
-from forge_llm import create_engine
+from instinct import create_engine
 
 with create_engine() as engine:     # Gemma 4; pass a path for another checkpoint
     result = engine.generate(
@@ -62,7 +62,7 @@ models. Tested: Qwen3-30B-A3B (4-bit, 93 tok/s) and Qwen2.5-7B-Instruct (4-bit,
 73 tok/s). Tool calls in the plain JSON (Hermes) format are parsed for those.
 
 The native engine still runs FP16 Qwen2 and Gemma 3 `.engine` files with its own
-paged KV cache and Metal kernels. `forge-import-mlx` can rebuild an FP16 engine
+paged KV cache and Metal kernels. `instinct-import-mlx` can rebuild an FP16 engine
 file from an MLX 4-bit Qwen2 checkpoint (not the original weights, since the
 quantization error stays).
 

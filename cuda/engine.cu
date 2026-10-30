@@ -1,12 +1,12 @@
-#include "forge/engine.h"
+#include "instinct/engine.h"
 
-#include "forge/error.h"
-#include "forge/nvtx.h"
+#include "instinct/error.h"
+#include "instinct/nvtx.h"
 
 #include <algorithm>
 #include <limits>
 
-namespace forge {
+namespace instinct {
 
 Engine::Engine(const std::filesystem::path& model_path, std::uint32_t max_num_sequences,
                std::uint32_t max_model_length, std::uint64_t kv_cache_bytes)
@@ -131,4 +131,4 @@ EngineStats Engine::stats() const {
           model_.kv_bytes()};
 }
 
-}  // namespace forge
+}  // namespace instinct

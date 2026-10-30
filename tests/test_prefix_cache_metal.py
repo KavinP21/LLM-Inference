@@ -5,9 +5,9 @@ import pytest
 
 pytest.importorskip("mlx.core")
 
-from forge_llm.backends.mlx import MlxQwenModel
-from forge_llm.mlx_engine import MlxEngine
-from forge_llm.runtime import SequenceState
+from instinct.backends.mlx import MlxQwenModel
+from instinct.mlx_engine import MlxEngine
+from instinct.runtime import SequenceState
 from test_quantization import tiny_artifact
 
 
@@ -117,7 +117,7 @@ def test_shared_decode_pages_cancel_evict_failure_and_close(tmp_path, family):
 
 
 def test_namespace_execution_identity_and_rejected_int8(tmp_path):
-    from forge_llm.quantization import quantize_model
+    from instinct.quantization import quantize_model
 
     path, packed = tmp_path / "model.engine", tmp_path / "int8.engine"
     tiny_artifact(path)

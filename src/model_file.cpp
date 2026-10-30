@@ -1,7 +1,7 @@
-#include "forge/model_file.h"
+#include "instinct/model_file.h"
 
-#include "forge/error.h"
-#include "forge/sha256.h"
+#include "instinct/error.h"
+#include "instinct/sha256.h"
 
 #include <algorithm>
 #include <cstring>
@@ -13,10 +13,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace forge {
+namespace instinct {
 namespace {
 
-constexpr std::array<char, 8> kMagic = {'F', 'O', 'R', 'G', 'E', 'L', 'L', 'M'};
+constexpr std::array<char, 8> kMagic = {'I', 'N', 'S', 'T', 'I', 'N', 'C', 'T'};
+// Files written before the project was renamed.
+constexpr std::array<char, 8> kPreviousMagic = {0x46, 0x4f, 0x52, 0x47, 0x45, 0x4c, 0x4c, 0x4d};
 constexpr std::uint32_t kVersion = 3;
 constexpr std::size_t kFixedHeaderBytes = 96;
 
@@ -115,7 +117,9 @@ ModelFile::ModelFile(const std::filesystem::path& path) {
   try {
   const auto all = std::span<const std::byte>(mapping_, file_size_);
   std::size_t cursor = 0;
-  for (char expected : kMagic) check(read_scalar<char>(all, cursor) == expected, "invalid model magic");
+  std::array<char, 8> magic{};
+  for (char& byte : magic) byte = read_scalar<char>(all, cursor);
+  check(magic == kMagic || magic == kPreviousMagic, "invalid model magic");
   const auto version = read_scalar<std::uint32_t>(all, cursor);
   check(version >= 1U && version <= kVersion, "unsupported model format version");
   format_version_ = version;
@@ -289,4 +293,4 @@ std::span<const std::byte> ModelFile::tensor_bytes(const std::string& name) cons
                                                                   info.nbytes);
 }
 
-}  // namespace forge
+}  // namespace instinct

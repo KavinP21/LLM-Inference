@@ -5,11 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from forge_llm import create_engine
-from forge_llm.backends.mlx import MlxQwenModel
-from forge_llm.format import ModelConfig, write_engine
-from forge_llm.mlx_engine import MlxEngine, SequenceState
-from forge_llm.paged_kv import MlxPagedKVStore
+from instinct import create_engine
+from instinct.backends.mlx import MlxQwenModel
+from instinct.format import ModelConfig, write_engine
+from instinct.mlx_engine import MlxEngine, SequenceState
+from instinct.paged_kv import MlxPagedKVStore
 
 mx = pytest.importorskip("mlx.core")
 

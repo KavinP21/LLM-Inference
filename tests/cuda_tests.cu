@@ -1,6 +1,6 @@
-#include "forge/cuda_utils.h"
-#include "forge/execution_context.h"
-#include "forge/kernels.h"
+#include "instinct/cuda_utils.h"
+#include "instinct/execution_context.h"
+#include "instinct/kernels.h"
 
 #include <cuda_fp16.h>
 
@@ -24,8 +24,8 @@ void expect_close(float actual, float expected, float tolerance, const char* lab
 template <typename T>
 T* upload(const std::vector<T>& host) {
   T* device{};
-  FORGE_CUDA(cudaMalloc(&device, host.size() * sizeof(T)));
-  FORGE_CUDA(cudaMemcpy(device, host.data(), host.size() * sizeof(T), cudaMemcpyHostToDevice));
+  INSTINCT_CUDA(cudaMalloc(&device, host.size() * sizeof(T)));
+  INSTINCT_CUDA(cudaMemcpy(device, host.data(), host.size() * sizeof(T), cudaMemcpyHostToDevice));
   return device;
 }
 
@@ -39,10 +39,10 @@ void test_rmsnorm() {
   auto* d_input = upload(input);
   auto* d_weight = upload(weight);
   half* d_output{};
-  FORGE_CUDA(cudaMalloc(&d_output, input.size() * sizeof(half)));
-  forge::launch_rmsnorm(d_input, d_weight, d_output, 2, width, 1e-6F, nullptr);
+  INSTINCT_CUDA(cudaMalloc(&d_output, input.size() * sizeof(half)));
+  instinct::launch_rmsnorm(d_input, d_weight, d_output, 2, width, 1e-6F, nullptr);
   std::vector<half> output(input.size());
-  FORGE_CUDA(cudaMemcpy(output.data(), d_output, output.size() * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(output.data(), d_output, output.size() * sizeof(half), cudaMemcpyDeviceToHost));
   for (int row = 0; row < 2; ++row) {
     float sum = 0;
     for (int col = 0; col < width; ++col) {
@@ -65,10 +65,10 @@ void test_embedding_residual_and_linear() {
   auto* d_tokens = upload(tokens);
   auto* d_table = upload(table);
   half* d_hidden{};
-  FORGE_CUDA(cudaMalloc(&d_hidden, 8 * sizeof(half)));
-  forge::launch_embedding(d_tokens, d_table, d_hidden, 2, 4, nullptr);
+  INSTINCT_CUDA(cudaMalloc(&d_hidden, 8 * sizeof(half)));
+  instinct::launch_embedding(d_tokens, d_table, d_hidden, 2, 4, nullptr);
   std::vector<half> hidden(8);
-  FORGE_CUDA(cudaMemcpy(hidden.data(), d_hidden, 8 * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(hidden.data(), d_hidden, 8 * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(hidden[0]), 8.0F, 0.0F, "embedding row");
   expect_close(__half2float(hidden[7]), 3.0F, 0.0F, "embedding second row");
 
@@ -77,11 +77,11 @@ void test_embedding_residual_and_linear() {
   auto* d_update = upload(update);
   auto* d_norm_weight = upload(norm_weight);
   half* d_normalized{};
-  FORGE_CUDA(cudaMalloc(&d_normalized, 8 * sizeof(half)));
-  forge::launch_residual_rmsnorm(d_hidden, d_update, d_norm_weight, d_normalized,
+  INSTINCT_CUDA(cudaMalloc(&d_normalized, 8 * sizeof(half)));
+  instinct::launch_residual_rmsnorm(d_hidden, d_update, d_norm_weight, d_normalized,
                                  2, 4, 1e-6F, nullptr);
-  forge::launch_add(d_hidden, d_update, 8, nullptr);
-  FORGE_CUDA(cudaMemcpy(hidden.data(), d_hidden, 8 * sizeof(half), cudaMemcpyDeviceToHost));
+  instinct::launch_add(d_hidden, d_update, 8, nullptr);
+  INSTINCT_CUDA(cudaMemcpy(hidden.data(), d_hidden, 8 * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(hidden[0]), 10.0F, 0.0F, "fused residual then add");
 
   // A[2,3] * W[2,3]^T + bias[2].
@@ -94,13 +94,13 @@ void test_embedding_residual_and_linear() {
   auto* d_w = upload(w);
   auto* d_bias = upload(bias);
   half* d_linear{};
-  FORGE_CUDA(cudaMalloc(&d_linear, 4 * sizeof(half)));
-  forge::ExecutionContext context(1U << 20U);
+  INSTINCT_CUDA(cudaMalloc(&d_linear, 4 * sizeof(half)));
+  instinct::ExecutionContext context(1U << 20U);
   context.linear_fp16(d_a, d_w, d_bias, d_linear, 2, 2, 3);
   context.linear_fp16(d_a, d_w, d_bias, d_linear, 2, 2, 3);
   context.synchronize();
   std::vector<half> linear(4);
-  FORGE_CUDA(cudaMemcpy(linear.data(), d_linear, 4 * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(linear.data(), d_linear, 4 * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(linear[0]), -1.5F, 2e-3F, "cuBLASLt row major output zero");
   expect_close(__half2float(linear[1]), 3.0F, 2e-3F, "cuBLASLt bias output one");
   expect_close(__half2float(linear[2]), -1.5F, 2e-3F, "cuBLASLt row major output two");
@@ -118,19 +118,19 @@ void test_silu_and_argmax() {
   auto* d_gate = upload(gate);
   auto* d_up = upload(up);
   half* d_output{};
-  FORGE_CUDA(cudaMalloc(&d_output, 4 * sizeof(half)));
-  forge::launch_silu_mul(d_gate, d_up, d_output, 4, nullptr);
+  INSTINCT_CUDA(cudaMalloc(&d_output, 4 * sizeof(half)));
+  instinct::launch_silu_mul(d_gate, d_up, d_output, 4, nullptr);
   std::vector<half> output(4);
-  FORGE_CUDA(cudaMemcpy(output.data(), d_output, 4 * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(output.data(), d_output, 4 * sizeof(half), cudaMemcpyDeviceToHost));
   for (int i = 0; i < 4; ++i) {
     const float x = __half2float(gate[i]);
     expect_close(__half2float(output[i]), x / (1 + std::exp(-x)) * __half2float(up[i]), 2e-3F, "silu_mul");
   }
   std::int32_t* d_token{};
-  FORGE_CUDA(cudaMalloc(&d_token, sizeof(std::int32_t)));
-  forge::launch_argmax(d_output, d_token, 1, 4, nullptr);
+  INSTINCT_CUDA(cudaMalloc(&d_token, sizeof(std::int32_t)));
+  instinct::launch_argmax(d_output, d_token, 1, 4, nullptr);
   std::int32_t token = -1;
-  FORGE_CUDA(cudaMemcpy(&token, d_token, sizeof(token), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(&token, d_token, sizeof(token), cudaMemcpyDeviceToHost));
   if (token != 3) { std::cerr << "FAIL argmax\n"; ++failures; }
   cudaFree(d_token); cudaFree(d_output); cudaFree(d_up); cudaFree(d_gate);
 }
@@ -143,8 +143,8 @@ void test_causal_softmax() {
   const std::vector<std::int32_t> lengths = {3};
   auto* d_scores = upload(scores);
   auto* d_lengths = upload(lengths);
-  forge::launch_causal_softmax(d_scores, d_lengths, 1, 1, 3, 3, nullptr);
-  FORGE_CUDA(cudaMemcpy(scores.data(), d_scores, scores.size() * sizeof(half), cudaMemcpyDeviceToHost));
+  instinct::launch_causal_softmax(d_scores, d_lengths, 1, 1, 3, 3, nullptr);
+  INSTINCT_CUDA(cudaMemcpy(scores.data(), d_scores, scores.size() * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(scores[0]), 1.0F, 1e-3F, "causal row zero");
   expect_close(__half2float(scores[1]), 0.0F, 1e-3F, "causal mask");
   const float denom = std::exp(1.0F) + std::exp(2.0F) + std::exp(3.0F);
@@ -168,14 +168,14 @@ void test_rope_and_cache_write() {
   auto* d_value = upload(value);
   auto* d_table = upload(table);
   half* d_cache{};
-  FORGE_CUDA(cudaMalloc(&d_cache, 2 * kv_heads * block_tokens * head_dim * sizeof(half)));
-  FORGE_CUDA(cudaMemset(d_cache, 0, 2 * kv_heads * block_tokens * head_dim * sizeof(half)));
-  forge::launch_rope_cache_write_prefill(d_query, d_key, d_value, d_cache, d_table,
+  INSTINCT_CUDA(cudaMalloc(&d_cache, 2 * kv_heads * block_tokens * head_dim * sizeof(half)));
+  INSTINCT_CUDA(cudaMemset(d_cache, 0, 2 * kv_heads * block_tokens * head_dim * sizeof(half)));
+  instinct::launch_rope_cache_write_prefill(d_query, d_key, d_value, d_cache, d_table,
                                          2, query_heads, kv_heads, head_dim,
                                          block_tokens, 0, 1, 10000.0F, nullptr);
-  FORGE_CUDA(cudaMemcpy(query.data(), d_query, query.size() * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(query.data(), d_query, query.size() * sizeof(half), cudaMemcpyDeviceToHost));
   std::vector<half> cache(2 * kv_heads * block_tokens * head_dim);
-  FORGE_CUDA(cudaMemcpy(cache.data(), d_cache, cache.size() * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(cache.data(), d_cache, cache.size() * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(query[0]), __half2float(original_query[0]), 1e-3F, "RoPE position zero");
   const int q_base = query_heads * head_dim;
   const float first = __half2float(original_query[q_base]);
@@ -194,10 +194,10 @@ void test_rope_and_cache_write() {
   auto* d_decode_k = upload(decode_k);
   auto* d_decode_v = upload(decode_v);
   auto* d_position = upload(position);
-  forge::launch_rope_cache_write(d_decode_q, d_decode_k, d_decode_v, d_cache,
+  instinct::launch_rope_cache_write(d_decode_q, d_decode_k, d_decode_v, d_cache,
                                  d_position, d_table, 1, query_heads, kv_heads,
                                  head_dim, 1, block_tokens, 0, 1, 10000.0F, nullptr);
-  FORGE_CUDA(cudaMemcpy(cache.data(), d_cache, cache.size() * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(cache.data(), d_cache, cache.size() * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(cache[value_plane + 2 * head_dim]), 3.0F, 1e-3F,
                "decode V cache write");
   cudaFree(d_position); cudaFree(d_decode_v); cudaFree(d_decode_k); cudaFree(d_decode_q);
@@ -233,11 +233,11 @@ void test_paged_prefill_attention() {
   auto* d_query = upload(query);
   auto* d_table = upload(table);
   half* d_output{};
-  FORGE_CUDA(cudaMalloc(&d_output, query.size() * sizeof(half)));
-  forge::launch_paged_prefill_attention(d_query, d_cache, d_output, d_table,
+  INSTINCT_CUDA(cudaMalloc(&d_output, query.size() * sizeof(half)));
+  instinct::launch_paged_prefill_attention(d_query, d_cache, d_output, d_table,
                                         3, 2, 1, 4, 2, 0, 1, nullptr);
   std::vector<half> output(query.size());
-  FORGE_CUDA(cudaMemcpy(output.data(), d_output, output.size() * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(output.data(), d_output, output.size() * sizeof(half), cudaMemcpyDeviceToHost));
   for (int dim = 0; dim < 4; ++dim) {
     expect_close(__half2float(output[dim]), values[0][dim], 2e-3F, "prefill causal first token");
   }
@@ -250,11 +250,11 @@ void test_paged_prefill_attention() {
   const std::vector<std::int32_t> lengths = {3};
   auto* d_lengths = upload(lengths);
   half* d_decode_output{};
-  FORGE_CUDA(cudaMalloc(&d_decode_output, 2 * 4 * sizeof(half)));
-  forge::launch_paged_decode_attention(d_query + 2 * 2 * 4, d_cache, d_decode_output,
+  INSTINCT_CUDA(cudaMalloc(&d_decode_output, 2 * 4 * sizeof(half)));
+  instinct::launch_paged_decode_attention(d_query + 2 * 2 * 4, d_cache, d_decode_output,
                                        d_lengths, d_table, 1, 2, 1, 4, 2, 2, 0, 1, nullptr);
   std::vector<half> decode_output(8);
-  FORGE_CUDA(cudaMemcpy(decode_output.data(), d_decode_output, 8 * sizeof(half), cudaMemcpyDeviceToHost));
+  INSTINCT_CUDA(cudaMemcpy(decode_output.data(), d_decode_output, 8 * sizeof(half), cudaMemcpyDeviceToHost));
   expect_close(__half2float(decode_output[0]), expected_dim0, 3e-3F,
                "decode and prefill paged attention agree");
   cudaFree(d_decode_output); cudaFree(d_lengths);
@@ -270,7 +270,7 @@ int main() {
   test_causal_softmax();
   test_rope_and_cache_write();
   test_paged_prefill_attention();
-  FORGE_CUDA(cudaDeviceSynchronize());
+  INSTINCT_CUDA(cudaDeviceSynchronize());
   if (failures == 0) std::cout << "all CUDA tests passed\n";
   return failures == 0 ? 0 : 1;
 }

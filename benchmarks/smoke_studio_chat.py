@@ -10,7 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
-from forge_llm.harness.service import StudioService
+from instinct.harness.service import StudioService
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,8 +49,8 @@ async def execute(args):
     source_revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
-    sources = sorted((ROOT / "python/forge_llm/harness").rglob("*.py")) + sorted(
-        (ROOT / "python/forge_llm/harness/web").glob("*")
+    sources = sorted((ROOT / "python/instinct/harness").rglob("*.py")) + sorted(
+        (ROOT / "python/instinct/harness/web").glob("*")
     )
     source_identity = {
         str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -58,13 +58,13 @@ async def execute(args):
         if p.is_file()
     }
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="forge-chat-real-") as directory:
+    with tempfile.TemporaryDirectory(prefix="instinct-chat-real-") as directory:
         workspace = Path(directory)
         (workspace / "README.md").write_text(
             "# Juniper Workshop\n\nAn isolated chat integration fixture, not a benchmark.\n"
         )
         service = StudioService(
-            workspace, ROOT / ".forge/studio-chat-smoke", config=configuration
+            workspace, ROOT / ".instinct/studio-chat-smoke", config=configuration
         )
         try:
             first = await service.conversations.create(

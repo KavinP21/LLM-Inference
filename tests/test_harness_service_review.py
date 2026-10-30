@@ -5,13 +5,13 @@ import sqlite3
 import time
 
 import pytest
-from forge_llm.harness.extensions import MCPServerConfig
-from forge_llm.harness.service import StudioService
+from instinct.harness.extensions import MCPServerConfig
+from instinct.harness.service import StudioService
 
 
 def service_for(tmp_path, **kwargs):
     (tmp_path / "README.md").write_text("# Fixture\n")
-    service = StudioService(tmp_path, tmp_path / ".forge", demo=True, **kwargs)
+    service = StudioService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
     service.backend.delay = 0.01
     return service
 
@@ -178,7 +178,7 @@ def test_state_directory_cannot_contain_workspace_or_change_parent_permissions(
 def test_partial_backend_load_disposes_extensions_and_retry_uses_fresh_clients(
     tmp_path, monkeypatch
 ):
-    import forge_llm.harness.service as module
+    import instinct.harness.service as module
 
     pools, instances = [], []
     fail_once = True
@@ -226,7 +226,7 @@ def test_partial_backend_load_disposes_extensions_and_retry_uses_fresh_clients(
         )
         service = StudioService(
             tmp_path,
-            tmp_path / ".forge",
+            tmp_path / ".instinct",
             config={"workers": [{"model": "fixture"}]},
             mcp_clients=original,
         )
@@ -252,7 +252,7 @@ def test_partial_backend_load_disposes_extensions_and_retry_uses_fresh_clients(
 
 
 def test_shutdown_during_extension_start_disposes_partial_pool(tmp_path, monkeypatch):
-    import forge_llm.harness.service as module
+    import instinct.harness.service as module
 
     entered = asyncio.Event()
 
@@ -288,7 +288,7 @@ def test_shutdown_during_extension_start_disposes_partial_pool(tmp_path, monkeyp
     async def scenario():
         service = StudioService(
             tmp_path,
-            tmp_path / ".forge",
+            tmp_path / ".instinct",
             config={"workers": [{"model": "fixture"}]},
             mcp_clients=(client,),
         )
@@ -322,7 +322,7 @@ def test_teardown_failure_still_closes_other_resources_and_journal(tmp_path):
         clients = (Client("first", fail=True), Client("second"))
         backend = Backend()
         service = StudioService(
-            tmp_path, tmp_path / ".forge", backend=backend, mcp_clients=clients
+            tmp_path, tmp_path / ".instinct", backend=backend, mcp_clients=clients
         )
         with pytest.raises(RuntimeError, match="cleanup failed"):
             await service.close()

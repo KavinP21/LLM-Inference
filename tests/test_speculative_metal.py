@@ -5,8 +5,8 @@ import pytest
 
 pytest.importorskip("mlx.core")
 
-from forge_llm.mlx_engine import MlxEngine
-from forge_llm.speculative import NoDraft, SpeculativeEngine
+from instinct.mlx_engine import MlxEngine
+from instinct.speculative import NoDraft, SpeculativeEngine
 from test_quantization import tiny_artifact
 
 
@@ -167,8 +167,8 @@ def test_cancellation_between_prefill_chunks_reclaims_pages(tmp_path):
 
 
 def test_distinct_model_artifacts_require_matching_tokenizer_fingerprints(tmp_path):
-    from forge_llm.format import write_engine
-    from forge_llm.model_file import ModelFile
+    from instinct.format import write_engine
+    from instinct.model_file import ModelFile
 
     path, different = tmp_path / "model.engine", tmp_path / "different.engine"
     tiny_artifact(path)

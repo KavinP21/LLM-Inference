@@ -1,16 +1,16 @@
-#include "forge/cuda_arena.h"
+#include "instinct/cuda_arena.h"
 
-#include "forge/cuda_utils.h"
-#include "forge/error.h"
+#include "instinct/cuda_utils.h"
+#include "instinct/error.h"
 
 #include <cstdint>
 #include <utility>
 
-namespace forge {
+namespace instinct {
 
 CudaArena::CudaArena(std::size_t capacity) : capacity_(capacity) {
   check(capacity > 0, "CUDA arena capacity must be non-zero");
-  FORGE_CUDA(cudaMalloc(&data_, capacity));
+  INSTINCT_CUDA(cudaMalloc(&data_, capacity));
 }
 
 CudaArena::~CudaArena() {
@@ -39,5 +39,5 @@ void* CudaArena::allocate(std::size_t bytes, std::size_t alignment) {
   return result;
 }
 
-}  // namespace forge
+}  // namespace instinct
 

@@ -4,8 +4,8 @@ import asyncio
 import json
 
 import pytest
-from forge_llm.agents.runtime import AgentRuntime, RuntimeConfig
-from forge_llm.agents.store import AgentStore
+from instinct.agents.runtime import AgentRuntime, RuntimeConfig
+from instinct.agents.store import AgentStore
 from test_agent_runtime_native import READ_SCHEMA, NativeBackend, call
 
 

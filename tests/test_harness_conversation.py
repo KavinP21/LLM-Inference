@@ -4,10 +4,10 @@ import asyncio
 import json
 
 import pytest
-from forge_llm.agents.protocol import Generation
-from forge_llm.harness import service as service_module
-from forge_llm.harness.conversation import ConversationRuntime
-from forge_llm.harness.service import StudioService
+from instinct.agents.protocol import Generation
+from instinct.harness import service as service_module
+from instinct.harness.conversation import ConversationRuntime
+from instinct.harness.service import StudioService
 
 
 class ChatBackend:
@@ -38,7 +38,7 @@ class ChatBackend:
 
 
 def make_service(tmp_path, **kwargs):
-    return StudioService(tmp_path, tmp_path / ".forge", demo=True, **kwargs)
+    return StudioService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
 
 
 async def settle(service, chat_id):
@@ -71,7 +71,7 @@ def startup_fixture(tmp_path, monkeypatch, *, failure=False, gate=None):
     monkeypatch.setattr(service_module, "worker_identities", identities)
     service = StudioService(
         tmp_path,
-        tmp_path / ".forge",
+        tmp_path / ".instinct",
         config={"workers": [{"model": "test-model"}]},
     )
     return service, backend, attempts
@@ -462,7 +462,7 @@ def test_long_latest_request_is_preserved_when_runtime_projects_inherited_histor
                 )
             )["chat_id"]
             await settle(service, chat)
-            latest = "Latest complete request " + "y" * 11900
+            latest = "Latest complete request " + "y" * 11000
             await service.conversations.message(chat, {"message": latest})
             detail = await settle(service, chat)
             turn = detail["turns"][-1]
