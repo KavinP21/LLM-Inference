@@ -36,9 +36,7 @@ def percentile(values: list[float], q: float) -> float:
     return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
 
-def run(
-    model: Path, *, users: int, tokens: int, late_prompt: int, **options
-) -> dict:
+def run(model: Path, *, users: int, tokens: int, late_prompt: int, **options) -> dict:
     engine = MlxEngine(
         model,
         max_num_sequences=users + 1,
