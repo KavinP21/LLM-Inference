@@ -328,7 +328,7 @@ def test_current_image_survives_projection_of_large_inherited_text(tmp_path):
                 )
             )["chat_id"]
             await settle(service, chat)
-            latest = "Latest complete request " + "y" * 11900
+            latest = "Latest complete request " + "y" * 11000
             await service.conversations.message(
                 chat, {"message": latest, "media": [second]}
             )

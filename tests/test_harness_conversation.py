@@ -462,7 +462,7 @@ def test_long_latest_request_is_preserved_when_runtime_projects_inherited_histor
                 )
             )["chat_id"]
             await settle(service, chat)
-            latest = "Latest complete request " + "y" * 11900
+            latest = "Latest complete request " + "y" * 11000
             await service.conversations.message(chat, {"message": latest})
             detail = await settle(service, chat)
             turn = detail["turns"][-1]

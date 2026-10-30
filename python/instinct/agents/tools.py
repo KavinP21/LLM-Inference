@@ -12,11 +12,14 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import stat
 import sys
 import tempfile
 import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -83,6 +86,19 @@ def _line_matcher(query: str):
     return lambda line: literal.search(line) or pattern.search(line)
 
 
+def _move_to_trash(path: Path, workspace: Path) -> str:
+    """Move ``path`` to the user's Trash (macOS) or a workspace .trash folder."""
+    trash = Path.home() / ".Trash"
+    if sys.platform != "darwin" or not trash.is_dir():
+        trash = workspace / ".trash"
+        trash.mkdir(exist_ok=True)
+    target = trash / path.name
+    if target.exists() or target.is_symlink():
+        target = trash / f"{path.stem} {time.strftime('%H.%M.%S')}{path.suffix}"
+    shutil.move(str(path), str(target))
+    return str(target)
+
+
 def _integer(value: Any, low: int, high: int, name: str) -> int:
     if type(value) is not int or not low <= value <= high:
         raise ToolValidationError(f"{name} must be an integer between {low} and {high}")
@@ -101,6 +117,9 @@ class WorkspaceTools:
         "replace_text": 'Replace one unique substring after read_file. Include leading spaces in code matches and indent EVERY replacement line; whitespace is never added. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","old_text":"exact unique text","new_text":"replacement"}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
         "edit_lines": 'Preferred for multiline source edits: replace an inclusive whole-line range from read_file. Provide complete replacement lines with exact indentation and no displayed line-number labels. Unselected lines stay unchanged; a missing trailing newline preserves the original range boundary. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","start_line":1,"end_line":3,"content":"complete replacement lines"}.',
         "run_tests": 'Run configured Python pytest on explicit workspace test files. Arguments: {"paths":["tests/test_example.py"]}.',
+        "make_directory": 'Create a folder (and any missing parents). Arguments: {"path":"src/new_package"}.',
+        "move_path": 'Move or rename a file or folder inside the workspace. Fails if the destination exists. Arguments: {"source":"old/name.py","destination":"new/name.py"}.',
+        "delete_path": 'Move a file or folder to the Trash, where the user can restore it. Arguments: {"path":"build/output.log"}.',
     }
     replay_safe_tools = frozenset({"list_files", "read_file", "search"})
     schemas: ClassVar[dict[str, dict]] = {
@@ -136,6 +155,27 @@ class WorkspaceTools:
             "type": "object",
             "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
             "required": ["path", "content"],
+            "additionalProperties": False,
+        },
+        "make_directory": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+        "move_path": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string"},
+                "destination": {"type": "string"},
+            },
+            "required": ["source", "destination"],
+            "additionalProperties": False,
+        },
+        "delete_path": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
             "additionalProperties": False,
         },
         "write_file": {
@@ -235,6 +275,7 @@ class WorkspaceTools:
         max_file_bytes: int = 256_000,
         max_scan_files: int = 10_000,
         test_timeout: float = 60.0,
+        command_prefix: Callable[[list[str]], list[str]] | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve(strict=True)
         if not self.workspace.is_dir():
@@ -252,6 +293,8 @@ class WorkspaceTools:
         if not 0 < test_timeout <= 600:
             raise ToolValidationError("test_timeout must be in (0,600]")
         self.test_timeout = test_timeout
+        # Wraps test commands, e.g. in an OS sandbox.
+        self.command_prefix = command_prefix or (lambda argv: argv)
         self._mutation_lock = asyncio.Lock()
         self._test_lock = asyncio.Lock()
         self._receipt_lock = threading.Lock()
@@ -355,7 +398,16 @@ class WorkspaceTools:
     def mapping(self) -> dict:
         names = ["list_files", "read_file", "search", "save_artifact"]
         if self.allow_write:
-            names.extend(["write_file", "replace_text", "edit_lines"])
+            names.extend(
+                [
+                    "write_file",
+                    "replace_text",
+                    "edit_lines",
+                    "make_directory",
+                    "move_path",
+                    "delete_path",
+                ]
+            )
         if self.allow_tests:
             names.append("run_tests")
         return {name: getattr(self, name) for name in names}
@@ -428,12 +480,25 @@ class WorkspaceTools:
         if not path.exists():
             raise FileNotFoundError(args.get("path", "."))
         limit = _integer(args.get("limit", 100), 1, 1000, "limit")
+        # Folders directly inside the path, so empty ones are visible too.
+        folders = (
+            sorted(
+                str(child.relative_to(self.workspace)) + "/"
+                for child in path.iterdir()
+                if child.is_dir()
+                and not child.is_symlink()
+                and child.name not in _IGNORED | _PRIVATE
+                and not child.name.startswith(".")
+            )
+            if path.is_dir()
+            else []
+        )
         files = []
         for candidate in self._files(path):
             if len(files) == limit:
-                return _json({"files": files, "truncated": True})
+                return _json({"files": files, "folders": folders, "truncated": True})
             files.append(str(candidate.relative_to(self.workspace)))
-        return _json({"files": files, "truncated": False})
+        return _json({"files": files, "folders": folders, "truncated": False})
 
     async def read_file(self, args: dict) -> str:
         result = json.loads(await asyncio.to_thread(self._read_file, args))
@@ -507,6 +572,55 @@ class WorkspaceTools:
                         }
                     )
         return _json({"matches": matches, "truncated": False})
+
+    def _mutable_path(self, value: Any) -> Path:
+        if not self.allow_write:
+            raise PermissionError("workspace writes are disabled")
+        path = self._path(value)
+        if path == self.workspace:
+            raise ToolValidationError("the workspace itself cannot be changed")
+        self._assert_mutable(path, self.workspace / value)
+        return path
+
+    async def make_directory(self, args: dict) -> str:
+        _arguments(args, {"path"})
+        path = self._mutable_path(args["path"])
+        if path.exists() and not path.is_dir():
+            raise ToolValidationError("a file already exists at that path")
+        async with self._mutation_lock:
+            path.mkdir(parents=True, exist_ok=True)
+        return _json({"path": str(path.relative_to(self.workspace)), "created": True})
+
+    async def move_path(self, args: dict) -> str:
+        _arguments(args, {"source", "destination"})
+        source = self._mutable_path(args["source"])
+        destination = self._mutable_path(args["destination"])
+        if not source.exists():
+            raise FileNotFoundError(args["source"])
+        if destination.exists():
+            raise ToolValidationError("destination already exists")
+        if destination.is_relative_to(source):
+            raise ToolValidationError("cannot move a folder into itself")
+        async with self._mutation_lock:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(source, destination)
+        return _json(
+            {
+                "source": str(source.relative_to(self.workspace)),
+                "destination": str(destination.relative_to(self.workspace)),
+            }
+        )
+
+    async def delete_path(self, args: dict) -> str:
+        _arguments(args, {"path"})
+        path = self._mutable_path(args["path"])
+        if not path.exists() and not path.is_symlink():
+            raise FileNotFoundError(args["path"])
+        async with self._mutation_lock:
+            trashed = _move_to_trash(path, self.workspace)
+        return _json(
+            {"path": str(path.relative_to(self.workspace)), "trashed_to": trashed}
+        )
 
     async def _write(self, args: dict, *, artifact: bool) -> str:
         _arguments(
@@ -722,12 +836,7 @@ class WorkspaceTools:
         # Fresh cache avoids same-second/same-size edits running stale pyc files.
         environment["PYTHONPYCACHEPREFIX"] = cache
         process = await asyncio.create_subprocess_exec(
-            self.python,
-            "-m",
-            "pytest",
-            "-q",
-            "--",
-            *selected,
+            *self.command_prefix([self.python, "-m", "pytest", "-q", "--", *selected]),
             cwd=self.workspace,
             env=environment,
             stdout=asyncio.subprocess.PIPE,

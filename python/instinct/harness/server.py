@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import concurrent.futures
 import hmac
 import json
@@ -11,7 +12,7 @@ import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from ..agents.media import MAX_MEDIA_REQUEST_BYTES
 
@@ -48,7 +49,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         )
         for key, value in headers:
             self.send_header(key, value)
@@ -131,11 +132,24 @@ class StudioHandler(BaseHTTPRequestHandler):
                 )
             if path == "/api/events":
                 return self._events()
+            parts = path.strip("/").split("/")
+            if (
+                len(parts) == 4
+                and parts[:2] == ["api", "terminals"]
+                and parts[3] == "stream"
+            ):
+                return self._terminal_stream(parts[2])
             return self._dispatch("GET", path, {})
         files = {
             "/": ("index.html", "text/html; charset=utf-8"),
             "/studio.css": ("studio.css", "text/css; charset=utf-8"),
             "/studio.js": ("studio.js", "text/javascript; charset=utf-8"),
+            "/vendor/xterm.js": ("vendor/xterm.js", "text/javascript; charset=utf-8"),
+            "/vendor/addon-fit.js": (
+                "vendor/addon-fit.js",
+                "text/javascript; charset=utf-8",
+            ),
+            "/vendor/xterm.css": ("vendor/xterm.css", "text/css; charset=utf-8"),
         }
         if path not in files:
             return self._json(404, {"error": "not found"})
@@ -212,6 +226,39 @@ class StudioHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
             return
         except concurrent.futures.TimeoutError:
+            return
+
+    def _terminal_stream(self, terminal_id):
+        """Server-sent events with a terminal's output, base64 encoded."""
+        try:
+            terminal = self.server.service.terminals.get(terminal_id)
+        except ValueError as exc:
+            return self._json(404, {"error": str(exc)})
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            offset = max(0, int(query.get("offset", ["0"])[0]))
+        except ValueError:
+            return self._json(400, {"error": "offset must be an integer"})
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            while not self.server.service.closing:
+                offset, data, closed = terminal.read(offset, 15)
+                if data:
+                    payload = json.dumps(
+                        {"offset": offset, "data": base64.b64encode(data).decode()}
+                    )
+                    self.wfile.write(f"data: {payload}\n\n".encode())
+                elif closed:
+                    self.wfile.write(b"event: exit\ndata: {}\n\n")
+                    self.wfile.flush()
+                    return
+                else:
+                    self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
     def _dispatch(self, method, path, body):

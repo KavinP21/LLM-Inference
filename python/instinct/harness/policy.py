@@ -112,6 +112,11 @@ class _Waiting:
     approved: bool | None = None
 
 
+# review: every change waits for approval. auto: changes and sandboxed commands
+# run without asking. read_only: no changes at all.
+POLICIES = ("review", "auto", "read_only")
+
+
 class ApprovalGate:
     """Wrap tools with read-only or exact-invocation review policy.
 
@@ -134,7 +139,7 @@ class ApprovalGate:
         preview: Preview | Mapping[str, Preview] | None = None,
         hooks: HookRegistry | None = None,
     ) -> None:
-        if mode not in {"review", "read_only"}:
+        if mode not in POLICIES:
             raise ValueError("policy mode must be review or read_only")
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("approval timeout must be finite and positive")
@@ -434,7 +439,7 @@ class ApprovalGate:
                 await self.hooks.emit("before_tool", payload)
             approval_id = None
             try:
-                if mutating:
+                if mutating and self.mode == "review":
                     preview = await self._preview(name, snapshot)
                     approval_id = await self._review(name, args_json, preview)
                     if await self._preview(name, snapshot) != preview:

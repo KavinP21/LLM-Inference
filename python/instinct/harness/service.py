@@ -20,15 +20,27 @@ from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
 from ..chat_formats import EFFORT_BUDGETS
+from . import sandbox
 from .commands import CommandTools
 from .conversation import ConversationController, ConversationRuntime
 from .demo import DemoBackend
 from .extensions import MCPStdioClient
-from .policy import ApprovalGate, workspace_preview
+from .policy import POLICIES, ApprovalGate, workspace_preview
+from .terminal import Terminals
 
 MUTATING = frozenset(
-    {"write_file", "replace_text", "edit_lines", "save_artifact", "run_tests"}
+    {
+        "write_file",
+        "replace_text",
+        "edit_lines",
+        "make_directory",
+        "move_path",
+        "delete_path",
+        "save_artifact",
+        "run_tests",
+    }
 )
+SETTINGS = {"command_network": False}
 SETTLED_RUNS = TERMINAL | {"completed_with_failures"}
 
 
@@ -117,6 +129,18 @@ class StudioService:
             "CREATE TABLE IF NOT EXISTS studio_manifests (run_id TEXT PRIMARY KEY, manifest TEXT NOT NULL)"
         )
         self.config = json.loads(json.dumps(config or {}))
+        self.terminals = Terminals(self.workspace)
+        self.settings_path = self.state_dir / "settings.json"
+        try:
+            saved = json.loads(self.settings_path.read_text())
+        except (OSError, ValueError):
+            saved = {}
+        self.settings = {
+            key: saved.get(key, default)
+            if isinstance(saved.get(key), type(default))
+            else default
+            for key, default in SETTINGS.items()
+        }
         self.demo, self.skills = demo, skills
         self.backend = backend or (DemoBackend(self.store) if demo else None)
         self.backend_status = "ready" if self.backend else "offline"
@@ -242,6 +266,20 @@ class StudioService:
             },
         }
 
+    def update_settings(self, payload: dict) -> None:
+        """App-wide settings; they apply to replies started afterwards."""
+        if (
+            not isinstance(payload, dict)
+            or not payload
+            or set(payload) - SETTINGS.keys()
+        ):
+            raise ValueError(f"settings accept {', '.join(SETTINGS)}")
+        for key, value in payload.items():
+            if not isinstance(value, type(SETTINGS[key])):
+                raise ValueError(f"{key} must be {type(SETTINGS[key]).__name__}")
+        self.settings.update(payload)
+        self.settings_path.write_text(json.dumps(self.settings))
+
     def models(self) -> list[dict]:
         """Models a chat can be driven by: one entry per worker group."""
         choices = {}
@@ -296,13 +334,17 @@ class StudioService:
     def _runtime(
         self, run_id: str, manifest: dict, config: RuntimeConfig
     ) -> AgentRuntime:
-        review = manifest["policy"] == "review"
+        review = manifest["policy"] in {"review", "auto"}
+        network = self.settings["command_network"]
         tools = StudioWorkspaceTools(
             self.workspace,
             self.state_dir / "artifacts" / run_id,
             allow_write=review,
             allow_tests=review,
             state_dir=self.state_dir,
+            command_prefix=lambda argv: sandbox.command(
+                argv, self.workspace, network=network
+            ),
         )
         gate = ApprovalGate(
             self.store,
@@ -324,7 +366,7 @@ class StudioService:
         safe = set(tools.replay_safe_tools)
         mutations = set(MUTATING)
         if review:
-            commands = CommandTools(self.workspace)
+            commands = CommandTools(self.workspace, network=network)
             mapping.update(commands.mapping())
             descriptions.update(commands.tool_descriptions())
             schemas.update(commands.schemas)
@@ -421,7 +463,7 @@ class StudioService:
             raise ValueError("Four missions are already active; wait or stop one")
         task = _text(payload.get("task"), "task")
         policy = payload.get("policy", "read_only")
-        if policy not in {"read_only", "review"}:
+        if policy not in POLICIES:
             raise ValueError("policy must be read_only or review")
         config = _configuration or self._configuration(payload)
         if config.tool_timeout_seconds < 450:
@@ -756,6 +798,12 @@ class StudioService:
                 "utf-8"
             )
             return {"path": name, "content": content}
+        if parts[:2] == ["api", "terminals"]:
+            return self.terminals.dispatch(method, parts, payload)
+        if path == "/api/settings":
+            if method == "POST":
+                self.update_settings(payload)
+            return {"settings": self.settings, "sandbox": sandbox.available()}
         if method == "GET" and path == "/api/live":
             return self.live()
         if method == "GET" and path == "/api/models":
@@ -794,6 +842,7 @@ class StudioService:
         if self._closed:
             return
         self.closing = True
+        self.terminals.close()
         await self.conversations.close()
         if hasattr(self, "_status_task"):
             self._status_task.cancel()
