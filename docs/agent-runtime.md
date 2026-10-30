@@ -192,8 +192,9 @@ pagination.
 
 Native agents compact rather than project. Projection rebuilds the window on
 every step, which changes the prompt near its start and misses the prompt cache
-each time. Instead, once the context passes 75% of the input budget, the model
-is asked for a plain-text summary of its work. That request extends the cached
+each time. Instead, once the context passes 90% of the input budget, the model
+is asked for a plain-text summary of its work. In small budgets it asks earlier,
+while one more maximum-size tool result plus the summary request still fit. That request extends the cached
 prompt, so it only costs the summary's tokens. From then on the agent sees its
 system prompt, its task, the summary and the recent messages (about 40% of the
 budget, starting at an assistant message), and the prompt grows by appending
