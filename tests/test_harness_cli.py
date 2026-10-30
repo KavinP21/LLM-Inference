@@ -14,6 +14,7 @@ def _args(workspace, **updates):
     values = {
         "workspace": str(workspace),
         "state_dir": ".instinct",
+        "keys_file": None,
         "skills_dir": [],
         "mcp_config": None,
         "config": None,

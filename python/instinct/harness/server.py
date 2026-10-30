@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from ..agents.media import MAX_MEDIA_REQUEST_BYTES
+from .openai_api import serve
 
 WEB_ROOT = Path(__file__).with_name("web")
 MAX_BODY = 128_000
@@ -127,9 +128,11 @@ class AppHandler(BaseHTTPRequestHandler):
         return value
 
     def do_GET(self):
+        path = urlsplit(self.path).path
+        if path.startswith("/v1/"):
+            return self._openai("GET", path)
         if not self._origin_ok():
             return self._json(403, {"error": "unexpected origin or host"})
-        path = urlsplit(self.path).path
         if path.startswith("/api/"):
             if not self._authenticated():
                 return self._json(
@@ -166,9 +169,11 @@ class AppHandler(BaseHTTPRequestHandler):
             self._json(503, {"error": "the app's UI files are missing"})
 
     def do_POST(self):
+        path = urlsplit(self.path).path
+        if path.startswith("/v1/"):
+            return self._openai("POST", path)
         if not self._origin_ok():
             return self._json(403, {"error": "unexpected origin or host"})
-        path = urlsplit(self.path).path
         # Authorize before reading potentially large image uploads. Auth itself
         # stays on the small-body limit and uses its existing bootstrap check.
         if path != "/api/auth" and not self._authenticated():
@@ -202,6 +207,52 @@ class AppHandler(BaseHTTPRequestHandler):
                 ],
             )
         self._dispatch("POST", path, body)
+
+    def _openai(self, method, path):
+        """OpenAI-compatible API: a bearer key from Settings, or the app's own
+        session. Keys aren't ambient credentials, so other origins may use them."""
+        service = self.server.service
+        if service.api_keys.verify(self.headers.get("Authorization")) is None and not (
+            self._origin_ok() and self._authenticated()
+        ):
+            self.close_connection = True
+            return self._json(
+                401,
+                {
+                    "error": {
+                        "message": "invalid API key",
+                        "type": "authentication_error",
+                        "code": None,
+                    }
+                },
+            )
+        if method == "GET" and path == "/v1/models":
+            return self._json(200, service.openai.models())
+        if method != "POST" or path != "/v1/chat/completions":
+            return self._json(
+                404,
+                {
+                    "error": {
+                        "message": "not found",
+                        "type": "not_found_error",
+                        "code": None,
+                    }
+                },
+            )
+        try:
+            body = self._body(limit=MAX_MEDIA_REQUEST_BYTES)
+        except (ValueError, TypeError, OSError, RecursionError) as exc:
+            return self._json(
+                400,
+                {
+                    "error": {
+                        "message": str(exc),
+                        "type": "invalid_request_error",
+                        "code": None,
+                    }
+                },
+            )
+        serve(self, self.server.loop, body, service.openai.chat)
 
     def _events(self):
         """Server-sent events: push the live snapshot whenever it changes."""

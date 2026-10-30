@@ -51,6 +51,8 @@ final class Backend {
         stopping = false
         port = nil
         token = Self.randomToken()
+        // API keys belong to the app, not to a workspace; a test's state folder keeps its own.
+        let keys = (state ?? Self.supportDirectory).appendingPathComponent("api-keys.json")
         let state = state ?? Self.stateDirectory(for: workspace)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
 
@@ -58,7 +60,8 @@ final class Backend {
         process.executableURL = python
         process.currentDirectoryURL = root
         var arguments = ["-m", "instinct.harness.cli", "--app", "--port", "0",
-                         "--workspace", workspace.path, "--state-dir", state.path]
+                         "--workspace", workspace.path, "--state-dir", state.path,
+                         "--keys-file", keys.path]
         arguments += modelsReady && !demo ? ["--config", config.path] : ["--demo"]
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
@@ -114,11 +117,15 @@ final class Backend {
         self.process = nil
     }
 
+    static var supportDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Instinct", isDirectory: true)
+    }
+
     static func stateDirectory(for workspace: URL) -> URL {
         let digest = SHA256.hash(data: Data(workspace.standardizedFileURL.path.utf8))
         let id = digest.prefix(6).map { String(format: "%02x", $0) }.joined()
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Instinct/workspaces/\(workspace.lastPathComponent)-\(id)", isDirectory: true)
+        return supportDirectory.appendingPathComponent("workspaces/\(workspace.lastPathComponent)-\(id)", isDirectory: true)
     }
 
     static func randomToken() -> String {
