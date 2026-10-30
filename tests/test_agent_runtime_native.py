@@ -160,9 +160,13 @@ def test_native_resume_replays_exact_catalog_before_reviewing_new_messages(tmp_p
         assert any(
             "New requirement" in message.content for message in backend.calls[2][1]
         )
+        # Older saved prompts are pruned; the latest one is kept.
         assert (
-            store.generation_tool_specs("native-replay", "native-replay.root.1")
-            == backend.calls[0][2]
+            store.generation_tool_specs("native-replay", "native-replay.root.1") is None
+        )
+        assert (
+            store.generation_tool_specs("native-replay", "native-replay.root.2")
+            == backend.calls[2][2]
         )
         store.close()
 
@@ -496,3 +500,59 @@ def test_measured_prompt_tokens_keep_history_bytes_would_have_dropped():
         )
         for n in range(6)
     )
+
+
+def test_full_context_is_compacted_once_into_a_model_written_summary():
+    from forge_llm.agents.runtime import COMPACT_REQUEST, SUMMARY_PREFIX
+
+    class Backend:
+        supports_native_tools = True
+
+        def __init__(self):
+            self.calls = []
+            self.steps = 0
+
+        async def generate_action(self, messages, max_tokens, request_id, tool_specs):
+            self.calls.append((request_id, list(messages)))
+            used = sum(len(m.content.encode()) for m in messages)
+            if messages[-1].content == COMPACT_REQUEST:
+                return Generation(f"Read up to part{self.steps - 1}.py.", used, 12)
+            self.steps += 1
+            text = (
+                call("read_file", path=f"part{self.steps - 1}.py")
+                if self.steps <= 12
+                else "Done reading."
+            )
+            return Generation(text, used, 10)
+
+        async def cancel(self, request_id):
+            pass
+
+    backend = Backend()
+    runtime = AgentRuntime(
+        backend,
+        tools={"read_file": lambda args: args["path"] + "\n" + "x = 1\n" * 500},
+        tool_schemas={"read_file": READ_SCHEMA},
+        config=RuntimeConfig(
+            max_context_tokens=24_000,
+            max_output_tokens=1_000,
+            max_steps_per_agent=40,
+            max_total_tokens=1_000_000,
+        ),
+    )
+    result = asyncio.run(runtime.run("Read part0.py through part11.py"))
+    assert result.status == "completed"
+    compactions = runtime.store.events(result.run_id, kinds=("context_compacted",))
+    assert compactions and not runtime.store.events(
+        result.run_id, kinds=("context_projected",)
+    )
+    steps = [msgs for rid, msgs in backend.calls if not rid.endswith(".compact")]
+    after = [m for m in steps if len(m) > 2 and m[2].content.startswith(SUMMARY_PREFIX)]
+    assert after and "part0.py\n" not in "".join(m.content for m in after[0])
+    # Between compactions, each request extends the previous one exactly, so
+    # the prompt cache stays valid.
+    for earlier, later in zip(after, after[1:]):
+        if later[2].content == earlier[2].content:
+            assert [m.content for m in later[: len(earlier)]] == [
+                m.content for m in earlier
+            ]
