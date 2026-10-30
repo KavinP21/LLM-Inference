@@ -41,6 +41,15 @@ await check("sends a message and shows the reply", async () => {
 });
 await snapshot("2-reply");
 
+await check("summarizes the chat with /compact", async () => {
+  $("message").value = "/compact";
+  $("message").dispatchEvent(new Event("input", { bubbles: true }));
+  press($("message"), "Enter");
+  await until(() => document.querySelector(".chat-summary"), 60000);
+  document.querySelector(".chat-summary").open = true;
+  await snapshot("2b-compact");
+});
+
 await check("opens the model and reasoning picker", async () => {
   if ($("mode-picker").hidden) return;  // Demo mode has no models to pick.
   $("mode-button").click();

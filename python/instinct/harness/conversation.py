@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from ..agents.media import MAX_MEDIA_ITEMS, MAX_TOTAL_MEDIA_BYTES, validate_media
 from ..agents.protocol import ChatMessage, conservative_input_tokens
-from ..agents.runtime import AgentRuntime, RuntimeConfig
+from ..agents.runtime import COMPACT_AT, COMPACT_TAIL, AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL
 from ..chat_formats import EFFORT_BUDGETS
 from ..common import clip, text_field
@@ -40,6 +40,19 @@ SETTLED = TERMINAL | {"completed_with_failures", "interrupted"}
 # to refresh while a reply streams.
 RECENT_TURNS = 8
 OLD_TURN_EVENTS = {"tool_result", "generation", "operator_message"}
+
+# Earlier turns go into each reply's prompt up to a byte budget. Once they pass
+# COMPACT_AT of it, or when the user asks (/compact), the model summarizes the
+# older ones and later replies start from that summary instead.
+SUMMARY_TOKENS = 2048
+SUMMARY_SYSTEM = "You write summaries of conversations so they can continue without the original messages."
+SUMMARY_REQUEST = (
+    "Summarize the conversation above so it can continue from your summary "
+    "alone. Keep the user's goals, preferences and constraints; decisions and "
+    "why they were made; the files, commands and code that matter; facts "
+    "established; and anything still open. Plain text, at most 600 words."
+)
+SUMMARY_PREFIX = "[Summary of the earlier conversation]\n"
 
 
 def _slim(events, limit):
@@ -224,10 +237,11 @@ class ConversationController:
         service: AppService,
         *,
         startup_timeout_seconds: float = 180,
-        history_bytes: int = 48_000,
+        history_bytes: int | None = None,
     ):
         self.service = service
         self.startup_timeout_seconds = startup_timeout_seconds
+        # None sizes it from each chat's context; see _history_budget.
         self.history_bytes = history_bytes
         self.jobs: dict[str, asyncio.Task] = {}
         self.watchers: dict[str, asyncio.Task] = {}
@@ -268,6 +282,10 @@ class ConversationController:
         if "checkpoint" not in columns:
             # The workspace commit taken before the turn ran; see checkpoints.py.
             self.db.execute("ALTER TABLE studio_chat_turns ADD COLUMN checkpoint TEXT")
+        if "summary" not in columns:
+            # The conversation through this turn, summarized; later turns
+            # start from it. Rewinding past the turn drops it with the turn.
+            self.db.execute("ALTER TABLE studio_chat_turns ADD COLUMN summary TEXT")
         # There is no live controller after a process restart. Preserve pending
         # user messages and make the interruption visible instead of re-sending.
         self.db.execute(
@@ -821,7 +839,18 @@ class ConversationController:
             )
         return group
 
-    def _history_start(self, sizes: list[int]) -> int:
+    def _history_budget(self, chat) -> int:
+        """Bytes of earlier turns a reply's prompt may carry: about a third of
+        the chat's context (code runs near 3.5 bytes a token), leaving the
+        rest for the reply's own work."""
+        if self.history_bytes is not None:
+            return self.history_bytes
+        config = json.loads(chat["configuration"])
+        tokens = config.get("max_context_tokens", RuntimeConfig.max_context_tokens)
+        return max(48_000, tokens * 6 // 5)
+
+    @staticmethod
+    def _history_start(sizes: list[int], budget: int) -> int:
         """Index of the oldest turn that still fits in the history budget.
 
         Dropping only as much as needed would move the start of the prompt on
@@ -833,31 +862,122 @@ class ConversationController:
         start = total = 0
         for newest, size in enumerate(sizes):
             total += size
-            if total > self.history_bytes:
-                while start < newest and total > self.history_bytes // 2:
+            if total > budget:
+                while start < newest and total > budget // 2:
                     total -= sizes[start]
                     start += 1
         return start
 
-    async def _history(self, chat_id, turn_id, *, current_media=()):
-        rows = self.db.execute(
+    def _earlier_turns(self, chat_id, turn_id=None):
+        if turn_id is None:
+            return self.db.execute(
+                "SELECT * FROM studio_chat_turns WHERE chat_id=? ORDER BY created,rowid",
+                (chat_id,),
+            ).fetchall()
+        return self.db.execute(
             "SELECT * FROM studio_chat_turns WHERE chat_id=? AND rowid < "
             "(SELECT rowid FROM studio_chat_turns WHERE turn_id=?) "
             "ORDER BY created,rowid",
             (chat_id, turn_id),
         ).fetchall()
+
+    @staticmethod
+    def _since_summary(rows):
+        """The latest summary among ``rows`` and the turns after it."""
+        for index in range(len(rows) - 1, -1, -1):
+            if rows[index]["summary"]:
+                return rows[index]["summary"], rows[index + 1 :]
+        return None, rows
+
+    @staticmethod
+    def _size(group) -> int:
+        return sum(len(item.content.encode("utf-8")) + 32 for item in group)
+
+    async def _maybe_compact(self, chat, turn_id):
+        """Summarize older turns once those since the last summary pass
+        COMPACT_AT of the history budget, keeping about COMPACT_TAIL of the
+        budget of recent turns as they are."""
+        rows = self._earlier_turns(chat["chat_id"], turn_id)
+        _, pending = self._since_summary(rows)
+        budget = self._history_budget(chat)
+        sizes = [self._size(self._turn_group(row)) for row in pending]
+        if sum(sizes) <= budget * COMPACT_AT:
+            return None
+        keep, tail = len(pending), 0
+        while keep > 1 and tail + sizes[keep - 1] <= budget * COMPACT_TAIL:
+            keep -= 1
+            tail += sizes[keep]
+        return await self._summarize(chat, rows, pending[keep - 1])
+
+    async def _summarize(self, chat, rows, through):
+        """Have the model summarize the chat through the turn ``through`` and
+        keep the summary on that turn."""
+        end = next(
+            i for i, row in enumerate(rows) if row["turn_id"] == through["turn_id"]
+        )
+        summary, pending = self._since_summary(rows[: end + 1])
+        groups = [self._turn_group(row) for row in pending]
+        # Turns from before automatic summaries can exceed the budget: the
+        # summary then covers the newest of them.
+        budget = self._history_budget(chat)
+        start = self._history_start([self._size(group) for group in groups], budget)
+        messages = [ChatMessage("system", SUMMARY_SYSTEM)]
+        if summary:
+            messages.append(ChatMessage("user", SUMMARY_PREFIX + summary))
+        messages += [message for group in groups[start:] for message in group]
+        messages.append(ChatMessage("user", SUMMARY_REQUEST))
+        config = RuntimeConfig(**json.loads(chat["configuration"]))
+        backend = self.service.backend
+        options = {}
+        if getattr(backend, "routes", False) is True:
+            options["group"] = config.driver_group
+        generation = await asyncio.wait_for(
+            backend.generate(
+                messages,
+                SUMMARY_TOKENS,
+                f"summary.{chat['chat_id']}.{uuid.uuid4().hex[:8]}",
+                **options,
+            ),
+            timeout=config.generation_timeout_seconds,
+        )
+        text = generation.text.strip()
+        if not text:
+            raise RuntimeError("the model returned an empty summary")
+        self.db.execute(
+            "UPDATE studio_chat_turns SET summary=? WHERE turn_id=?",
+            (text, through["turn_id"]),
+        )
+        return {"turns": len(pending), "summary": text}
+
+    async def compact(self, chat_id, payload):
+        """Summarize the whole chat now; the next reply starts from the summary."""
+        if payload:
+            raise ValueError("compact takes no fields")
+        chat = self._chat(chat_id)
+        if self._active_turn(chat_id):
+            raise ValueError("Wait for the reply to finish, then compact")
+        rows = self._earlier_turns(chat_id)
+        if not rows:
+            raise ValueError("there is nothing to summarize yet")
+        if rows[-1]["summary"]:
+            return {"chat_id": chat_id, "turns": 0, "summary": rows[-1]["summary"]}
+        await self._ready()
+        result = await self._summarize(chat, rows, rows[-1])
+        return {"chat_id": chat_id, **result}
+
+    async def _history(self, chat_id, turn_id, *, current_media=()):
+        rows = self._earlier_turns(chat_id, turn_id)
+        summary, rows = self._since_summary(rows)
+        budget = self._history_budget(self._chat(chat_id))
         groups = [self._turn_group(row) for row in rows]
-        sizes = [
-            sum(len(item.content.encode("utf-8")) + 32 for item in group)
-            for group in groups
-        ]
-        start = self._history_start(sizes)
+        sizes = [self._size(group) for group in groups]
+        start = self._history_start(sizes, budget)
         truncated = start > 0
         selected = groups[start:]
-        if sum(sizes[start:]) > self.history_bytes:
+        if sum(sizes[start:]) > budget:
             # The latest turn alone is over budget: keep a marked excerpt.
             truncated = True
-            group, room = groups[-1], self.history_bytes
+            group, room = groups[-1], budget
             selected = [
                 [
                     ChatMessage(
@@ -898,6 +1018,8 @@ class ConversationController:
                     *selected[index][1:],
                 ]
         history = [item for group in selected for item in group]
+        if summary:
+            history.insert(0, ChatMessage("user", SUMMARY_PREFIX + summary))
         if truncated:
             history.insert(
                 0,
@@ -930,6 +1052,10 @@ class ConversationController:
                         (checkpoint, turn_id),
                     )
                 current_media = self._turn_media(turn)
+                try:
+                    compacted = await self._maybe_compact(chat, turn_id)
+                except Exception as exc:  # noqa: BLE001 - old turns get dropped instead.
+                    compacted = {"error": f"{type(exc).__name__}: {exc}"}
                 history, truncated = await self._history(
                     chat_id, turn_id, current_media=current_media
                 )
@@ -955,9 +1081,22 @@ class ConversationController:
                         "chat_id": chat_id,
                         "inherited_messages": len(history),
                         "history_truncated": truncated,
-                        "history_bytes_limit": self.history_bytes,
+                        "history_bytes_limit": self._history_budget(chat),
                     },
                 )
+                if compacted:
+                    self.service.store.event(
+                        run_id,
+                        "root",
+                        "conversation_compacted"
+                        if "summary" in compacted
+                        else "conversation_compaction_failed",
+                        {
+                            key: value
+                            for key, value in compacted.items()
+                            if key != "summary"
+                        },
+                    )
                 await self.service.jobs[run_id]
                 run = self.service.store.run(run_id)
                 self.db.execute(
@@ -1079,6 +1218,7 @@ class ConversationController:
                 "media": self._media_metadata(row),
                 "context_truncated": bool(row["context_truncated"]),
                 "checkpoint": bool(row["checkpoint"]),
+                "summary": row["summary"],
             }
             if row["run_id"]:
                 detail = self._details.get(row["run_id"])
@@ -1161,6 +1301,8 @@ class ConversationController:
                     return await self.delete(chat_id, payload)
                 if parts[3] == "rewind":
                     return await self.rewind(chat_id, payload)
+                if parts[3] == "compact":
+                    return await self.compact(chat_id, payload)
             if method == "GET" and len(parts) == 5 and parts[3] == "media":
                 return await self.media(chat_id, parts[4])
         raise ValueError("unknown conversation API route")
