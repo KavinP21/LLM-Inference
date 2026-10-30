@@ -26,8 +26,10 @@ consume the same validated container and expose the same `submit`/`step`/`cancel
 
 ## MLX execution
 
-Gemma 4 and Qwen3.5 checkpoints still run through the [VLM runner](vlm-runner.md) (mlx-vlm with
-Instinct's prompt reuse) until their native adapters land. See [models.md](models.md).
+The engine runs Gemma 4 and Qwen3.5 checkpoints (`backends/gemma4.py`, `backends/qwen35.py`,
+`backends/gemma4_vision.py`) and FP16 `.engine` files (`backends/dense.py`). Workers reach it
+through `chat_runner.py`, which batches every request in flight on one engine thread. See
+[models.md](models.md).
 
 `MlxEngine` is a continuous-batching engine. Each `step()` decodes one token for every running
 request in a single batched forward pass, then prefills one chunk of a waiting prompt (512 tokens
@@ -79,7 +81,7 @@ The [agent runtime](agent-runtime.md) coordinates logical tasks over independent
                       └──────────────┼────────────────┘
                                      │
                           worker-owned complete model
-                       MlxEngine / CUDA Engine / MLX speculation / VLM runner
+                         ChatRunner (MlxEngine) / CUDA Engine
 ```
 
 Each logical agent owns its assigned scope, conversation, inbox, children, dependencies and result.

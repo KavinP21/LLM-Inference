@@ -203,14 +203,6 @@ async def worker_identities(pool: WorkerPool) -> dict:
                         "worker returned an invalid adapter implementation fingerprint"
                     )
                 result[name][key] = health[key]
-        if (
-            health.get("runner") == "mlx_vlm"
-            and health.get("model_type") == "qwen3_5"
-            and "adapter_implementation_sha256" not in health
-        ):
-            raise ValueError(
-                "Qwen3.5 worker lacks the adapter implementation fingerprint required for resumable runs"
-            )
     return result
 
 
