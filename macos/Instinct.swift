@@ -9,7 +9,12 @@ import Cocoa
 import CryptoKit
 import WebKit
 
-let background = NSColor(srgbRed: 0x18 / 255, green: 0x21 / 255, blue: 0x27 / 255, alpha: 1)
+// The page's background in each appearance (--page in app.css).
+let background = NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        ? NSColor(srgbRed: 0x13 / 255, green: 0x12 / 255, blue: 0x19 / 255, alpha: 1)
+        : NSColor(srgbRed: 0xf8 / 255, green: 0xf7 / 255, blue: 0xfc / 255, alpha: 1)
+}
 
 // MARK: - Backend process
 
@@ -146,13 +151,11 @@ final class StartupView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = background.cgColor
         let title = NSTextField(labelWithString: "Instinct")
         title.font = .systemFont(ofSize: 26, weight: .semibold)
-        title.textColor = NSColor(white: 0.92, alpha: 1)
+        title.textColor = .labelColor
         status.font = .systemFont(ofSize: 13)
-        status.textColor = NSColor(srgbRed: 0.61, green: 0.68, blue: 0.68, alpha: 1)
+        status.textColor = .secondaryLabelColor
         status.alignment = .center
         status.maximumNumberOfLines = 14
         status.preferredMaxLayoutWidth = 520
@@ -176,6 +179,11 @@ final class StartupView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        background.setFill()  // Resolved per appearance on every draw.
+        dirtyRect.fill()
+    }
 
     func show(_ message: String, failed: Bool = false) {
         status.stringValue = message
@@ -274,11 +282,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.toolbar = NSToolbar(identifier: "main")
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
-        window.backgroundColor = background
+        window.backgroundColor = .clear
+        window.isOpaque = false
         window.minSize = NSSize(width: 760, height: 520)
         window.delegate = self
         let content = NSView()
-        for view in [startup, webView!] as [NSView] {
+        // macOS's sidebar material, showing through the page's translucent sidebar.
+        let vibrancy = NSVisualEffectView()
+        vibrancy.material = .sidebar
+        vibrancy.blendingMode = .behindWindow
+        vibrancy.state = .followsWindowActiveState
+        for view in [vibrancy, startup, webView!] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
             NSLayoutConstraint.activate([
@@ -303,6 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         backend.onReady = { [weak self] port in self?.load(port: port) }
         backend.onExit = { [weak self] message in
             self?.webView.isHidden = true
+            self?.startup.isHidden = false
             self?.startup.show(message, failed: true)
         }
         NSApp.mainMenu = makeMenu()
@@ -328,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func launch() {
         backend.stop()
         webView.isHidden = true
+        startup.isHidden = false
         window.subtitle = workspace.path
         startup.show(backend.modelsReady ? "Starting in \(workspace.lastPathComponent)…" : "Models not found; starting in demo mode…")
         do {
@@ -539,6 +555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webView.isHidden = false
+        startup.isHidden = true  // Otherwise it would cover the sidebar material.
         window.makeFirstResponder(webView)
         if let test, !testStarted {
             testStarted = true

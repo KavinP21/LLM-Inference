@@ -3,17 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#182127">
+  <meta name="color-scheme" content="dark light">
   <title>Instinct</title>
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
+  <svg class="sprite" width="0" height="0" aria-hidden="true">
+    <defs>
+      <linearGradient id="mark-blade" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#ff8fbe"/><stop offset="0.55" stop-color="#b37dff"/><stop offset="1" stop-color="#7469ff"/></linearGradient>
+      <radialGradient id="mark-orb" cx="0.38" cy="0.34" r="0.72"><stop offset="0" stop-color="#fff4e6"/><stop offset="0.42" stop-color="#ffbf88"/><stop offset="1" stop-color="#ff7fae"/></radialGradient>
+      <symbol id="instinct-mark" viewBox="19 8 30 49">
+        <path d="M23.5 29a4.75 4.75 0 0 1 9.5 0C33 40.5 35 47 45.5 51.5C34 55.5 23.5 49 23.5 37Z" fill="url(#mark-blade)"/>
+        <circle cx="28.5" cy="17" r="5.6" fill="url(#mark-orb)"/>
+      </symbol>
+    </defs>
+  </svg>
   <a class="skip-link" href="#message">Skip to message</a>
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar" aria-label="Chats" inert>
-      <div class="sidebar-heading"><a class="brand" href="/" aria-label="Instinct home"><span class="brand-mark"><svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 7.6 16.4 11.3 22.5 12 16.4 12.7 12.7 16.4 12 22.5 11.3 16.4 7.6 12.7 1.5 12 7.6 11.3 11.3 7.6 12 1.5Z"/></svg></span>Instinct</a><button class="icon-button" id="close-sidebar" type="button" aria-label="Close chats">×</button></div>
+      <div class="sidebar-heading"><a class="brand" href="/" aria-label="Instinct home"><span class="brand-mark"><svg viewBox="0 0 30 49" aria-hidden="true"><use href="#instinct-mark"/></svg></span>Instinct</a><button class="icon-button" id="close-sidebar" type="button" aria-label="Close chats">×</button></div>
       <button class="new-chat" id="new-chat" type="button"><span aria-hidden="true">＋</span> New chat <kbd>⌘ K</kbd></button>
       <label class="sr-only" for="chat-search">Search chats</label><input type="search" class="chat-search" id="chat-search" placeholder="Search chats" autocomplete="off"><h2 class="rail-label">Chats</h2>
       <nav class="chat-list" id="chat-list" aria-label="Chat history"><p class="sidebar-empty">Your chats will appear here.</p></nav>
@@ -26,7 +35,7 @@
       </header>
       <div class="connection-notice" id="connection-error" role="alert" hidden><span id="connection-error-text"></span><button class="text-button" id="retry" type="button">Retry</button></div>
       <div class="transcript-pane" id="transcript-pane">
-        <section class="welcome" id="welcome" aria-labelledby="welcome-title"><span class="welcome-mark"><svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 7.6 16.4 11.3 22.5 12 16.4 12.7 12.7 16.4 12 22.5 11.3 16.4 7.6 12.7 1.5 12 7.6 11.3 11.3 7.6 12 1.5Z"/></svg></span><h1 id="welcome-title">What would you like to work on?</h1><p>Ask a question, explore your code, or make a change.</p><div class="starter-chips"><button type="button" data-starter="Explain how this repository is organized and where to start.">Explore this codebase <span aria-hidden="true">↗</span></button><button type="button" data-starter="Review this repository for the most important bugs. Explain your findings with file references.">Find a bug <span aria-hidden="true">↗</span></button></div></section>
+        <section class="welcome" id="welcome" aria-labelledby="welcome-title"><span class="welcome-mark"><svg viewBox="0 0 30 49" aria-hidden="true"><use href="#instinct-mark"/></svg></span><h1 id="welcome-title">What would you like to work on?</h1><p>Ask a question, explore your code, or make a change.</p><div class="starter-chips"><button type="button" data-starter="Explain how this repository is organized and where to start.">Explore this codebase <span aria-hidden="true">↗</span></button><button type="button" data-starter="Review this repository for the most important bugs. Explain your findings with file references.">Find a bug <span aria-hidden="true">↗</span></button></div></section>
         <div class="transcript" id="transcript" aria-label="Conversation"></div>
         <div class="view-loading" id="view-loading" role="status" hidden><span class="working-dot" aria-hidden="true"></span>Loading chat…</div>
       </div>
