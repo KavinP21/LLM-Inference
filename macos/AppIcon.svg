@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Instinct's icon: a lowercase i whose stem sweeps forward, under a glowing dot.
+       Rendered to AppIcon.png at 1024px; macos/build.sh makes the .icns from that. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2250"/>
+      <stop offset="1" stop-color="#0e0c18"/>
+    </linearGradient>
+    <radialGradient id="haze" cx="0.38" cy="0.26" r="0.62">
+      <stop offset="0" stop-color="#9d7bff" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#9d7bff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="blade" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#ff8fbe"/>
+      <stop offset="0.55" stop-color="#b37dff"/>
+      <stop offset="1" stop-color="#7469ff"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.38" cy="0.34" r="0.72">
+      <stop offset="0" stop-color="#fff4e6"/>
+      <stop offset="0.42" stop-color="#ffbf88"/>
+      <stop offset="1" stop-color="#ff7fae"/>
+    </radialGradient>
+    <filter id="shadow" x="-0.2" y="-0.2" width="1.4" height="1.4">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow" x="-1.5" y="-1.5" width="4" height="4">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+    <clipPath id="clip"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+  </g>
+  <g clip-path="url(#clip)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#haze)"/>
+    <g transform="translate(512 512) scale(11.2) translate(-32.8 -33)">
+      <circle cx="28.5" cy="17" r="8.5" fill="#ff9fbf" opacity="0.75" filter="url(#glow)"/>
+      <path d="M23.5 29a4.75 4.75 0 0 1 9.5 0C33 40.5 35 47 45.5 51.5C34 55.5 23.5 49 23.5 37Z" fill="url(#blade)"/>
+      <circle cx="28.5" cy="17" r="5.6" fill="url(#orb)"/>
+    </g>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184.5" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="3"/>
+</svg>

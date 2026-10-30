@@ -27,7 +27,7 @@ INSTINCT_TEST_WORKSPACE="$out/workspace" \
 INSTINCT_TEST_MODELS="$models" \
   "$app" &
 pid=$!
-( sleep 240; kill "$pid" 2>/dev/null ) &
+( sleep 240; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
 watchdog=$!
 code=0
 wait "$pid" || code=$?

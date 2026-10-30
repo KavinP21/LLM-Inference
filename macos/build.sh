@@ -20,7 +20,12 @@ xcrun swiftc -O -swift-version 5 \
 
 sed "s|@ROOT@|$root|" "$root/macos/Info.plist" > "$out/Contents/Info.plist"
 
-"$root/.venv/bin/python" "$root/macos/make_icon.py" "$work/AppIcon.iconset"
+# AppIcon.png is rendered from AppIcon.svg; the .icns wants every size.
+mkdir -p "$work/AppIcon.iconset"
+for size in 16 32 128 256 512; do
+  sips -z $size $size "$root/macos/AppIcon.png" --out "$work/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null
+  sips -z $((size * 2)) $((size * 2)) "$root/macos/AppIcon.png" --out "$work/AppIcon.iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
 iconutil -c icns -o "$out/Contents/Resources/AppIcon.icns" "$work/AppIcon.iconset"
 
 # Ad-hoc signature so Gatekeeper runs a locally built app.
