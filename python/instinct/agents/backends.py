@@ -13,6 +13,7 @@ import ipaddress
 import json
 import math
 import os
+import platform
 import secrets
 import sys
 import tempfile
@@ -157,6 +158,10 @@ def validate_request(
     return tuple(result)
 
 
+# Options an MLX worker passes to its ChatRunner.
+CHAT_OPTIONS = frozenset({"effort", "prefill_chunk_size", "prefix_cache_bytes"})
+
+
 def _positive(value: float, name: str) -> float:
     if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
         raise ValueError(f"{name} must be positive and finite")
@@ -182,6 +187,16 @@ class WorkerConfig:
     # Set only in independently launched processes; never mutate the parent's GPU.
     cuda_visible_devices: str | None = None
 
+    @property
+    def chat_runner(self) -> bool:
+        """MLX engine workers serve requests concurrently through ChatRunner."""
+        return (
+            self.runner == "engine"
+            and self.backend != "cuda"
+            and platform.system() == "Darwin"
+            and platform.machine() == "arm64"
+        )
+
     def __post_init__(self) -> None:
         if not self.model or not self.tokenizer:
             raise ValueError("model and tokenizer are required")
@@ -191,8 +206,6 @@ class WorkerConfig:
             raise ValueError("runner must be instinct or vlm")
         if type(self.enable_thinking) is not bool:
             raise TypeError("enable_thinking must be a boolean")
-        if self.enable_thinking and self.runner != "vlm":
-            raise ValueError("thinking configuration requires the vlm runner")
         if self.runner == "vlm":
             if self.backend == "cuda" or self.cuda_visible_devices is not None:
                 raise ValueError("the vlm runner requires Apple MLX execution")
@@ -230,6 +243,12 @@ class WorkerConfig:
             raise TypeError("native_tool_calls must be a boolean")
         if not isinstance(self.engine_options, dict):
             raise TypeError("engine_options must be a dictionary")
+        if self.chat_runner and self.engine_options.keys() - CHAT_OPTIONS:
+            raise ValueError(
+                f"engine options for MLX workers are {sorted(CHAT_OPTIONS)}"
+            )
+        if self.engine_options.get("effort", "off") not in EFFORT_BUDGETS:
+            raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
         if {
             "max_model_length",
             "kv_cache_bytes",
@@ -275,8 +294,12 @@ class LocalModelBackend:
             )
         self._engine_factory = engine_factory
         self._tokenizer_factory = tokenizer_factory
+        # A ChatRunner batches every request it is given, so each waits on its
+        # own thread; other engines run one request at a time.
+        self._chat = config.chat_runner and engine_factory is None
         self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix=f"instinct-{config.worker_id[:12]}"
+            max_workers=config.max_pending if self._chat else 1,
+            thread_name_prefix=f"instinct-{config.worker_id[:12]}",
         )
         self._lock = threading.Lock()
         self._requests: dict[str, threading.Event] = {}
@@ -300,11 +323,11 @@ class LocalModelBackend:
             "tokenizer_signature": None,
             "draft_model_data_sha256": None,
         }
-        if config.runner == "vlm":
-            # Everything that identifies a vlm worker comes from its files, so
-            # it's known (and the same) before and after the model loads.
+        if config.runner == "vlm" or (self._chat and Path(config.model).is_dir()):
+            # Everything that identifies a checkpoint worker comes from its
+            # files, so it's known (and the same) before and after loading.
             from ..chat_formats import family_for
-            from ..vlm_runner import checkpoint_fingerprint
+            from ..chat_runner import checkpoint_fingerprint
 
             config_file = Path(config.model) / "config.json"
             model_type = (
@@ -314,7 +337,9 @@ class LocalModelBackend:
             )
             self.native_call_dialect = family_for(model_type).dialect
             self._runner_metadata.update(
-                runner_version=_installed_version("mlx-vlm"),
+                runner_version=_installed_version("mlx-vlm")
+                if config.runner == "vlm"
+                else "0.2.0",
                 family=family_for(model_type).name,
             )
             self._artifact_identity.update(checkpoint_fingerprint(config.model))
@@ -327,8 +352,8 @@ class LocalModelBackend:
     def _load(self) -> None:
         if self._engine is not None:
             return
-        if self.config.runner == "vlm":
-            self._load_vlm()
+        if self.config.runner == "vlm" or self._chat:
+            self._load_runner()
             return
         if self._tokenizer_factory:
             tokenizer = self._tokenizer_factory()
@@ -473,14 +498,28 @@ class LocalModelBackend:
             self._engine = None
             raise ValueError("EOS token IDs do not fit the model vocabulary")
 
-    def _load_vlm(self) -> None:
-        from ..vlm_runner import VlmRunner
-
+    def _load_runner(self) -> None:
         options = self.config.engine_options
-        runner = (
-            self._engine_factory()
-            if self._engine_factory
-            else VlmRunner(
+        if self._engine_factory:
+            runner = self._engine_factory()
+        elif self._chat:
+            from ..chat_runner import ChatRunner
+
+            runner = ChatRunner(
+                self.config.model,
+                tokenizer=self.config.tokenizer,
+                max_num_sequences=self.config.max_pending,
+                max_context_tokens=self.config.max_model_length,
+                kv_cache_bytes=self.config.kv_cache_bytes,
+                prefix_cache_bytes=options.get("prefix_cache_bytes"),
+                prefill_chunk_size=options.get("prefill_chunk_size", 512),
+                eos_token_ids=self.config.eos_token_ids,
+                local_files_only=self.config.local_files_only,
+            )
+        else:
+            from ..vlm_runner import VlmRunner
+
+            runner = VlmRunner(
                 self.config.model,
                 draft_path=options.get("draft_model"),
                 draft_block_size=options.get("draft_block_size", 3),
@@ -490,7 +529,6 @@ class LocalModelBackend:
                     "cache_budget_bytes", self.config.kv_cache_bytes
                 ),
             )
-        )
         self._engine = runner
         self._tokenizer = runner.tokenizer
         self._actual_backend = "mlx"
@@ -592,8 +630,8 @@ class LocalModelBackend:
             raise RequestValidationError("image/video requests require the vlm runner")
         self._load()
         check()
-        if self.config.runner == "vlm":
-            return self._generate_vlm(
+        if self.config.runner == "vlm" or self._chat:
+            return self._generate_runner(
                 messages,
                 max_tokens,
                 tool_specs,
@@ -673,7 +711,7 @@ class LocalModelBackend:
                 self._engine.cancel(engine_request_id)
             self._forget(engine_request_id)
 
-    def _generate_vlm(
+    def _generate_runner(
         self,
         messages,
         max_tokens,
@@ -1308,7 +1346,7 @@ class LazyBackend:
         self.native_call_dialect = probe.native_call_dialect
         self.supports_native_tools = config.native_tool_calls
         self.supports_context_limits = True
-        self.max_concurrency = 1
+        self.max_concurrency = config.max_pending if config.chat_runner else 1
         self.max_model_length = config.max_model_length
 
     @property
@@ -1807,7 +1845,7 @@ class LocalProcessBackend(RemoteWorkerBackend):
             backend = cls(
                 f"http://127.0.0.1:{readiness['port']}",
                 token,
-                max_concurrency=1,
+                max_concurrency=config.max_pending if config.chat_runner else 1,
                 request_timeout=config.request_timeout,
                 max_request_bytes=MAX_MEDIA_REQUEST_BYTES
                 if config.runner == "vlm"
