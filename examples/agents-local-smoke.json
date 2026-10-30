@@ -7,10 +7,7 @@
       "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
       "backend": "mlx",
       "max_model_length": 8192,
-      "kv_cache_bytes": 268435456,
-      "engine_options": {
-        "decode_mode": "rowwise"
-      }
+      "kv_cache_bytes": 268435456
     },
     {
       "type": "process",
@@ -19,10 +16,7 @@
       "tokenizer": "Qwen/Qwen2.5-0.5B-Instruct",
       "backend": "mlx",
       "max_model_length": 8192,
-      "kv_cache_bytes": 268435456,
-      "engine_options": {
-        "decode_mode": "rowwise"
-      }
+      "kv_cache_bytes": 268435456
     }
   ],
   "runtime": {

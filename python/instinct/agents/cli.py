@@ -156,7 +156,6 @@ async def worker_identities(pool: WorkerPool) -> dict:
         "model_config_sha256",
         "tokenizer_signature",
         "draft_model_data_sha256",
-        "speculative",
         "native_tool_calls",
         "runner",
         "runner_version",

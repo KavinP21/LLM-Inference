@@ -34,23 +34,19 @@ PYTHONPATH=python python -m pytest -q \
   tests/test_format.py \
   tests/test_model_file_reader.py \
   tests/test_export.py \
-  tests/test_runtime.py \
+  tests/test_paged_kv.py \
   tests/test_benchmark.py
 
 PYTHONPATH=python python -m pytest -q \
-  tests/test_mlx_backend.py \
+  tests/test_mlx_engine.py \
   tests/test_gemma3_backend.py
 ```
 
-The first group has no Metal requirement. The second runs complete synthetic Qwen and Gemma models,
-physical page boundaries, Transformers parity, custom-kernel/fallback differential execution,
-mixed-length batched decode, and cancellation cleanup through MLX.
+The first group has no Metal requirement. The second runs synthetic Qwen and Gemma models against
+NumPy and Transformers, the decode kernel against dense attention, page and chunk boundaries,
+batched against solo runs, prefix reuse, sliding-window page release, and cancellation cleanup.
 
 ## Official checkpoint
-
-For an opt-in accuracy-oriented decode policy, use `decode_mode="rowwise"` with the Python engine
-or `--decode-mode rowwise` with benchmark/context tools. The throughput-oriented default is
-unchanged. Read [the numerical policy](decode-numerics.md) for exact scope and performance costs.
 
 The model is downloaded only for local validation and the `models/` directory is ignored by Git.
 
@@ -94,50 +90,6 @@ instinct-correctness \
 
 The correctness command exits nonzero on any greedy-token divergence. Gemma currently diverges on
 one prompt after 25 tokens at an FP16 near-tie (see [benchmarks.md](benchmarks.md#correctness)).
-
-## Long-context check
-
-```bash
-instinct-validate-long-context \
-  --model models/qwen2.5-0.5b.engine \
-  --output benchmark-results/mlx-long-context-ladder.json \
-  --context-lengths 2048 4096 8192 16384 32768 \
-  --output-tokens 2 \
-  --prefill-chunk-size 512
-```
-
-This generates deterministic token IDs locally, emits one raw observation per context length, and
-fails on an incorrect prefill/decode step count or any reservation/page leak. Two output tokens force
-one paged-attention decode iteration after the first token produced by prefill.
-
-Gemma's wider K/V heads require more than the default 512 MiB pool at 32K. The validated command is:
-
-```bash
-instinct-validate-long-context \
-  --model models/gemma-3-1b-it.engine \
-  --output benchmark-results/mlx-gemma3-32k.json \
-  --context-lengths 32768 \
-  --output-tokens 2 \
-  --prefill-chunk-size 512 \
-  --kv-cache-mib 1024
-```
-
-## Attention profile and optional GPU trace
-
-```bash
-instinct-profile-attention \
-  --model models/qwen2.5-0.5b.engine \
-  --output benchmark-results/mlx-attention-ab.json \
-  --key-lengths 512 2048 8192 --query-tokens 512
-
-MTL_CAPTURE_ENABLED=1 instinct-profile-attention \
-  --model models/qwen2.5-0.5b.engine \
-  --output benchmark-results/mlx-attention-capture.json \
-  --key-lengths 512 --capture profiles/mlx-fused-attention.gputrace
-```
-
-Open the ignored `.gputrace` bundle in Xcode. Without `MTL_CAPTURE_ENABLED=1`, Metal reports that
-the capture layer was not inserted.
 
 ## Benchmark smoke test
 

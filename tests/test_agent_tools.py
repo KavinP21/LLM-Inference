@@ -536,23 +536,6 @@ def test_protection_registration_is_bounded_confined_and_atomic(tmp_path):
         too_small.protect_files(["valid.txt"])
 
 
-def test_forget_terminal_scheduler_history_preserves_counters():
-    from instinct.runtime import IterationScheduler, KVBlockPool
-
-    pool = KVBlockPool(4096, 8)
-    scheduler = IterationScheduler(2, 32, 64, pool)
-    request = scheduler.submit([1, 2], 3, ())
-    with pytest.raises(RuntimeError, match="active"):
-        scheduler.forget(request)
-    scheduler.cancel(request)
-    before = scheduler.stats()
-    scheduler.forget(request)
-    assert scheduler.stats() == before
-    assert pool.stats()["allocated_blocks"] == 0
-    with pytest.raises(KeyError):
-        scheduler.request(request)
-
-
 def test_edit_lines_replaces_whole_function_preserving_neighbors_and_compilation(
     tmp_path,
 ):

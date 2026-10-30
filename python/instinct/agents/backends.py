@@ -174,7 +174,6 @@ class WorkerConfig:
     request_timeout: float = 120.0
     worker_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     engine_options: dict[str, Any] = field(default_factory=dict)
-    speculative: dict[str, Any] | None = None
     eos_token_ids: list[int] | None = None
     local_files_only: bool = True
     native_tool_calls: bool = False
@@ -197,7 +196,7 @@ class WorkerConfig:
         if self.runner == "vlm":
             if self.backend == "cuda" or self.cuda_visible_devices is not None:
                 raise ValueError("the vlm runner requires Apple MLX execution")
-            if not self.local_files_only or self.speculative is not None:
+            if not self.local_files_only:
                 raise ValueError(
                     "the vlm runner needs a local checkpoint; configure drafting with engine_options.draft_model"
                 )
@@ -237,29 +236,6 @@ class WorkerConfig:
             "max_num_sequences",
         } & self.engine_options.keys():
             raise ValueError("engine_options cannot override worker resource limits")
-        if self.speculative is not None:
-            if not isinstance(self.speculative, dict) or self.backend == "cuda":
-                raise ValueError(
-                    "speculative workers currently require an MLX configuration"
-                )
-            if set(self.speculative) - {
-                "draft_model_path",
-                "draft_tokenizer",
-                "draft_tokens",
-                "verification_mode",
-                "adaptive",
-                "draft_kv_cache_bytes",
-            }:
-                raise ValueError("unknown speculative worker options")
-            if set(self.engine_options) - {
-                "prefill_chunk_size",
-                "custom_metal",
-                "metal_paged_attention",
-                "attention_tile_size",
-            }:
-                raise ValueError(
-                    "speculative engine_options accept only prefill_chunk_size, custom_metal, metal_paged_attention, and attention_tile_size"
-                )
         if self.eos_token_ids is not None and (
             not isinstance(self.eos_token_ids, list)
             or any(type(token) is not int or token < 0 for token in self.eos_token_ids)
@@ -313,7 +289,6 @@ class LocalModelBackend:
         self._actual_backend = config.backend
         self._model_type = ""
         self._completed = 0
-        self._last_speculative_stats: dict[str, Any] | None = None
         self._runner_metadata: dict[str, Any] = {
             "runner": config.runner,
             "runner_version": "0.1.0" if config.runner == "engine" else None,
@@ -433,65 +408,21 @@ class LocalModelBackend:
                     sort_keys=True,
                 ).encode()
             ).hexdigest()
-            if self.config.speculative is not None:
-                from instinct.speculative import SpeculativeEngine
-
-                spec_options = dict(self.config.speculative)
-                draft_tokenizer_name = spec_options.pop("draft_tokenizer", None)
-                if draft_tokenizer_name:
-                    from transformers import AutoTokenizer
-
-                    draft_tokenizer = AutoTokenizer.from_pretrained(
-                        draft_tokenizer_name,
-                        local_files_only=self.config.local_files_only,
-                        trust_remote_code=False,
-                    )
-
-                    def fingerprint(value: Any) -> str:
-                        payload = {
-                            "vocab": value.get_vocab(),
-                            "special_ids": value.all_special_ids,
-                        }
-                        return hashlib.sha256(
-                            json.dumps(payload, sort_keys=True).encode()
-                        ).hexdigest()
-
-                    spec_options["target_tokenizer_fingerprint"] = fingerprint(
-                        tokenizer
-                    )
-                    spec_options["draft_tokenizer_fingerprint"] = fingerprint(
-                        draft_tokenizer
-                    )
-                engine = SpeculativeEngine(
-                    self.config.model,
-                    max_model_length=self.config.max_model_length,
-                    kv_cache_bytes=self.config.kv_cache_bytes,
-                    **self.config.engine_options,
-                    **spec_options,
-                )
-            else:
-                engine = create_engine(
-                    self.config.model,
-                    backend=self.config.backend,
-                    max_num_sequences=1,
-                    max_model_length=self.config.max_model_length,
-                    kv_cache_bytes=self.config.kv_cache_bytes,
-                    **self.config.engine_options,
-                )
+            engine = create_engine(
+                self.config.model,
+                backend=self.config.backend,
+                max_num_sequences=1,
+                max_model_length=self.config.max_model_length,
+                kv_cache_bytes=self.config.kv_cache_bytes,
+                **self.config.engine_options,
+            )
             loaded_file = getattr(getattr(engine, "model", None), "file", None)
             if loaded_file is not None:
                 self._artifact_identity["model_data_sha256"] = loaded_file.data_sha256
                 self._artifact_identity["model_config_sha256"] = hashlib.sha256(
                     json.dumps(asdict(loaded_file.config), sort_keys=True).encode()
                 ).hexdigest()
-            draft_file = getattr(getattr(engine, "draft_model", None), "file", None)
-            if draft_file is not None:
-                self._artifact_identity["draft_model_data_sha256"] = (
-                    draft_file.data_sha256
-                )
-        if self.config.speculative is None and not callable(
-            getattr(engine, "forget", None)
-        ):
+        if not callable(getattr(engine, "forget", None)):
             close = getattr(engine, "close", None)
             if close:
                 close()
@@ -500,14 +431,10 @@ class LocalModelBackend:
             )
         self._tokenizer = tokenizer
         self._engine = engine
-        self._actual_backend = (
-            "mlx"
-            if self.config.speculative is not None
-            else getattr(
-                engine,
-                "backend",
-                "cuda" if self.config.backend == "auto" else self.config.backend,
-            )
+        self._actual_backend = getattr(
+            engine,
+            "backend",
+            "cuda" if self.config.backend == "auto" else self.config.backend,
         )
         self._context_limit = int(
             getattr(engine, "max_model_length", self.config.max_model_length)
@@ -599,8 +526,6 @@ class LocalModelBackend:
             "supports_media": self.config.runner == "vlm",
             "supports_context_limits": self.supports_context_limits,
             "native_call_dialect": self.native_call_dialect,
-            "speculative": self.config.speculative,
-            "last_speculative_stats": self._last_speculative_stats,
             **self._artifact_identity,
             **self._runner_metadata,
             "last_runner_stats": self._last_runner_stats,
@@ -713,32 +638,6 @@ class LocalModelBackend:
                 f"prompt has {len(token_ids)} tokens; {max_tokens} output tokens exceed the {context_limit}-token context"
             )
         check()
-        if self.config.speculative is not None:
-            result = self._engine.generate_result(
-                token_ids,
-                max_tokens,
-                self._eos,
-                cancelled=lambda: cancel.is_set() or time.monotonic() >= deadline,
-            )
-            check()
-            if result.finish_reason == "cancelled":
-                raise GenerationCancelledError("speculative generation cancelled")
-            if (
-                result.finish_reason not in {"eos", "length"}
-                or len(result.tokens) > max_tokens
-            ):
-                raise BackendError(
-                    "speculative engine violated its generation contract"
-                )
-            self._last_speculative_stats = result.stats.to_dict()
-            self._completed += 1
-            return Generation(
-                text=self._tokenizer.decode(result.tokens, skip_special_tokens=True),
-                input_tokens=len(token_ids),
-                output_tokens=len(result.tokens),
-                finish_reason="stop" if result.finish_reason == "eos" else "length",
-                model=self.config.model,
-            )
         engine_request_id = self._engine.submit(token_ids, max_tokens, self._eos)
         output: list[int] = []
         completed = False

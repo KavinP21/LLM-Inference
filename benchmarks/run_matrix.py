@@ -18,15 +18,6 @@ def main() -> None:
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--backend", choices=["auto", "cuda", "mlx"], default="auto")
-    parser.add_argument(
-        "--mlx-kernel-mode",
-        choices=["baseline", "fused", "full"],
-        default="full",
-        help=(
-            "MLX ablation: fallback ops, custom fusions, or fusions plus "
-            "paged attention"
-        ),
-    )
     parser.add_argument("--output-dir", type=Path, default=Path("benchmark-results"))
     parser.add_argument("--tokenizer", default="Qwen/Qwen2.5-0.5B-Instruct")
     parser.add_argument(
@@ -82,8 +73,6 @@ def main() -> None:
                         str(args.model),
                         "--backend",
                         args.backend,
-                        "--mlx-kernel-mode",
-                        args.mlx_kernel_mode,
                         "--tokenizer",
                         args.tokenizer,
                         "--output",

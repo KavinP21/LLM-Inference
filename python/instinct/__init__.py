@@ -16,10 +16,9 @@ except (
     CudaSequenceState = None
     cuda_build_info = None
 
-from .backends.mlx import mlx_build_info
+from .backends.base import mlx_build_info
 from .mlx_engine import MlxEngine
-from .mlx_engine import SequenceState as MlxSequenceState
-from .speculative import SpeculativeEngine
+from .runtime import SequenceState as MlxSequenceState
 
 DEFAULT_MODEL_PATH = "models/gemma-4-26b-a4b-mlx"
 
@@ -69,7 +68,6 @@ __all__ = [
     "Engine",
     "MlxEngine",
     "SequenceState",
-    "SpeculativeEngine",
     "build_info",
     "create_engine",
 ]

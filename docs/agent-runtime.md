@@ -225,21 +225,6 @@ health identity, deadlines and cancellation. Plain HTTP is accepted for loopback
 LAN plaintext requires explicit opt-in on both server/client. Clients reject
 redirects so a credential is not forwarded to another endpoint.
 
-## Speculative workers
-
-An MLX worker may opt into the same speculative decoder:
-
-```json
-{"type":"process","name":"replica","model":"models/qwen2.5-0.5b.engine",
- "tokenizer":"Qwen/Qwen2.5-0.5B-Instruct","backend":"mlx",
- "speculative":{"draft_tokens":4,"verification_mode":"block","adaptive":true}}
-```
-
-Its default draft reuses prompt/history n-grams. Block verification retains the
-explicit FP16 numerical boundary in [speculative-decoding.md](speculative-decoding.md).
-Use sequential verification for the canonical reduction path; it has no speculative
-speed claim. Speculation is disabled by default.
-
 ## Testing
 
 The runtime tests drive scripted "models" through real HTTP endpoints and worker
