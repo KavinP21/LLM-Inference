@@ -189,6 +189,7 @@
     }
     return body;
   }
+  const policyNames = { review: "Review changes", auto: "Work freely", read_only: "Read only" };
   function currentPolicy() { return state.detail?.chat?.policy || state.policy; }
   function active() {
     return Boolean(state.detail?.turns?.some((turn) => turn.active || (!terminal.has(turn.status) && turn.status !== "queued" && working.has(turn.status))))
@@ -213,7 +214,7 @@
     state.draftStorage = `instinct:drafts:${typeof workspace === "string" ? workspace : workspace?.path || workspace?.root || "workspace"}`;
     try {
       const policy = sessionStorage.getItem(`${state.draftStorage}:policy`);
-      if (!state.policyTouched && ["review", "read_only"].includes(policy)) state.policy = policy;
+      if (!state.policyTouched && ["review", "auto", "read_only"].includes(policy)) state.policy = policy;
       const pending = JSON.parse(sessionStorage.getItem(`${state.draftStorage}:requests`) || "[]");
       if (Array.isArray(pending)) for (const entry of pending.slice(-60)) {
         if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && entry[0].length <= 24000 && typeof entry[1] === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(entry[1]) && !state.requests.has(entry[0])) state.requests.set(entry[0], entry[1]);
@@ -403,7 +404,7 @@
     const node = document.createElement("article");
     node.className = "turn";
     node.dataset.turn = key;
-    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark" aria-hidden="true">f</span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
+    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 7.6 16.4 11.3 22.5 12 16.4 12.7 12.7 16.4 12 22.5 11.3 16.4 7.6 12.7 1.5 12 7.6 11.3 11.3 7.6 12 1.5Z"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
     state.turns.set(key, node);
     return node;
   }
@@ -607,8 +608,11 @@
     $("stop-draft").disabled = state.cancelling;
     $("composer-hint").textContent = running && hasDraft ? "Follow-up runs after this response" : "Enter to send · Shift + Enter for a new line";
     const policy = currentPolicy();
-    $("permission-label").textContent = policy === "read_only" ? "Read only" : "Review changes";
-    $("composer-footnote").textContent = state.overview?.mode === "demo" ? "Demo mode · no model inference is performed." : policy === "read_only" ? "Instinct can read and explore this workspace. Files stay unchanged." : "Instinct works in your local workspace. You review changes before they run.";
+    $("permission-label").textContent = policyNames[policy] || policyNames.review;
+    $("composer-footnote").textContent = state.overview?.mode === "demo" ? "Demo mode · no model inference is performed." : {
+      read_only: "Instinct can read and explore this workspace. Files stay unchanged.",
+      auto: "Instinct edits files and runs sandboxed commands in this workspace without asking.",
+    }[policy] || "Instinct works in your local workspace. You review changes before they run.";
     $("new-chat").disabled = state.sending;
     const status = state.sendError || (encoding ? `Preparing ${encoding} ${encoding === 1 ? "image" : "images"}…` : state.sending ? "Sending your message…" : "");
     $("composer-status").textContent = status;
@@ -618,7 +622,8 @@
   }
   function renderSettings() {
     const existingPolicy = state.detail?.chat?.policy;
-    $("policy-note").textContent = existingPolicy ? `This chat uses ${existingPolicy === "read_only" ? "Read only" : "Review changes"}. Changes here apply to new chats.` : "Applies to new chats.";
+    $("policy-note").textContent = existingPolicy ? `This chat uses ${policyNames[existingPolicy] || policyNames.review}. Changes here apply to new chats.` : "Applies to new chats.";
+    $("command-network").checked = Boolean(state.settings?.command_network);
     document.querySelectorAll('input[name="policy"]').forEach((input) => { input.checked = input.value === state.policy; });
     const turns = (state.detail?.turns || []).filter((turn) => turn.run_id);
     $("trace-section").hidden = !turns.length;
@@ -1661,8 +1666,126 @@
     }
     try { Object.assign(state.newChat, JSON.parse(localStorage.getItem("instinct-new-chat") || "{}")); } catch {}
     try { state.models = (await api("/api/models")).models || []; } catch {}
+    loadSettings();
     await refresh();
     connectStream();
   }
+  async function loadSettings() {
+    try {
+      const result = await api("/api/settings");
+      state.settings = result.settings;
+      $("sandbox-help").textContent = result.sandbox
+        ? "Commands and the terminal can read your files but only write inside the workspace."
+        : "This system has no sandbox: commands and the terminal run with your own permissions.";
+      $("terminal-badge").hidden = !result.sandbox;
+    } catch {}
+  }
+  $("command-network").addEventListener("change", async (event) => {
+    try { state.settings = (await api("/api/settings", { command_network: event.target.checked })).settings; }
+    catch (error) { event.target.checked = !event.target.checked; toast(error.message); }
+  });
+
+  // Terminal: a sandboxed login shell in the workspace, drawn with xterm.js.
+  const term = { xterm: null, fit: null, id: null, offset: 0, source: null, exited: false, assets: null };
+  function loadTerminalAssets() {
+    term.assets ||= new Promise((resolve, reject) => {
+      const style = document.createElement("link");
+      style.rel = "stylesheet"; style.href = "/vendor/xterm.css";
+      document.head.appendChild(style);
+      const scripts = ["/vendor/xterm.js", "/vendor/addon-fit.js"];
+      const next = () => {
+        if (!scripts.length) return resolve();
+        const script = document.createElement("script");
+        script.src = scripts.shift(); script.onload = next; script.onerror = reject;
+        document.head.appendChild(script);
+      };
+      next();
+    });
+    return term.assets;
+  }
+  function terminalState(text) { $("terminal-state").textContent = text; }
+  async function startTerminal() {
+    term.exited = false; term.offset = 0;
+    $("terminal-restart").hidden = true; terminalState("");
+    term.xterm.reset();
+    const { cols, rows } = term.xterm;
+    term.id = (await api("/api/terminals", { cols, rows })).id;
+    connectTerminal();
+  }
+  function connectTerminal() {
+    term.source?.close();
+    const source = new EventSource(`/api/terminals/${term.id}/stream?offset=${term.offset}`);
+    term.source = source;
+    source.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      term.offset = message.offset;
+      term.xterm.write(Uint8Array.from(atob(message.data), (char) => char.charCodeAt(0)));
+    };
+    source.addEventListener("exit", () => {
+      source.close(); term.exited = true;
+      terminalState("Shell exited"); $("terminal-restart").hidden = false;
+    });
+    // Reconnect from the last offset instead of letting EventSource replay the URL.
+    source.onerror = () => { source.close(); if (!term.exited && !$("terminal-panel").hidden) setTimeout(connectTerminal, 800); };
+  }
+  async function toggleTerminal(open = $("terminal-panel").hidden) {
+    $("terminal-panel").hidden = !open;
+    $("toggle-terminal").setAttribute("aria-expanded", String(open));
+    if (!open) { term.source?.close(); return; }
+    try { await loadTerminalAssets(); } catch { terminalState("Could not load the terminal"); return; }
+    if (!term.xterm) {
+      term.xterm = new window.Terminal({
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000,
+        theme: { background: "#0f1619", foreground: "#e8eeed", cursor: "#a2d5c9", selectionBackground: "#2f4a4a" },
+      });
+      term.fit = new window.FitAddon.FitAddon();
+      term.xterm.loadAddon(term.fit);
+      term.xterm.open($("terminal-host"));
+      term.xterm.onData((data) => { if (term.id && !term.exited) api(`/api/terminals/${term.id}/input`, { data }).catch(() => {}); });
+      term.xterm.onResize(({ cols, rows }) => { if (term.id && !term.exited) api(`/api/terminals/${term.id}/resize`, { cols, rows }).catch(() => {}); });
+      new ResizeObserver(() => { if (!$("terminal-panel").hidden) term.fit.fit(); }).observe($("terminal-host"));
+    }
+    term.fit.fit();
+    term.xterm.focus();
+    if (!term.id) await startTerminal();
+    else if (!term.exited) connectTerminal();
+  }
+  $("toggle-terminal").addEventListener("click", () => toggleTerminal());
+  $("close-terminal").addEventListener("click", () => toggleTerminal(false));
+  $("terminal-restart").addEventListener("click", () => startTerminal());
+  $("terminal-resize").addEventListener("pointerdown", (event) => {
+    const panel = $("terminal-panel"), start = event.clientY, height = panel.offsetHeight;
+    const move = (moved) => { panel.style.height = `${Math.min(Math.max(height + start - moved.clientY, 140), innerHeight * 0.75)}px`; };
+    const up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
+    addEventListener("pointermove", move); addEventListener("pointerup", up);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && !event.metaKey && event.key === "`") { event.preventDefault(); toggleTerminal(); }
+  });
+
+  // Inside the Mac app: leave room for the window buttons, let the header
+  // move the window, and take commands from the native menus.
+  const native = window.webkit?.messageHandlers?.instinct;
+  if (native) {
+    document.documentElement.classList.add("app-mac");
+    const passive = (target) => !target.closest("button, a, input, select, textarea, summary, label, [role=button]");
+    document.querySelectorAll(".topbar, .sidebar-heading, .developer-heading").forEach((bar) => {
+      bar.addEventListener("mousedown", (event) => { if (event.button === 0 && event.detail === 1 && passive(event.target)) native.postMessage({ type: "drag" }); });
+      bar.addEventListener("dblclick", (event) => { if (passive(event.target)) native.postMessage({ type: "zoom" }); });
+    });
+  }
+  window.instinct = {
+    command(name) {
+      const commands = {
+        newChat: () => { selectChat(null); $("message").focus(); },
+        settings: () => { renderSettings(); $("settings").showModal(); },
+        toggleSidebar: () => toggleSidebar(),
+        toggleWorkspace: () => toggleDeveloper(),
+        searchChats: () => { toggleSidebar(true); $("chat-search").focus(); },
+        toggleTerminal: () => toggleTerminal(),
+      };
+      commands[name]?.();
+    },
+  };
   boot();
 })();
