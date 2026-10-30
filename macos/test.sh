@@ -20,6 +20,7 @@ rm -rf "$out"
 mkdir -p "$out/workspace"
 printf '# Fixture\n\nA small project for the UI test.\n' > "$out/workspace/README.md"
 printf 'def add(a, b):\n    return a + b\n' > "$out/workspace/example.py"
+mkdir -p "$out/workspace-2" && printf 'Second project.\n' > "$out/workspace-2/NOTES.md"
 
 INSTINCT_TEST_SCRIPT="$root/macos/ui-test.js" \
 INSTINCT_TEST_OUTPUT="$out" \

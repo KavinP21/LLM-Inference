@@ -29,6 +29,7 @@ from .demo import DemoBackend
 from .extensions import MCPStdioClient
 from .openai_api import OpenAIEndpoint
 from .policy import POLICIES, ApprovalGate, workspace_preview
+from .projects import Projects, browse
 from .terminal import Terminals
 from .web_tools import WebTools
 
@@ -120,6 +121,7 @@ class AppService:
         hooks=None,
         keys_file: Path | None = None,
         network_file: Path | None = None,
+        projects: Projects | None = None,
     ):
         self.workspace = workspace.resolve(strict=True)
         if not self.workspace.is_dir():
@@ -147,6 +149,10 @@ class AppService:
         self.settings_path = self.state_dir / "settings.json"
         self.api_keys = ApiKeys(keys_file or self.state_dir / "api-keys.json")
         self.network_file = network_file
+        self.projects = projects
+        self.project = projects.touch(self.workspace) if projects else None
+        # Set by the launcher, which owns the servers: opens another folder.
+        self.switch_project = None
         # Set by the launcher while other devices are being served.
         self.remote_url: str | None = None
         self.openai = OpenAIEndpoint(self)
@@ -832,6 +838,14 @@ class AppService:
             if method == "POST" and len(parts) == 4 and parts[3] == "delete":
                 self.api_keys.revoke(parts[2])
             return {"keys": self.api_keys.list()}
+        if parts[:2] == ["api", "projects"]:
+            return await self._projects(method, parts, payload)
+        if method == "GET" and path == "/api/folders":
+            if self.projects is None:
+                raise ValueError("this server has no project list")
+            return await asyncio.to_thread(
+                browse, payload.get("path"), root=Path.home()
+            )
         if path == "/api/network":
             if method == "POST":
                 if self.network_file is None:
@@ -877,6 +891,69 @@ class AppService:
         if method == "POST" and len(parts) == 3 and parts[:2] == ["api", "approvals"]:
             return await self.decide(parts[2], payload)
         raise ValueError("unknown API route")
+
+    async def _projects(self, method: str, parts: list[str], payload: dict) -> dict:
+        if self.projects is None:
+            raise ValueError("this server has no project list")
+        if method == "POST" and len(parts) == 2:
+            # Add a folder (from the folder browser or the Mac's open panel).
+            project = self.projects.touch(
+                Path(_text(payload.get("path"), "folder", 4096))
+            )
+            if payload.get("open") is True:
+                return await self._open_project(project)
+            return {"project": project}
+        if method == "POST" and len(parts) == 4:
+            project_id, operation = parts[2], parts[3]
+            if operation == "open":
+                return await self._open_project(self.projects.get(project_id))
+            if operation == "rename":
+                return {
+                    "project": self.projects.update(
+                        project_id, title=_text(payload.get("title"), "title", 80)
+                    )
+                }
+            if operation == "pin":
+                return {
+                    "project": self.projects.update(
+                        project_id, pinned=payload.get("pinned") is True
+                    )
+                }
+            if operation == "delete":
+                if self.project and project_id == self.project["id"]:
+                    raise ValueError(
+                        "the open project can't be removed; open another one first"
+                    )
+                self.projects.remove(project_id)
+        return {
+            "projects": self.projects.list(),
+            "current": self.project and self.project["id"],
+        }
+
+    async def _open_project(self, project: dict) -> dict:
+        if self.project and project["id"] == self.project["id"]:
+            return {"project": project, "switched": False}
+        if self.switch_project is None:
+            raise ValueError("this server can't switch projects")
+        if any(not job.done() for job in self.jobs.values()):
+            raise ValueError("Stop the running chats before opening another project")
+        if self.backend_status == "loading":
+            raise ValueError("Wait for the models to finish loading")
+        await self.switch_project(Path(project["path"]))
+        return {"project": project, "switched": True}
+
+    def adopt(self, previous: AppService) -> None:
+        """Take over a running service's models and extensions, so opening
+        another project doesn't reload them."""
+        if self.demo:
+            return  # Each demo service has its own scripted backend.
+        self.backend, self.identities = previous.backend, previous.identities
+        self.backend_status = previous.backend_status
+        self.backend_error = previous.backend_error
+        self.mcp_clients = previous.mcp_clients
+        previous.backend, previous.mcp_clients = None, ()
+        if self.backend is not None and self.backend_status == "ready":
+            self._status_task = asyncio.create_task(self._watch_workers())
 
     async def close(self):
         if self._closed:
