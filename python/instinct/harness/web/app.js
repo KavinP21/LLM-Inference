@@ -684,18 +684,8 @@
     $("sidebar").inert = !open;
     $("toggle-sidebar").setAttribute("aria-expanded", String(open));
     $("toggle-sidebar").setAttribute("aria-label", open ? "Close chats" : "Open chats");
-    const mobile = matchMedia("(max-width:700px)").matches;
-    $("sidebar-backdrop").hidden = !open || !mobile;
     updateSurfaceInert();
-    if (open && mobile) {
-      $("sidebar").setAttribute("role", "dialog");
-      $("sidebar").setAttribute("aria-modal", "true");
-      if (!$("sidebar").contains(document.activeElement)) $("new-chat").focus({ preventScroll: true });
-    } else {
-      $("sidebar").removeAttribute("role");
-      $("sidebar").removeAttribute("aria-modal");
-      if (!open && ($("sidebar").contains(document.activeElement) || document.activeElement === $("sidebar-backdrop"))) $("toggle-sidebar").focus({ preventScroll: true });
-    }
+    if (!open && $("sidebar").contains(document.activeElement)) $("toggle-sidebar").focus({ preventScroll: true });
   }
   async function selectChat(id) {
     if (state.sending) return;
@@ -714,7 +704,6 @@
     $("message").value = state.drafts.get(draftKey()) || "";
     state.sendError = "";
     document.title = "Instinct";
-    if (matchMedia("(max-width:700px)").matches) toggleSidebar(false);
     $("welcome").hidden = Boolean(id);
     $("view-loading").hidden = !state.loading;
     renderOverview(); renderComposer(); renderSettings();
@@ -1077,9 +1066,8 @@
   }
   function updateSurfaceInert() {
     const devModal = state.dev.open && matchMedia("(max-width:1100px)").matches;
-    const sidebarModal = state.sidebar && matchMedia("(max-width:700px)").matches;
-    $("main").inert = devModal || sidebarModal;
-    $("developer-pane").inert = !state.dev.open || sidebarModal;
+    $("main").inert = devModal;
+    $("developer-pane").inert = !state.dev.open;
     $("developer-backdrop").hidden = !devModal;
     if (devModal) { $("developer-pane").setAttribute("role", "dialog"); $("developer-pane").setAttribute("aria-modal", "true"); }
     else { $("developer-pane").removeAttribute("role"); $("developer-pane").removeAttribute("aria-modal"); }
@@ -1589,7 +1577,6 @@
   $("live-speed").addEventListener("click", () => toggleDeveloper(true, "system"));
   $("toggle-sidebar").addEventListener("click", () => toggleSidebar());
   $("close-sidebar").addEventListener("click", () => { toggleSidebar(false); $("toggle-sidebar").focus(); });
-  $("sidebar-backdrop").addEventListener("click", () => toggleSidebar(false));
   $("new-chat").addEventListener("click", () => selectChat(null));
   $("home").addEventListener("click", () => selectChat(null));
   $("open-settings").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });

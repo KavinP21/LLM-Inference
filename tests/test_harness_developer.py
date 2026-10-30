@@ -12,7 +12,7 @@ import pytest
 from instinct.agents.protocol import Generation
 from instinct.agents.tools import ToolValidationError
 from instinct.harness.developer import MAX_FILE_BYTES, DeveloperWorkspace
-from instinct.harness.service import StudioService
+from instinct.harness.service import AppService
 
 
 class ScriptBackend:
@@ -32,7 +32,7 @@ class ScriptBackend:
 
 
 def service_for(tmp_path, backend=None):
-    return StudioService(
+    return AppService(
         tmp_path,
         tmp_path / ".instinct",
         demo=True,
@@ -110,7 +110,7 @@ def test_workspace_browser_search_content_hash_limits_and_privacy(tmp_path):
                 ".ENV",
                 "models/hidden.txt",
                 ".venv/hidden.txt",
-                ".instinct/studio.sqlite",
+                ".instinct/instinct.sqlite",
                 "secrets/hidden.txt",
                 "../escape",
             ):
@@ -142,7 +142,7 @@ def test_workspace_browser_rejects_symlinks_to_private_or_outside_files(tmp_path
         outside = tmp_path.with_name(tmp_path.name + "-outside.txt")
         outside.write_text("outside")
         (tmp_path / "escape.txt").symlink_to(outside)
-        (tmp_path / "private.txt").symlink_to(service.state_dir / "studio.sqlite")
+        (tmp_path / "private.txt").symlink_to(service.state_dir / "instinct.sqlite")
         developer = DeveloperWorkspace(service)
         try:
             for path in ("escape.txt", "private.txt"):
