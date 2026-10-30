@@ -51,8 +51,11 @@ final class Backend {
         stopping = false
         port = nil
         token = Self.randomToken()
-        // API keys belong to the app, not to a workspace; a test's state folder keeps its own.
-        let keys = (state ?? Self.supportDirectory).appendingPathComponent("api-keys.json")
+        // Keys and network settings belong to the app, not to a workspace; a
+        // test's state folder keeps its own.
+        let shared = state ?? Self.supportDirectory
+        let keys = shared.appendingPathComponent("api-keys.json")
+        let network = shared.appendingPathComponent("network.json")
         let state = state ?? Self.stateDirectory(for: workspace)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
 
@@ -61,7 +64,7 @@ final class Backend {
         process.currentDirectoryURL = root
         var arguments = ["-m", "instinct.harness.cli", "--app", "--port", "0",
                          "--workspace", workspace.path, "--state-dir", state.path,
-                         "--keys-file", keys.path]
+                         "--keys-file", keys.path, "--network-file", network.path]
         arguments += modelsReady && !demo ? ["--config", config.path] : ["--demo"]
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment

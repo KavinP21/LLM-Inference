@@ -599,3 +599,28 @@ html.app-mac .sidebar { background: color-mix(in srgb, var(--rail) 55%, transpar
 .new-key { margin-top: 12px; padding: 10px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--accent-soft); }
 .new-key p { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .new-key code { display: block; font-family: var(--mono); font-size: 11px; word-break: break-all; margin-bottom: 8px; color: var(--ink); }
+
+/* Other devices in Settings, and signing in from one. */
+.network-fields { display: grid; gap: 8px; margin: 10px 0; }
+.network-fields > label:not(.toggle-row) { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+.network-fields input:not([type=checkbox]) { border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; background: var(--surface); color: var(--ink); font-size: 12px; outline-color: var(--accent); }
+#network-addresses { word-break: break-all; }
+#sign-in form { display: grid; gap: 12px; }
+#sign-in h2 { font-size: 16px; font-weight: 600; }
+#sign-in p { font-size: 12px; color: var(--muted); }
+#sign-in input[type=password] { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: var(--surface); color: var(--ink); font-family: var(--mono); font-size: 12px; outline-color: var(--accent); }
+.sign-in-error { color: var(--danger); }
+
+/* Phones and narrow windows (another device over the network). */
+@media (max-width: 760px) {
+  .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: min(86vw, 320px); margin-left: 0; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 0 60px var(--shadow-strong); }
+  .app.sidebar-open .sidebar { transform: none; }
+  .topbar { padding: 0 10px; gap: 6px; }
+  .context-meter, .live-speed, .model-status, .demo-badge, #toggle-developer { display: none; }
+  .composer-area { padding: 0 10px 10px; }
+  .composer-footnote, .composer-hint { display: none; }
+  .transcript { padding-left: 14px; padding-right: 14px; }
+  .settings-drawer { width: 100vw; padding: 18px 16px; }
+  .developer-pane { position: fixed; inset: 0; z-index: 40; width: auto; max-width: none; flex: none; }
+  pre, .markdown table { max-width: 100%; overflow-x: auto; }
+}
