@@ -65,14 +65,16 @@ The native engine runs Gemma 4 and Qwen3.5 checkpoints directly (4-bit weights,
 paged K/V, batched decode) and FP16 Qwen2 and Gemma 3 `.engine` files. A worker
 with `"runner": "engine"` (the default) on Apple silicon serves its requests
 through `ChatRunner`, which batches everything in flight and reuses each
-conversation's computed prefix across turns. It doesn't take images yet.
+conversation's computed prefix across turns. Gemma 4 takes images through its
+own vision tower (`backends/gemma4_vision.py`); Qwen3.5 workers take text only.
 
 ## Limits
 
-- The Qwen sub-agent worker runs on Instinct's own engine and batches up to
-  eight requests at once; it starts on first use and stops after ten idle
-  minutes. The Gemma driver still runs one request at a time through mlx-vlm,
-  until its image input moves to the engine too.
+- Both models run on Instinct's own engine. The Gemma driver batches up to four
+  requests (several chats at once) and the Qwen sub-agent worker up to eight;
+  the Qwen worker starts on first use and stops after ten idle minutes.
+- Gemma's MTP drafter isn't wired into the engine yet, so Gemma decodes without
+  speculation.
 - Gemma 4's audio input and its 262K context haven't been tried here. The app's
   configuration caps the driver at a 60K context and sub-agents at 32K.
 - Nothing here runs on CUDA.

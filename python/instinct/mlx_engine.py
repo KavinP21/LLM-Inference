@@ -39,6 +39,8 @@ class Request:
     sampling: SamplingParams
     namespace: str
     checkpoints: tuple[int, ...]
+    # (position, [tokens, hidden]) embeddings that replace image placeholders.
+    images: tuple[tuple[int, Any], ...] = ()
     state: SequenceState = SequenceState.WAITING
     output: list[int] = field(default_factory=list)
     reason: str = ""
@@ -171,9 +173,13 @@ class MlxEngine:
         sampling: SamplingParams | None = None,
         cache_namespace: str = "",
         checkpoints: Iterable[int] = (),
+        images: Iterable[tuple[int, Any]] = (),
     ) -> int:
         """Queue a prompt. ``checkpoints`` are prompt lengths to keep in the
-        prefix cache on the way, such as the end of a shared system prompt."""
+        prefix cache on the way, such as the end of a shared system prompt.
+        ``images`` are ``(position, embeddings)`` for image soft tokens; use a
+        cache namespace that identifies the images, since their placeholder
+        tokens are all the same."""
         self._check_open()
         prompt = np.asarray(list(input_ids), dtype=np.int32)
         stop = frozenset(int(t) for t in eos_token_ids)
@@ -202,7 +208,11 @@ class MlxEngine:
             sampling or GREEDY,
             cache_namespace,
             marks,
+            tuple(sorted(images, key=lambda item: item[0])),
         )
+        for at, embeddings in request.images:
+            if at < 0 or at + int(embeddings.shape[0]) > prompt.size:
+                raise ValueError("image embeddings fall outside the prompt")
         needs = self._needs(request, 0)
         if any(needs[name] > pool.capacity for name, pool in self.cache.pools.items()):
             raise ValueError("the request needs more K/V memory than the cache has")
@@ -399,6 +409,11 @@ class MlxEngine:
         size = self.prefill_burst_size if burst else self.prefill_chunk_size
         end = min(request.prompt.size, start + size)
         end = next((c for c in request.checkpoints if start < c < end), end)
+        for at, embeddings in request.images:
+            # Never split an image: stop before it, or take all of it.
+            stop = at + int(embeddings.shape[0])
+            if at < end < stop:
+                end = at if at > start else stop
         self._ensure_pages(request, end)
         self.cache.ensure_capacity()
         batch = PrefillBatch(
@@ -410,6 +425,7 @@ class MlxEngine:
                 for name, t in request.tables.items()
             },
             slot=request.slot,
+            images=request.images,
         )
         logits = self.model.forward(batch)
         request.length = end

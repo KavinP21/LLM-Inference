@@ -26,7 +26,10 @@ class Gemma4Model:
 
         self.nn = nn
         config, self.weights = load_checkpoint(
-            path, keep=lambda name: name.startswith("model.")
+            path,
+            keep=lambda name: name.startswith(
+                ("model.", "vision_tower.", "embed_vision.")
+            ),
         )
         c = self.config = text_config(config)
         self.dtype = mx.bfloat16
@@ -80,6 +83,14 @@ class Gemma4Model:
             p = f"model.layers.{i}.router."
             self.router_scales[i] = self.weights[p + "scale"] * self.hidden**-0.5
         mx.eval(self.full_freqs, *self.router_scales.values())
+        self.vision = None
+        self.image_token_id = config.get("image_token_id")
+        if config.get("vision_config") and "vision_tower.std_bias" in self.weights:
+            from .gemma4_vision import Gemma4Vision
+
+            self.vision = Gemma4Vision(
+                mx, self.weights, config["vision_config"], self.hidden
+            )
         self._geglu = mx.compile(
             lambda gate, x: nn.gelu_approx(gate) * x, shapeless=True
         )
@@ -126,7 +137,7 @@ class Gemma4Model:
     def forward(self, batch: Any) -> Any:
         mx, w = self.mx, self.weights
         n = batch.count
-        x = w.embed("model.embed_tokens", batch.tokens) * self.embed_scale
+        x = batch.inject(w.embed("model.embed_tokens", batch.tokens) * self.embed_scale)
         for i, kind in enumerate(self.layer_types):
             p = f"model.layers.{i}."
             sliding = kind == "sliding_attention"
