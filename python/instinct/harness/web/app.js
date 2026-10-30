@@ -282,8 +282,8 @@
     if (!overview) return;
     const raw = overview.workspace || "Local workspace";
     const workspace = typeof raw === "string" ? raw : raw.path || raw.root || "Local workspace";
-    $("workspace-name").textContent = workspace.split(/[\\/]/).filter(Boolean).at(-1) || workspace;
-    $("workspace-name").title = workspace;
+    $("workspace-name").textContent = state.project?.title || workspace.split(/[\\/]/).filter(Boolean).at(-1) || workspace;
+    $("workspace-name").title = `${workspace} · Projects (⌘O)`;
     $("workspace-path").textContent = workspace;
     const backend = state.detail?.backend || overview.backend || {};
     $("model-label").textContent = modelLabel(backend);
@@ -1668,6 +1668,7 @@
   $("transcript-pane").addEventListener("scroll", () => { $("jump-bottom").hidden = nearBottom(); }, { passive: true });
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "d") { event.preventDefault(); toggleDeveloper(); return; }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "o" && !isMac) { event.preventDefault(); openProjects(); return; }
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); if (!state.sidebar && matchMedia("(max-width:900px)").matches) toggleSidebar(true); $("chat-search").focus(); return; }
     if (event.key === "Tab" && state.dev.open && matchMedia("(max-width:1100px)").matches && !$("settings").open && !$("image-viewer").open) {
       const buttons = Array.from($("developer-pane").querySelectorAll('button:not(:disabled),input,textarea,select,a[href]')).filter((element) => element.getClientRects().length && element.tabIndex !== -1);
@@ -1808,6 +1809,101 @@
     }
   });
 
+  // --- Projects ---------------------------------------------------------------
+  const isMac = new URLSearchParams(location.search).get("app") === "mac";
+  async function loadProjects() {
+    try {
+      const result = await api("/api/projects");
+      state.projects = result.projects;
+      state.project = result.projects.find((project) => project.id === result.current) || null;
+      if (state.project) {
+        $("workspace-name").textContent = state.project.title;
+        $("workspace-name").title = `${state.project.path} · Projects (⌘O)`;
+      }
+    } catch { state.projects = null; }
+  }
+  function renderProjects() {
+    const projects = state.projects || [];
+    patch($("project-list"), projects.length ? projects.map((project) => `<div class="project-row${project.id === state.project?.id ? " current" : ""}${project.missing ? " missing" : ""}" data-project="${escape(project.id)}"><button type="button" class="project-open" data-open-project="${escape(project.id)}"${project.missing ? " disabled" : ""}><strong>${escape(project.title)}</strong><small>${escape(project.missing ? "Folder not found" : project.path)}</small></button><button type="button" class="icon-button" data-rename-project="${escape(project.id)}" aria-label="Rename ${escape(project.title)}">✎</button><button type="button" class="icon-button${project.pinned ? " pinned" : ""}" data-pin-project="${escape(project.id)}" aria-label="${project.pinned ? "Unpin" : "Pin"} ${escape(project.title)}" aria-pressed="${project.pinned}">${project.pinned ? "★" : "☆"}</button>${project.id === state.project?.id ? "" : `<button type="button" class="icon-button" data-remove-project="${escape(project.id)}" aria-label="Remove ${escape(project.title)} from the list">×</button>`}</div>`).join("") : `<p class="settings-note">No projects yet.</p>`);
+  }
+  async function openProjects() {
+    await loadProjects();
+    if (!state.projects) { toast("This server has no project list", true); return; }
+    $("folder-view").hidden = true;
+    $("project-view").hidden = false;
+    renderProjects();
+    if (!$("projects").open) $("projects").showModal();
+  }
+  async function openProject(target) {
+    try {
+      const result = target.id ? await api(`/api/projects/${encodeURIComponent(target.id)}/open`, {}) : await api("/api/projects", { path: target.path, open: true });
+      $("projects").close();
+      if (!result.switched) return;
+      state.selected = null; state.detail = null;
+      await loadProjects(); await refresh(); loadSettings();
+      if (isMac) window.webkit?.messageHandlers?.instinct?.postMessage({ type: "workspace", path: result.project.path });
+      toast(`Opened ${result.project.title}`);
+    } catch (error) { toast(error.message, true); }
+  }
+  async function browseFolders(path) {
+    try {
+      const listing = await api(`/api/folders${path ? `?path=${encodeURIComponent(path)}` : ""}`);
+      state.folder = listing;
+      $("folder-current").textContent = listing.path;
+      $("folder-up").disabled = !listing.parent;
+      patch($("folder-list"), listing.folders.length ? listing.folders.map((folder) => `<button type="button" class="folder-row" data-folder="${escape(folder.path)}">${escape(folder.name)}</button>`).join("") : `<p class="settings-note">No folders here.</p>`);
+      $("project-view").hidden = true;
+      $("folder-view").hidden = false;
+    } catch (error) { toast(error.message, true); }
+  }
+  $("workspace-name").addEventListener("click", openProjects);
+  $("close-projects").addEventListener("click", () => $("projects").close());
+  $("choose-folder").addEventListener("click", () => {
+    if (isMac) window.webkit?.messageHandlers?.instinct?.postMessage({ type: "openFolder" });
+    else browseFolders(state.project?.path);
+  });
+  $("folder-up").addEventListener("click", () => state.folder?.parent && browseFolders(state.folder.parent));
+  $("folder-cancel").addEventListener("click", () => { $("folder-view").hidden = true; $("project-view").hidden = false; });
+  $("folder-open").addEventListener("click", () => state.folder && openProject({ path: state.folder.path }));
+  $("folder-list").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-folder]");
+    if (row) browseFolders(row.dataset.folder);
+  });
+  $("project-list").addEventListener("click", async (event) => {
+    const open = event.target.closest("[data-open-project]");
+    const rename = event.target.closest("[data-rename-project]");
+    const pin = event.target.closest("[data-pin-project]");
+    const remove = event.target.closest("[data-remove-project]");
+    try {
+      if (open) return openProject({ id: open.dataset.openProject });
+      if (rename) {
+        const project = state.projects.find((item) => item.id === rename.dataset.renameProject);
+        const row = rename.closest(".project-row");
+        const field = document.createElement("input");
+        field.className = "project-title-input";
+        field.value = project.title;
+        field.maxLength = 80;
+        field.setAttribute("aria-label", "Project title");
+        row.querySelector(".project-open strong").replaceWith(field);
+        field.focus(); field.select();
+        const save = async () => {
+          const title = field.value.trim();
+          if (title && title !== project.title) await api(`/api/projects/${encodeURIComponent(project.id)}/rename`, { title });
+          await loadProjects(); renderProjects();
+        };
+        field.addEventListener("keydown", (key) => { if (key.key === "Enter") { key.preventDefault(); field.blur(); } if (key.key === "Escape") { field.value = project.title; field.blur(); } });
+        field.addEventListener("blur", () => save().catch((error) => toast(error.message, true)), { once: true });
+        return;
+      }
+      if (pin) {
+        const project = state.projects.find((item) => item.id === pin.dataset.pinProject);
+        await api(`/api/projects/${encodeURIComponent(project.id)}/pin`, { pinned: !project.pinned });
+      }
+      if (remove) await api(`/api/projects/${encodeURIComponent(remove.dataset.removeProject)}/delete`, {});
+      await loadProjects(); renderProjects();
+    } catch (error) { toast(error.message, true); }
+  });
+
   // Another device's browser signs in with an app key (remembered if asked).
   async function signedIn() {
     const probe = await fetch("/api/settings", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
@@ -1837,6 +1933,7 @@
     try { Object.assign(state.newChat, JSON.parse(localStorage.getItem("instinct-new-chat") || "{}")); } catch {}
     try { state.models = (await api("/api/models")).models || []; } catch {}
     loadSettings();
+    loadProjects();
     let sidebar = null;
     try { sidebar = localStorage.getItem("instinct-sidebar"); } catch {}
     if (sidebar ? sidebar === "open" : innerWidth >= 1100) toggleSidebar(true);
@@ -1959,9 +2056,11 @@
         toggleWorkspace: () => toggleDeveloper(),
         searchChats: () => { toggleSidebar(true); $("chat-search").focus(); },
         toggleTerminal: () => toggleTerminal(),
+        projects: () => openProjects(),
       };
       commands[name]?.();
     },
+    openFolder(path) { return openProject({ path }); },
   };
   boot();
 })();

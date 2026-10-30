@@ -16,6 +16,7 @@ from ..agents.cli import load_config
 from ..agents.protocol import _unique_object
 from .api_keys import ApiKeys
 from .extensions import MCPServerConfig, MCPStdioClient, SkillRegistry
+from .projects import Projects, state_folder
 from .server import AppServer
 from .service import AppService
 
@@ -145,16 +146,48 @@ async def serve(args):
         else []
     )
     config = load_config(args.config) if args.config else {}
-    service = AppService(
-        workspace,
-        state_dir,
-        config=config,
-        demo=args.demo,
-        skills=skills,
-        mcp_clients=clients,
-        keys_file=args.keys_file,
-        network_file=getattr(args, "network_file", None),
+    # The app keeps keys, network settings, the project list and each
+    # project's state under one folder; the command line keeps them in the
+    # workspace's state folder.
+    home = getattr(args, "home", None)
+    keys_file = args.keys_file or (home / "api-keys.json" if home else None)
+    network_file = getattr(args, "network_file", None) or (
+        home / "network.json" if home else None
     )
+    projects = Projects((home or state_dir) / "projects.json")
+
+    def build(folder: Path, folder_state: Path) -> AppService:
+        return AppService(
+            folder,
+            folder_state,
+            config=config,
+            demo=args.demo,
+            skills=skills,
+            mcp_clients=clients,
+            keys_file=keys_file,
+            network_file=network_file,
+            projects=projects,
+        )
+
+    current = {"service": build(workspace, state_dir)}
+    servers: list[AppServer] = []
+
+    async def switch(folder: Path) -> None:
+        """Open another project in place: same models, same servers."""
+        previous = current["service"]
+        fresh = build(
+            folder, state_folder(home, folder) if home else folder / ".instinct"
+        )
+        fresh.adopt(previous)
+        fresh.switch_project = switch
+        fresh.remote_url = previous.remote_url
+        for running in servers:
+            running.service = fresh
+        current["service"] = fresh
+        await previous.close()
+
+    service = current["service"]
+    service.switch_project = switch
     server = None
     thread = None
     thread_started = False
@@ -167,6 +200,7 @@ async def serve(args):
             # The Mac app makes the token itself, so it is never printed.
             token=os.environ.get(APP_TOKEN),
         )
+        servers.append(server)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         thread_started = True
@@ -179,6 +213,7 @@ async def serve(args):
                 tls=remote["tls"],
                 remote=True,
             )
+            servers.append(remote_server)
             service.remote_url = (
                 f"{remote_server.scheme}://{{host}}:{remote_server.server_port}"
             )
@@ -220,7 +255,7 @@ async def serve(args):
             if thread_started:
                 await asyncio.to_thread(thread.join, 1.0)
         finally:
-            await service.close()
+            await current["service"].close()
 
 
 def main():
@@ -271,6 +306,8 @@ def main():
         help="Serve other devices without TLS, on a network that already encrypts (Tailscale)",
     )
     remote.add_argument("--network-file", type=Path, help=argparse.SUPPRESS)
+    # The Mac app's Application Support folder.
+    parser.add_argument("--home", type=Path, help=argparse.SUPPRESS)
     remote.add_argument(
         "--create-key", metavar="NAME", help="Make a key, print it once and exit"
     )
