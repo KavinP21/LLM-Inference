@@ -1,6 +1,7 @@
-"""Reviewed argv execution with confined cwd and owned process-group cleanup.
+"""Argv execution with a confined cwd and owned process-group cleanup.
 
-This is an execution tool, not an OS sandbox. The approval boundary lives in
+On macOS commands run in the Seatbelt sandbox from sandbox.py, so they can only
+write inside the workspace. Approval, when the chat asks for it, lives in
 ApprovalGate. No shell, credential environment or automatic retry is supplied.
 """
 
@@ -15,6 +16,7 @@ import time
 from pathlib import Path
 
 from ..agents.tools import ToolValidationError
+from . import sandbox
 
 
 class CommandTools:
@@ -29,16 +31,23 @@ class CommandTools:
                     "maxItems": 64,
                 },
                 "cwd": {"type": "string"},
-                "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120},
+                "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
             },
             "required": ["argv"],
             "additionalProperties": False,
         }
     }
 
-    def __init__(self, workspace: Path, *, max_output_bytes: int = 128_000):
+    def __init__(
+        self,
+        workspace: Path,
+        *,
+        max_output_bytes: int = 128_000,
+        network: bool = False,
+    ):
         self.workspace = Path(workspace).resolve(strict=True)
         self.max_output_bytes = max_output_bytes
+        self.network = network
 
     def mapping(self):
         return {"run_command": self.run_command}
@@ -46,10 +55,30 @@ class CommandTools:
     def tool_descriptions(self):
         return {
             "run_command": {
-                "description": "Run a command as an argv array in the workspace. Operator reviews the exact command before execution. Use this for builds, tests, linters and developer commands. No shell expansion; use separate arguments. The launcher Python environment is on PATH. Output is bounded and exit status is reported. This runs with the operator's OS privileges.",
+                "description": self.description(),
                 "parameters": self.schemas["run_command"],
             }
         }
+
+    def description(self) -> str:
+        confinement = (
+            "It runs sandboxed: it can read files but can only write inside the "
+            "workspace and temporary folders"
+            + (
+                "."
+                if self.network
+                else ", and it has no network access beyond localhost."
+            )
+            if sandbox.available()
+            else "It runs with the user's own permissions."
+        )
+        return (
+            "Run a command as an argv array in the workspace, for builds, tests, "
+            "linters and other developer commands. No shell expansion: pass each "
+            'argument separately, or use ["sh", "-c", "..."] when you need '
+            "pipes. The app's Python environment is on PATH. Output is bounded and "
+            "the exit status is reported. " + confinement
+        )
 
     def _validate(self, args):
         if not isinstance(args, dict) or args.keys() - {
@@ -91,9 +120,9 @@ class CommandTools:
             ) from exc
         if not cwd.is_dir() or not cwd.is_relative_to(self.workspace):
             raise ToolValidationError("command cwd must stay inside the workspace")
-        timeout = args.get("timeout_seconds", 60)
-        if type(timeout) is not int or not 1 <= timeout <= 120:
-            raise ToolValidationError("command timeout must be 1 to 120 seconds")
+        timeout = args.get("timeout_seconds", 120)
+        if type(timeout) is not int or not 1 <= timeout <= 600:
+            raise ToolValidationError("command timeout must be 1 to 600 seconds")
         return argv, cwd, timeout
 
     async def _stop(self, process):
@@ -140,12 +169,12 @@ class CommandTools:
             + os.pathsep
             + environment.get("PATH", os.defpath)
         )
-        environment["PYTHONPATH"] = str(self.workspace / "python")
         environment["PYTHONUNBUFFERED"] = "1"
+        environment.update(sandbox.environment())
         started = time.monotonic()
         try:
             process = await asyncio.create_subprocess_exec(
-                *argv,
+                *sandbox.command(argv, self.workspace, network=self.network),
                 cwd=cwd,
                 env=environment,
                 stdin=asyncio.subprocess.DEVNULL,
@@ -188,6 +217,7 @@ class CommandTools:
                 "timed_out": timed_out,
                 "truncated": truncated,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
+                "sandboxed": sandbox.available(),
             },
             ensure_ascii=False,
         )

@@ -22,6 +22,7 @@ from ..agents.protocol import ChatMessage, conservative_input_tokens
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL
 from ..chat_formats import EFFORT_BUDGETS
+from .policy import POLICIES
 
 if TYPE_CHECKING:
     from .service import StudioService
@@ -445,7 +446,7 @@ class ConversationController:
             raise ValueError("unsupported conversation fields")
         media, names, message = _image_input(payload)
         policy = payload.get("policy", "review")
-        if policy not in {"review", "read_only"}:
+        if policy not in POLICIES:
             raise ValueError("policy must be review or read_only")
         request_id, fingerprint, prior = self._request(payload, kind="create")
         if prior:

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 from instinct.agents.tools import ToolValidationError
@@ -112,3 +113,37 @@ def test_cancellation_stops_owned_child(tmp_path):
             os.kill(pid, 0)
 
     asyncio.run(check())
+
+
+@pytest.mark.skipif(
+    not __import__("instinct.harness.sandbox").harness.sandbox.available(),
+    reason="Seatbelt is macOS only",
+)
+def test_sandboxed_commands_only_write_inside_the_workspace(tmp_path):
+    # Temp folders are writable on purpose, so aim at the home folder.
+    outside = Path.home() / f".instinct-sandbox-test-{os.getpid()}"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    async def run(argv, network=False):
+        tools = CommandTools(workspace, network=network)
+        return json.loads(await tools.run_command({"argv": argv}))
+
+    async def check():
+        inside = await run(["sh", "-c", "echo ok > made.txt && cat made.txt"])
+        assert inside["exit_code"] == 0 and inside["sandboxed"]
+        blocked = await run(["sh", "-c", f"echo no > '{outside}'"])
+        assert blocked["exit_code"] != 0 and "not permitted" in blocked["output"]
+        assert not outside.exists()
+        probe = [
+            sys.executable,
+            "-c",
+            "import socket; socket.create_connection(('1.1.1.1', 53), timeout=3)",
+        ]
+        offline = await run(probe)
+        assert offline["exit_code"] != 0
+
+    try:
+        asyncio.run(check())
+    finally:
+        outside.unlink(missing_ok=True)

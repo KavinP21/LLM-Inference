@@ -422,3 +422,19 @@ def test_hooks_are_ordered_isolated_and_after_failure_preserves_receipt(store):
         )
 
     asyncio.run(scenario())
+
+
+def test_auto_mode_runs_mutations_without_asking(store):
+    calls = []
+
+    async def tool(args):
+        calls.append(args)
+        return "ok"
+
+    async def scenario():
+        gate = ApprovalGate(store, "auto", run_id="one")
+        with actor():
+            assert await gate.wrap("write", tool, mutating=True)({"path": "a"}) == "ok"
+        assert calls == [{"path": "a"}] and not gate.pending("one")
+
+    asyncio.run(scenario())

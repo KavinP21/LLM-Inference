@@ -6,9 +6,10 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 
 import pytest
-from instinct.agents.tools import WorkspaceTools
+from instinct.agents.tools import ToolValidationError, WorkspaceTools
 
 
 def test_read_search_and_bounded_listing(tmp_path):
@@ -29,7 +30,7 @@ def test_read_search_and_bounded_listing(tmp_path):
     matches = json.loads(asyncio.run(tools.search({"query": "needle"})))
     assert [m["path"] for m in matches["matches"]] == ["a.py", "b.py"]
     listing = json.loads(asyncio.run(tools.list_files({"limit": 1})))
-    assert listing == {"files": ["a.py"], "truncated": True}
+    assert listing == {"files": ["a.py"], "folders": [], "truncated": True}
 
 
 def test_search_accepts_regular_expressions_and_smart_case(tmp_path):
@@ -881,3 +882,32 @@ def test_concurrent_line_edits_allow_only_one_write_from_the_same_read_version(
 
     asyncio.run(run())
     assert path.read_text() in {"keep\none\nkeep too\n", "keep\ntwo\nkeep too\n"}
+
+
+def test_folders_can_be_made_moved_and_trashed(tmp_path, monkeypatch):
+    # Keep deletes away from the real Trash: without ~/.Trash they go to .trash.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tools = WorkspaceTools(workspace, tmp_path / "artifacts", allow_write=True)
+
+    async def run():
+        await tools.make_directory({"path": "pkg/sub"})
+        await tools.write_file({"path": "pkg/sub/mod.py", "content": "X = 1\n"})
+        listing = json.loads(await tools.list_files({"path": "pkg"}))
+        assert listing["folders"] == ["pkg/sub/"]
+        await tools.move_path({"source": "pkg/sub", "destination": "lib/sub"})
+        assert (workspace / "lib/sub/mod.py").read_text() == "X = 1\n"
+        with pytest.raises(ToolValidationError, match="already exists"):
+            await tools.move_path({"source": "lib", "destination": "pkg"})
+        with pytest.raises(ToolValidationError, match="into itself"):
+            await tools.move_path({"source": "lib", "destination": "lib/inner"})
+        trashed = json.loads(await tools.delete_path({"path": "lib"}))
+        assert not (workspace / "lib").exists()
+        assert (Path(trashed["trashed_to"]) / "sub/mod.py").exists()
+        with pytest.raises(ToolValidationError):
+            await tools.delete_path({"path": "."})
+
+    asyncio.run(run())
+    reader = WorkspaceTools(workspace, tmp_path / "artifacts")
+    assert "make_directory" not in reader.mapping()

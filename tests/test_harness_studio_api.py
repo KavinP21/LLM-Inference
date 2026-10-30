@@ -195,3 +195,56 @@ def test_event_stream_requires_auth_and_sends_the_live_snapshot(tmp_path):
             await service.close()
 
     asyncio.run(check())
+
+
+def test_settings_persist_and_reach_new_command_tools(tmp_path):
+    async def check():
+        service = make_service(tmp_path, backend=ChatBackend())
+        try:
+            current = await service.dispatch("GET", "/api/settings", {})
+            assert current["settings"] == {"command_network": False}
+            await service.dispatch("POST", "/api/settings", {"command_network": True})
+            with pytest.raises(ValueError):
+                await service.dispatch("POST", "/api/settings", {"command_network": 1})
+            with pytest.raises(ValueError):
+                await service.dispatch("POST", "/api/settings", {"theme": "x"})
+        finally:
+            await service.close()
+        reopened = make_service(tmp_path, backend=ChatBackend())
+        try:
+            assert reopened.settings["command_network"] is True
+        finally:
+            await reopened.close()
+
+    asyncio.run(check())
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "forkpty"), reason="needs a pty")
+def test_terminal_runs_a_shell_in_the_workspace(tmp_path):
+    async def check():
+        service = make_service(tmp_path, backend=ChatBackend())
+        try:
+            created = await service.dispatch(
+                "POST", "/api/terminals", {"cols": 80, "rows": 24}
+            )
+            terminal = service.terminals.get(created["id"])
+            await service.dispatch(
+                "POST",
+                f"/api/terminals/{terminal.id}/input",
+                {"data": "echo ready-$((40+2)); pwd; exit\n"},
+            )
+            output, offset = b"", 0
+            for _ in range(40):
+                offset, data, closed = await asyncio.to_thread(
+                    terminal.read, offset, 0.25
+                )
+                output += data
+                if closed:
+                    break
+            text = output.decode("utf-8", "replace")
+            assert "ready-42" in text and str(tmp_path.resolve()) in text
+            assert terminal.closed
+        finally:
+            await service.close()
+
+    asyncio.run(check())
