@@ -61,14 +61,18 @@ Anything mlx-vlm can load works as `"runner": "vlm"`, including text-only
 models. Tested: Qwen3-30B-A3B (4-bit, 93 tok/s) and Qwen2.5-7B-Instruct (4-bit,
 73 tok/s). Tool calls in the plain JSON (Hermes) format are parsed for those.
 
-The native engine still runs FP16 Qwen2 and Gemma 3 `.engine` files with its own
-paged KV cache and Metal kernels.
+The native engine runs Gemma 4 and Qwen3.5 checkpoints directly (4-bit weights,
+paged K/V, batched decode) and FP16 Qwen2 and Gemma 3 `.engine` files. A worker
+with `"runner": "engine"` (the default) on Apple silicon serves its requests
+through `ChatRunner`, which batches everything in flight and reuses each
+conversation's computed prefix across turns. It doesn't take images yet.
 
 ## Limits
 
-- One request runs at a time per worker process. Concurrent agents use more
-  replicas: the app runs two Qwen sub-agent workers, which start on first use and
-  stop after ten idle minutes.
+- The Qwen sub-agent worker runs on Instinct's own engine and batches up to
+  eight requests at once; it starts on first use and stops after ten idle
+  minutes. The Gemma driver still runs one request at a time through mlx-vlm,
+  until its image input moves to the engine too.
 - Gemma 4's audio input and its 262K context haven't been tried here. The app's
   configuration caps the driver at a 60K context and sub-agents at 32K.
 - Nothing here runs on CUDA.

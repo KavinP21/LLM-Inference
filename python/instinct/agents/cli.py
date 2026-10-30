@@ -129,8 +129,13 @@ async def create_pool(config: dict) -> WorkerPool:
             else:
                 raise ValueError("worker type must be process, local or remote")
             replicas[name] = backend
+        # Each worker says how many requests it takes at once (a batching
+        # MLX worker takes its max_pending; others one).
         return WorkerPool(
-            replicas, max_pending=config.get("max_pending", 32), groups=groups
+            replicas,
+            max_pending=config.get("max_pending", 32),
+            per_worker_concurrency=64,
+            groups=groups,
         )
     except BaseException:
         await asyncio.gather(
