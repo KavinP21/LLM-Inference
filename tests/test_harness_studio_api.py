@@ -202,7 +202,7 @@ def test_settings_persist_and_reach_new_command_tools(tmp_path):
         service = make_service(tmp_path, backend=ChatBackend())
         try:
             current = await service.dispatch("GET", "/api/settings", {})
-            assert current["settings"] == {"command_network": False}
+            assert current["settings"] == {"command_network": False, "web_access": True}
             await service.dispatch("POST", "/api/settings", {"command_network": True})
             with pytest.raises(ValueError):
                 await service.dispatch("POST", "/api/settings", {"command_network": 1})
