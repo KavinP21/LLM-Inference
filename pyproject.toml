@@ -20,17 +20,14 @@ vlm = ["mlx-vlm==0.7.6; platform_system == 'Darwin' and platform_machine == 'arm
 
 [project.scripts]
 instinct-export = "instinct.export:main"
-instinct-quantize = "instinct.quantization:main"
 instinct-bench = "instinct.benchmark:main"
 instinct-bench-reference = "instinct.benchmark_reference:main"
 instinct-correctness = "instinct.correctness:main"
 instinct-validate-long-context = "instinct.long_context:main"
 instinct-profile-attention = "instinct.profile_attention:main"
-instinct-validate-int8 = "instinct.validate_int8:main"
 instinct-agents = "instinct.agents.cli:main"
 instinct-server = "instinct.harness.cli:main"
 instinct-worker = "instinct.agents.worker:main"
-instinct-import-mlx = "instinct.import_mlx:main"
 instinct-prepare-models = "instinct.prepare_models:main"
 
 [tool.scikit-build]

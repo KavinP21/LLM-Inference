@@ -59,7 +59,7 @@ jobs:
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
       - run: python -m pip install numpy pytest
-      - run: python -m pytest -q tests/test_quantization.py tests/test_model_file_reader.py
+      - run: python -m pytest -q tests/test_model_file_reader.py
         env:
           PYTHONPATH: python
           INSTINCT_INSPECT_MODEL: build/instinct-inspect-model

@@ -172,8 +172,3 @@ MTL_CAPTURE_ENABLED=1 instinct-bench \
 Open the ignored bundle in Xcode. Do not report the capture-instrumented latency as normal runtime
 performance.
 
-## Experimental INT8
-
-`instinct-quantize FP16.engine INT8.engine` converts an artifact; load the result with
-`int8_mode="metal"`, `"reconstruct"` or `"dequantize"`. It doesn't match FP16 output
-closely enough to replace it, so read [quantization.md](quantization.md) first.
