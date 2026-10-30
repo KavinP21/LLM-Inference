@@ -1,4 +1,4 @@
-"""Loopback-only Studio server, with exact-origin and cookie authentication."""
+"""Loopback-only app server, with exact-origin and cookie authentication."""
 
 from __future__ import annotations
 
@@ -20,21 +20,21 @@ WEB_ROOT = Path(__file__).with_name("web")
 MAX_BODY = 128_000
 
 
-class StudioHTTPServer(ThreadingHTTPServer):
+class AppServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address, service, loop, *, token: str | None = None):
         if address[0] != "127.0.0.1":
-            raise ValueError("Studio only binds to 127.0.0.1")
+            raise ValueError("the server only binds to 127.0.0.1")
         self.service, self.loop = service, loop
         self.bootstrap_token = token or secrets.token_urlsafe(32)
         self.session_token = secrets.token_urlsafe(32)
-        super().__init__(address, StudioHandler)
+        super().__init__(address, AppHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
 
 
-class StudioHandler(BaseHTTPRequestHandler):
-    server: StudioHTTPServer
+class AppHandler(BaseHTTPRequestHandler):
+    server: AppServer
 
     def log_message(self, *args):
         # Browser credentials and operator briefs never enter access logs.
@@ -87,7 +87,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.headers.get("Content-Type", "").split(";")[0].strip()
             != "application/json"
         ):
-            raise ValueError("Studio mutations require application/json")
+            raise ValueError("requests must be application/json")
         if self.headers.get("Transfer-Encoding"):
             raise ValueError("chunked requests are not supported")
         size = int(self.headers.get("Content-Length", "0"))
@@ -134,9 +134,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not self._authenticated():
                 return self._json(
                     401,
-                    {
-                        "error": "Open Studio from its launcher to authorize this browser"
-                    },
+                    {"error": "Open this window from the Instinct app"},
                 )
             if path == "/api/events":
                 return self._events()
@@ -150,8 +148,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._dispatch("GET", path, {})
         files = {
             "/": ("index.html", "text/html; charset=utf-8"),
-            "/studio.css": ("studio.css", "text/css; charset=utf-8"),
-            "/studio.js": ("studio.js", "text/javascript; charset=utf-8"),
+            "/app.css": ("app.css", "text/css; charset=utf-8"),
+            "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/vendor/xterm.js": ("vendor/xterm.js", "text/javascript; charset=utf-8"),
             "/vendor/addon-fit.js": (
                 "vendor/addon-fit.js",
@@ -165,7 +163,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         try:
             self._send(200, (WEB_ROOT / filename).read_bytes(), mime)
         except OSError:
-            self._json(503, {"error": "Studio UI assets are unavailable"})
+            self._json(503, {"error": "the app's UI files are missing"})
 
     def do_POST(self):
         if not self._origin_ok():
@@ -175,7 +173,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         # stays on the small-body limit and uses its existing bootstrap check.
         if path != "/api/auth" and not self._authenticated():
             self.close_connection = True
-            return self._json(401, {"error": "browser is not authorized"})
+            return self._json(401, {"error": "not signed in"})
         parts = path.strip("/").split("/")
         image_send = path == "/api/chats" or (
             len(parts) == 4 and parts[:2] == ["api", "chats"] and parts[3] == "message"
@@ -192,7 +190,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 or not token.isascii()
                 or not hmac.compare_digest(token, self.server.bootstrap_token)
             ):
-                return self._json(401, {"error": "invalid browser bootstrap"})
+                return self._json(401, {"error": "invalid session token"})
             return self._json(
                 200,
                 {"authenticated": True},

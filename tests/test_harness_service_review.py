@@ -6,12 +6,12 @@ import time
 
 import pytest
 from instinct.harness.extensions import MCPServerConfig
-from instinct.harness.service import StudioService
+from instinct.harness.service import AppService
 
 
 def service_for(tmp_path, **kwargs):
     (tmp_path / "README.md").write_text("# Fixture\n")
-    service = StudioService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
+    service = AppService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
     service.backend.delay = 0.01
     return service
 
@@ -171,7 +171,7 @@ def test_state_directory_cannot_contain_workspace_or_change_parent_permissions(
     workspace.mkdir()
     tmp_path.chmod(0o755)
     with pytest.raises(ValueError, match="cannot contain"):
-        StudioService(workspace, tmp_path, demo=True)
+        AppService(workspace, tmp_path, demo=True)
     assert tmp_path.stat().st_mode & 0o777 == 0o755
 
 
@@ -224,7 +224,7 @@ def test_partial_backend_load_disposes_extensions_and_retry_uses_fresh_clients(
             Client(MCPServerConfig(name, ("unused",), tmp_path))
             for name in ("first", "second")
         )
-        service = StudioService(
+        service = AppService(
             tmp_path,
             tmp_path / ".instinct",
             config={"workers": [{"model": "fixture"}]},
@@ -286,7 +286,7 @@ def test_shutdown_during_extension_start_disposes_partial_pool(tmp_path, monkeyp
     monkeypatch.setattr(module, "worker_identities", identities)
 
     async def scenario():
-        service = StudioService(
+        service = AppService(
             tmp_path,
             tmp_path / ".instinct",
             config={"workers": [{"model": "fixture"}]},
@@ -321,7 +321,7 @@ def test_teardown_failure_still_closes_other_resources_and_journal(tmp_path):
     async def scenario():
         clients = (Client("first", fail=True), Client("second"))
         backend = Backend()
-        service = StudioService(
+        service = AppService(
             tmp_path, tmp_path / ".instinct", backend=backend, mcp_clients=clients
         )
         with pytest.raises(RuntimeError, match="cleanup failed"):

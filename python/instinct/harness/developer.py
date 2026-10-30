@@ -21,7 +21,7 @@ from ..agents.store import TERMINAL
 from ..agents.tools import _IGNORED, _PRIVATE, ToolValidationError
 
 if TYPE_CHECKING:
-    from .service import StudioService
+    from .service import AppService
 
 MAX_FILE_BYTES = 128_000
 MAX_RECORDS = 500
@@ -79,19 +79,19 @@ def _identity(agent: str, tool: str, args: dict) -> tuple[str, str, str]:
 
 
 class DeveloperWorkspace:
-    """Compose with StudioService; dispatch on the service's SQLite owner loop.
+    """Compose with AppService; dispatch on the service's SQLite owner loop.
 
     ``handles(method, path)`` lets the service route these endpoints before its
     conversation catch-all. File enumeration and reading run off the loop, but
     journal access and operator messages stay on that loop.
     """
 
-    def __init__(self, service: StudioService):
+    def __init__(self, service: AppService):
         # Local import keeps composition safe when service imports this helper.
-        from .service import StudioWorkspaceTools
+        from .service import AppWorkspaceTools
 
         self.service = service
-        self._tools_type = StudioWorkspaceTools
+        self._tools_type = AppWorkspaceTools
         self.tools = self._tools_type(
             service.workspace,
             service.state_dir / "artifacts",
@@ -310,7 +310,6 @@ class DeveloperWorkspace:
 
     async def chat(self, chat_id: str) -> dict:
         controller, store = self.service.conversations, self.service.store
-        controller._import_legacy()
         controller._chat(chat_id)
         turns = store.connection.execute(
             "SELECT run_id FROM studio_chat_turns WHERE chat_id=? AND run_id IS NOT NULL ORDER BY created DESC,rowid DESC LIMIT ?",

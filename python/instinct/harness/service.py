@@ -1,4 +1,4 @@
-"""Single-loop Studio lifecycle. HTTP threads must dispatch onto its owner loop."""
+"""The app's state and lifecycle. HTTP threads must dispatch onto its event loop."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ SETTINGS = {"command_network": False, "web_access": True}
 SETTLED_RUNS = TERMINAL | {"completed_with_failures"}
 
 
-class StudioWorkspaceTools(WorkspaceTools):
+class AppWorkspaceTools(WorkspaceTools):
     def __init__(self, *args, state_dir: Path, **kwargs):
         super().__init__(*args, **kwargs)
         self.state_dir = state_dir
@@ -57,7 +57,7 @@ class StudioWorkspaceTools(WorkspaceTools):
             path == self.state_dir or path.is_relative_to(self.state_dir)
         ):
             raise ToolValidationError(
-                "Studio state is private; use journal_read for run evidence"
+                "the app's state is private; use journal_read for run evidence"
             )
         return path
 
@@ -102,7 +102,7 @@ def worker_state(health: dict) -> str:
     return "busy" if health.get("active") else "idle"
 
 
-class StudioService:
+class AppService:
     """Each run gets isolated file receipts, artifacts, policy and completion checks."""
 
     def __init__(
@@ -125,8 +125,15 @@ class StudioService:
             raise ValueError("state directory cannot contain the workspace root")
         self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.state_dir, 0o700)
-        self.store = AgentStore(self.state_dir / "studio.sqlite")
-        os.chmod(self.state_dir / "studio.sqlite", 0o600)
+        database = self.state_dir / "instinct.sqlite"
+        if not database.exists():
+            # The file's name before the rename; WAL files move with it.
+            for suffix in ("", "-wal", "-shm"):
+                old = self.state_dir / f"studio.sqlite{suffix}"
+                if old.exists():
+                    old.rename(f"{database}{suffix}")
+        self.store = AgentStore(database)
+        os.chmod(database, 0o600)
         self.store.connection.execute(
             "CREATE TABLE IF NOT EXISTS studio_manifests (run_id TEXT PRIMARY KEY, manifest TEXT NOT NULL)"
         )
@@ -165,15 +172,13 @@ class StudioService:
 
     async def start_backend(self) -> dict:
         if self.closing:
-            raise ValueError("Studio is shutting down")
+            raise ValueError("Instinct is shutting down")
         if self.backend_status == "loading":
             return {"status": "loading"}
         if self.backend_status == "ready":
             return {"status": "ready"}
         if not self.config.get("workers"):
-            raise ValueError(
-                "Select an operator worker configuration when starting Studio"
-            )
+            raise ValueError("no model workers are configured")
         if self._restart_mcp:
             self.mcp_clients = tuple(
                 MCPStdioClient(config) for config in self._mcp_configs
@@ -331,7 +336,7 @@ class StudioService:
             "SELECT manifest FROM studio_manifests WHERE run_id=?", (run_id,)
         ).fetchone()
         if row is None:
-            raise ValueError("run was not created by Studio")
+            raise ValueError("run was not created by this app")
         return json.loads(row[0])
 
     def _runtime(
@@ -339,7 +344,7 @@ class StudioService:
     ) -> AgentRuntime:
         review = manifest["policy"] in {"review", "auto"}
         network = self.settings["command_network"]
-        tools = StudioWorkspaceTools(
+        tools = AppWorkspaceTools(
             self.workspace,
             self.state_dir / "artifacts" / run_id,
             allow_write=review,
@@ -776,7 +781,7 @@ class StudioService:
         }
 
     async def dispatch(self, method: str, path: str, payload: dict) -> dict:
-        # Import lazily: DeveloperWorkspace composes Studio's confined tools.
+        # Import lazily: DeveloperWorkspace composes the app's confined tools.
         from .developer import DeveloperWorkspace
 
         if DeveloperWorkspace.handles(method, path):
@@ -795,7 +800,7 @@ class StudioService:
             run_id = parts[2]
             self._manifest(run_id)
             name = _text(unquote("/".join(parts[4:])), "artifact path", 1024)
-            tools = StudioWorkspaceTools(
+            tools = AppWorkspaceTools(
                 self.workspace,
                 self.state_dir / "artifacts" / run_id,
                 state_dir=self.state_dir,
@@ -845,7 +850,7 @@ class StudioService:
                     )
         if method == "POST" and len(parts) == 3 and parts[:2] == ["api", "approvals"]:
             return await self.decide(parts[2], payload)
-        raise ValueError("unknown Studio API route")
+        raise ValueError("unknown API route")
 
     async def close(self):
         if self._closed:
@@ -875,4 +880,4 @@ class StudioService:
             outcome for outcome in outcomes if isinstance(outcome, BaseException)
         ]
         if failures:
-            raise RuntimeError("Studio resource cleanup failed") from failures[0]
+            raise RuntimeError("shutdown cleanup failed") from failures[0]

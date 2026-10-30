@@ -13,13 +13,12 @@ from instinct.harness import cli
 def _args(workspace, **updates):
     values = {
         "workspace": str(workspace),
-        "state_dir": ".instinct/studio",
+        "state_dir": ".instinct",
         "skills_dir": [],
         "mcp_config": None,
         "config": None,
         "demo": True,
         "port": 0,
-        "no_open": True,
         "app": False,
     }
     values.update(updates)
@@ -197,16 +196,9 @@ def lifecycle_fakes(monkeypatch):
         def join(self, timeout):
             events.append("thread-joined")
 
-    def open_browser(url):
-        assert url.endswith("/#token=TEST-BOOTSTRAP-NOT-PRINTED")
-        events.append("browser-opened")
-        if state.failure == "browser":
-            raise RuntimeError("browser unavailable")
-
-    monkeypatch.setattr(cli, "StudioService", Service)
-    monkeypatch.setattr(cli, "StudioHTTPServer", Server)
+    monkeypatch.setattr(cli, "AppService", Service)
+    monkeypatch.setattr(cli, "AppServer", Server)
     monkeypatch.setattr(cli.threading, "Thread", Thread)
-    monkeypatch.setattr(cli.webbrowser, "open", open_browser)
 
     # asyncio.to_thread uses threading too; keep these deterministic tests inline.
     async def to_thread(function, *args, **kwargs):
@@ -216,21 +208,19 @@ def lifecycle_fakes(monkeypatch):
     return state
 
 
-@pytest.mark.parametrize("failure", ["bind", "thread", "browser"])
+@pytest.mark.parametrize("failure", ["bind", "thread"])
 def test_service_is_closed_after_any_launcher_startup_failure(
     tmp_path, lifecycle_fakes, failure
 ):
     state = lifecycle_fakes
     state.failure = failure
     with pytest.raises((OSError, RuntimeError)):
-        asyncio.run(cli.serve(_args(tmp_path, no_open=False)))
+        asyncio.run(cli.serve(_args(tmp_path)))
     assert state.events[-1] == "service-closed"
     if failure != "bind":
         assert "server-closed" in state.events
     if failure == "thread":
         assert "server-shutdown" not in state.events
-    if failure == "browser":
-        assert "server-shutdown" in state.events
 
 
 def test_launcher_cancellation_shuts_down_and_joins_server_without_printing_token(
@@ -250,7 +240,7 @@ def test_launcher_cancellation_shuts_down_and_joins_server_without_printing_toke
         "thread-joined",
         "service-closed",
     ]
-    assert lifecycle_fakes.state_dir == tmp_path.resolve() / ".instinct/studio"
+    assert lifecycle_fakes.state_dir == tmp_path.resolve() / ".instinct"
     assert "TEST-BOOTSTRAP-NOT-PRINTED" not in capsys.readouterr().out
 
 

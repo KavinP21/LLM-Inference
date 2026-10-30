@@ -7,12 +7,12 @@ import pytest
 from instinct.agents.context import tool_actor
 from instinct.agents.tools import ToolValidationError
 from instinct.harness.extensions import SkillRegistry
-from instinct.harness.service import StudioService
+from instinct.harness.service import AppService
 
 
 def make_service(tmp_path, **kwargs):
     (tmp_path / "README.md").write_text("# Fixture\nObserved evidence.\n")
-    service = StudioService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
+    service = AppService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
     service.backend.delay = 0.01
     return service
 
@@ -52,7 +52,7 @@ def test_durable_subagents_export_and_followup(tmp_path):
                 await service.resume(first)
         finally:
             await service.close()
-        restarted = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
+        restarted = AppService(tmp_path, tmp_path / ".instinct", demo=True)
         try:
             state = await restarted.state()
             assert len(state["runs"]) == 2
@@ -100,7 +100,7 @@ def test_review_requires_exact_approval_and_artifact_executes_once(tmp_path):
             assert downloaded["content"] == artifact.read_text()
             with pytest.raises(ToolValidationError, match="inside"):
                 await service.dispatch(
-                    "GET", f"/api/runs/{run_id}/artifacts/%2e%2e%2fstudio.sqlite", {}
+                    "GET", f"/api/runs/{run_id}/artifacts/%2e%2e%2finstinct.sqlite", {}
                 )
             (artifact.parent / "escape.md").symlink_to(tmp_path / "README.md")
             with pytest.raises(ToolValidationError, match="symlink"):
@@ -144,7 +144,7 @@ def test_recovery_preserves_manifest_and_rejects_changed_backend(tmp_path):
         run_id = (await service.create_run({"task": "Inspect evidence"}))["run_id"]
         await asyncio.sleep(0.02)
         await service.close()
-        service = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
+        service = AppService(tmp_path, tmp_path / ".instinct", demo=True)
         service.backend.delay = 0.01
         try:
             assert (await service.detail(run_id))["run"]["status"] == "interrupted"
@@ -175,7 +175,7 @@ def test_private_state_and_read_only_mutations_are_unavailable(tmp_path):
             try:
                 with pytest.raises(ToolValidationError, match="private"):
                     await runtime.tools["read_file"](
-                        {"path": ".instinct/studio.sqlite"}
+                        {"path": ".instinct/instinct.sqlite"}
                     )
                 files = json.loads(await runtime.tools["list_files"]({"path": "."}))[
                     "files"

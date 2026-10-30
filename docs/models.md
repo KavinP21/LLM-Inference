@@ -1,6 +1,6 @@
 # Models
 
-Studio and the agent runtime use two models:
+Instinct uses two models:
 
 | | Gemma 4 26B A4B | Qwen3.5-4B |
 | --- | --- | --- |
@@ -69,8 +69,8 @@ quantization error stays).
 ## Limits
 
 - One request runs at a time per worker process. Concurrent agents use more
-  replicas: Studio runs two Qwen sub-agent workers, which start on first use and
+  replicas: the app runs two Qwen sub-agent workers, which start on first use and
   stop after ten idle minutes.
-- Gemma 4's audio input and its 262K context haven't been tried here. The Studio
+- Gemma 4's audio input and its 262K context haven't been tried here. The app's
   configuration caps the driver at a 60K context and sub-agents at 32K.
 - Nothing here runs on CUDA.

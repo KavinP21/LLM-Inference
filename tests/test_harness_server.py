@@ -6,16 +6,16 @@ import json
 import threading
 
 import pytest
-from instinct.harness.server import StudioHTTPServer
-from instinct.harness.service import StudioService
+from instinct.harness.server import AppServer
+from instinct.harness.service import AppService
 
 
 def test_loopback_http_security_and_run_roundtrip(tmp_path):
     async def check():
         (tmp_path / "README.md").write_text("# Fixture\n")
-        service = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
+        service = AppService(tmp_path, tmp_path / ".instinct", demo=True)
         service.backend.delay = 0.01
-        server = StudioHTTPServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
+        server = AppServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
 
@@ -139,4 +139,4 @@ def test_loopback_http_security_and_run_roundtrip(tmp_path):
 
 def test_public_binding_rejected():
     with pytest.raises(ValueError, match="127.0.0.1"):
-        StudioHTTPServer(("0.0.0.0", 0), None, None)
+        AppServer(("0.0.0.0", 0), None, None)

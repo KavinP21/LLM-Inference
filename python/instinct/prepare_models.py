@@ -1,4 +1,4 @@
-"""Download the MLX checkpoints the Studio and agent configs expect.
+"""Download the MLX checkpoints the app and agent configs expect.
 
 python -m instinct.prepare_models              # Gemma 4 driver + Qwen3.5 sub-agents
 python -m instinct.prepare_models qwen3.5-4b   # just one
