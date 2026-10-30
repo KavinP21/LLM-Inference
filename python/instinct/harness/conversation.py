@@ -27,7 +27,7 @@ from .checkpoints import CheckpointError
 from .policy import POLICIES
 
 if TYPE_CHECKING:
-    from .service import StudioService
+    from .service import AppService
 
 # Per-chat choices the composer can change between messages.
 SETTINGS = {"model", "effort"}
@@ -79,9 +79,7 @@ def _image_input(payload):
     media = validate_media(payload.get("media", ()))
     for item in media:
         if item["type"] != "image" or item["mime"] not in IMAGE_MIMES:
-            raise ValueError(
-                "Studio attachments support PNG, JPEG, WebP, and BMP images"
-            )
+            raise ValueError("attachments must be PNG, JPEG, WebP or BMP images")
         data = base64.b64decode(item["data"])
         signatures = {
             "image/png": len(data) >= 24
@@ -194,7 +192,7 @@ class ConversationRuntime(AgentRuntime):
         # current task if projection dropped it. Keep the final action menu.
         marker = ChatMessage(
             "user",
-            "[Earlier conversation context was omitted to retain the complete current request. The saved Studio transcript still contains those messages.]",
+            "[Earlier conversation context was omitted to retain the complete current request. The saved chat still contains those messages.]",
         )
         tail = []
         # DSL agents end with the legal menu, which is re-added below.
@@ -232,7 +230,7 @@ class ConversationRuntime(AgentRuntime):
 class ConversationController:
     def __init__(
         self,
-        service: StudioService,
+        service: AppService,
         *,
         startup_timeout_seconds: float = 180,
         history_bytes: int = 48_000,
@@ -286,8 +284,6 @@ class ConversationController:
             "WHERE run_id IS NULL AND status IN ('loading','queued')",
             ("Interrupted while starting the model. Send a message to continue.",),
         )
-        self._manifests_seen = -1
-        self._import_legacy()
 
     @property
     def db(self):
@@ -385,59 +381,6 @@ class ConversationController:
                 (request_id, chat_id, turn_id, kind, fingerprint),
             )
 
-    def _import_legacy(self):
-        """Group existing run lineages without changing their original journals."""
-        # Every run has a manifest, so this only rescans when a run was added.
-        count = self.db.execute("SELECT COUNT(*) FROM studio_manifests").fetchone()[0]
-        if count == self._manifests_seen:
-            return
-        self._manifests_seen = count
-        rows = self.db.execute(
-            "SELECT m.run_id,m.manifest,r.created,r.config FROM studio_manifests m "
-            "JOIN runs r ON m.run_id=r.run_id ORDER BY r.created"
-        ).fetchall()
-        known = {
-            row["run_id"]: row["chat_id"]
-            for row in self.db.execute(
-                "SELECT run_id,chat_id FROM studio_chat_turns WHERE run_id IS NOT NULL"
-            )
-        }
-        for row in rows:
-            run_id = row["run_id"]
-            if run_id in known:
-                continue
-            manifest = json.loads(row["manifest"])
-            chat_id = known.get(manifest.get("parent_id"), "legacy-" + run_id)
-            with self.service.store.transaction():
-                self.db.execute(
-                    "INSERT OR IGNORE INTO studio_chats VALUES(?,?,?,?,?,?,1)",
-                    (
-                        chat_id,
-                        manifest["brief"][:80],
-                        manifest["policy"],
-                        row["config"],
-                        row["created"],
-                        row["created"],
-                    ),
-                )
-                self.db.execute(
-                    "INSERT INTO studio_chat_turns "
-                    "(turn_id,chat_id,run_id,user,status,created) VALUES(?,?,?,?,?,?)",
-                    (
-                        run_id,
-                        chat_id,
-                        run_id,
-                        manifest["brief"],
-                        "running",
-                        row["created"],
-                    ),
-                )
-                self.db.execute(
-                    "UPDATE studio_chats SET updated=MAX(updated,?) WHERE chat_id=?",
-                    (row["created"], chat_id),
-                )
-            known[run_id] = chat_id
-
     async def create(self, payload):
         if not isinstance(payload, dict) or payload.keys() - {
             "message",
@@ -480,9 +423,10 @@ class ConversationController:
 
     def _can_start(self):
         if self.service.closing:
-            raise ValueError("Studio is shutting down")
+            raise ValueError("Instinct is shutting down")
         active = sum(not job.done() for job in self.jobs.values())
-        legacy_active = 0
+        # Runs started through the run API have no chat job but still count.
+        unowned = 0
         for run_id, job in self.service.jobs.items():
             if job.done():
                 continue
@@ -491,8 +435,8 @@ class ConversationController:
             ).fetchone()
             controller = self.jobs.get(turn["turn_id"]) if turn else None
             if controller is None or controller.done():
-                legacy_active += 1
-        if active + legacy_active >= 4:
+                unowned += 1
+        if active + unowned >= 4:
             raise ValueError("Four conversations are active; wait or stop one")
 
     def _insert_turn(
@@ -534,7 +478,7 @@ class ConversationController:
         }:
             raise ValueError("unsupported message fields")
         media, names, message = _image_input(payload)
-        chat = self._chat(chat_id)
+        self._chat(chat_id)
         request_id, fingerprint, prior = self._request(
             payload, kind="message", chat_id=chat_id
         )
@@ -555,13 +499,6 @@ class ConversationController:
             )
         turn_id = uuid.uuid4().hex
         with self.service.store.transaction():
-            if chat["legacy"]:
-                # Adopt current defaults for the first new conversational turn;
-                # old failed budgets and journals remain unchanged.
-                self.db.execute(
-                    "UPDATE studio_chats SET legacy=0,configuration=? WHERE chat_id=?",
-                    (json.dumps(asdict(self.service._configuration({}))), chat_id),
-                )
             if SETTINGS & payload.keys():
                 current = json.loads(self._chat(chat_id)["configuration"])
                 self.db.execute(
@@ -582,7 +519,7 @@ class ConversationController:
             # A queued turn cannot disappear when an in-flight generation
             # finishes. It has its own durable prompt and always runs next.
             if active["run_id"] and active["turn_id"] not in self.jobs:
-                self._watch_legacy(chat_id, active["run_id"])
+                self._watch_run(chat_id, active["run_id"])
         else:
             self._launch(chat_id, turn_id)
         return self._response(chat_id, turn_id, queued=bool(active))
@@ -977,7 +914,7 @@ class ConversationController:
                 0,
                 ChatMessage(
                     "user",
-                    "[Conversation history is bounded: older turns, images, or long messages were omitted or excerpted. The full transcript remains saved in Studio; do not assume omitted facts.]",
+                    "[Conversation history is bounded: older turns, images, or long messages were omitted or excerpted. The full transcript remains saved in the chat; do not assume omitted facts.]",
                 ),
             )
         return history, truncated
@@ -1073,7 +1010,7 @@ class ConversationController:
             )
             self._launch(chat_id, turn["turn_id"])
 
-    def _watch_legacy(self, chat_id, run_id):
+    def _watch_run(self, chat_id, run_id):
         if chat_id in self.watchers and not self.watchers[chat_id].done():
             return
 
@@ -1109,7 +1046,6 @@ class ConversationController:
         return {"chat_id": chat_id, "cancel_requested": True}
 
     async def overview(self):
-        self._import_legacy()
         state = self.service.summary()
         chats = []
         for row in self.db.execute(
@@ -1128,7 +1064,6 @@ class ConversationController:
         }
 
     async def detail(self, chat_id):
-        self._import_legacy()
         chat = self._chat(chat_id)
         state = self.service.summary()
         turns, transcript = [], []

@@ -18,8 +18,8 @@ from instinct.agents.media import MAX_MEDIA_REQUEST_BYTES
 from instinct.agents.protocol import Generation
 from instinct.agents.runtime import RuntimeConfig
 from instinct.agents.store import AgentStore
-from instinct.harness.server import MAX_BODY, StudioHandler, StudioHTTPServer
-from instinct.harness.service import StudioService
+from instinct.harness.server import MAX_BODY, AppHandler, AppServer
+from instinct.harness.service import AppService
 
 
 def png_bytes(width=2, height=2, *, noisy=False):
@@ -83,7 +83,7 @@ class ImageBackend:
 
 
 def make_service(tmp_path, *, backend=None):
-    return StudioService(
+    return AppService(
         tmp_path, tmp_path / ".instinct", demo=True, backend=backend or ImageBackend()
     )
 
@@ -121,7 +121,7 @@ def test_image_only_send_persists_metadata_and_private_preview_before_reply(tmp_
                 await service.dispatch("GET", turn["media"][0]["url"], {}) == attached
             )
             assert (
-                tmp_path / ".instinct" / "studio.sqlite"
+                tmp_path / ".instinct" / "instinct.sqlite"
             ).stat().st_mode & 0o777 == 0o600
             detail = await settle(service, sent["chat_id"])
             assert detail["turns"][0]["status"] == "completed", detail["turns"][0][
@@ -268,7 +268,7 @@ def test_unsupported_model_fails_visibly_before_run_launch_but_preserves_image(
     tmp_path,
 ):
     async def check():
-        service = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
+        service = AppService(tmp_path, tmp_path / ".instinct", demo=True)
         try:
             attached = image()
             chat = (
@@ -447,7 +447,7 @@ def test_individual_and_combined_media_byte_limits_are_checked_before_persistenc
 
 
 def test_http_authorizes_before_reading_upload_body_and_only_image_send_routes_get_large_limit():
-    handler = object.__new__(StudioHandler)
+    handler = object.__new__(AppHandler)
     calls = []
     handler.path = "/api/chats"
     handler._origin_ok = lambda: True
@@ -536,7 +536,7 @@ def test_children_inherit_newest_distinct_parent_images_with_count_and_byte_boun
 def test_http_large_image_send_authenticated_preview_and_body_bounds(tmp_path):
     async def check():
         service = make_service(tmp_path)
-        server = StudioHTTPServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
+        server = AppServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
 

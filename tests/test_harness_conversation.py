@@ -7,7 +7,7 @@ import pytest
 from instinct.agents.protocol import Generation
 from instinct.harness import service as service_module
 from instinct.harness.conversation import ConversationRuntime
-from instinct.harness.service import StudioService
+from instinct.harness.service import AppService
 
 
 class ChatBackend:
@@ -38,7 +38,7 @@ class ChatBackend:
 
 
 def make_service(tmp_path, **kwargs):
-    return StudioService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
+    return AppService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
 
 
 async def settle(service, chat_id):
@@ -69,7 +69,7 @@ def startup_fixture(tmp_path, monkeypatch, *, failure=False, gate=None):
 
     monkeypatch.setattr(service_module, "create_pool", create_pool)
     monkeypatch.setattr(service_module, "worker_identities", identities)
-    service = StudioService(
+    service = AppService(
         tmp_path,
         tmp_path / ".instinct",
         config={"workers": [{"model": "test-model"}]},
@@ -386,38 +386,6 @@ def test_reload_preserves_transcript_and_marks_pending_sends_interrupted(
     asyncio.run(check())
 
 
-def test_old_mission_lineage_is_grouped_and_can_continue_in_chat(tmp_path):
-    async def check():
-        service = make_service(tmp_path, backend=ChatBackend())
-        try:
-            first = (
-                await service.create_run({"task": "Old first", "policy": "read_only"})
-            )["run_id"]
-            await service.jobs[first]
-            second = (
-                await service.create_run(
-                    {"task": "Old followup", "policy": "read_only"}, parent_id=first
-                )
-            )["run_id"]
-            await service.jobs[second]
-            overview = await service.conversations.overview()
-            assert len(overview["chats"]) == 1
-            chat = overview["chats"][0]["chat_id"]
-            assert [
-                t["run_id"] for t in (await service.conversations.detail(chat))["turns"]
-            ] == [first, second]
-            await service.conversations.message(chat, {"message": "Continue normally"})
-            detail = await settle(service, chat)
-            assert (
-                len(detail["turns"]) == 3
-                and detail["turns"][-1]["output"] == "Answer 3"
-            )
-        finally:
-            await service.close()
-
-    asyncio.run(check())
-
-
 def test_history_bounds_are_explicit_and_latest_request_survives_projection(tmp_path):
     async def check():
         backend = ChatBackend()
@@ -475,34 +443,6 @@ def test_long_latest_request_is_preserved_when_runtime_projects_inherited_histor
                 for event in turn["events"]
             )
             assert service.store.messages(turn["run_id"], "root")[-2].content == latest
-        finally:
-            await service.close()
-
-    asyncio.run(check())
-
-
-def test_legacy_followup_adopts_current_defaults_without_rewriting_historical_budget(
-    tmp_path,
-):
-    async def check():
-        service = make_service(tmp_path, backend=ChatBackend())
-        try:
-            run_id = (
-                await service.create_run(
-                    {"task": "Old request", "max_total_tokens": 32000}
-                )
-            )["run_id"]
-            await service.jobs[run_id]
-            chat_id = (await service.conversations.overview())["chats"][0]["chat_id"]
-            await service.conversations.message(chat_id, {"message": "New request"})
-            detail = await settle(service, chat_id)
-            assert service.store.run(run_id)["config"]["max_total_tokens"] == 32000
-            assert (
-                service.store.run(detail["turns"][-1]["run_id"])["config"][
-                    "max_total_tokens"
-                ]
-                == 128000
-            )
         finally:
             await service.close()
 

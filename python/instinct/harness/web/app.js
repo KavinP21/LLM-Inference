@@ -410,7 +410,7 @@
     const node = document.createElement("article");
     node.className = "turn";
     node.dataset.turn = key;
-    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 7.6 16.4 11.3 22.5 12 16.4 12.7 12.7 16.4 12 22.5 11.3 16.4 7.6 12.7 1.5 12 7.6 11.3 11.3 7.6 12 1.5Z"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
+    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg viewBox="0 0 30 49" aria-hidden="true"><use href="#instinct-mark"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
     state.turns.set(key, node);
     return node;
   }
@@ -680,22 +680,13 @@
   function toggleSidebar(open = !state.sidebar) {
     if (open && state.dev.open && matchMedia("(max-width:1100px)").matches) toggleDeveloper(false);
     state.sidebar = open;
+    try { localStorage.setItem("instinct-sidebar", open ? "open" : "closed"); } catch {}
     $("app").classList.toggle("sidebar-open", open);
     $("sidebar").inert = !open;
     $("toggle-sidebar").setAttribute("aria-expanded", String(open));
     $("toggle-sidebar").setAttribute("aria-label", open ? "Close chats" : "Open chats");
-    const mobile = matchMedia("(max-width:700px)").matches;
-    $("sidebar-backdrop").hidden = !open || !mobile;
     updateSurfaceInert();
-    if (open && mobile) {
-      $("sidebar").setAttribute("role", "dialog");
-      $("sidebar").setAttribute("aria-modal", "true");
-      if (!$("sidebar").contains(document.activeElement)) $("new-chat").focus({ preventScroll: true });
-    } else {
-      $("sidebar").removeAttribute("role");
-      $("sidebar").removeAttribute("aria-modal");
-      if (!open && ($("sidebar").contains(document.activeElement) || document.activeElement === $("sidebar-backdrop"))) $("toggle-sidebar").focus({ preventScroll: true });
-    }
+    if (!open && $("sidebar").contains(document.activeElement)) $("toggle-sidebar").focus({ preventScroll: true });
   }
   async function selectChat(id) {
     if (state.sending) return;
@@ -714,7 +705,6 @@
     $("message").value = state.drafts.get(draftKey()) || "";
     state.sendError = "";
     document.title = "Instinct";
-    if (matchMedia("(max-width:700px)").matches) toggleSidebar(false);
     $("welcome").hidden = Boolean(id);
     $("view-loading").hidden = !state.loading;
     renderOverview(); renderComposer(); renderSettings();
@@ -1077,9 +1067,8 @@
   }
   function updateSurfaceInert() {
     const devModal = state.dev.open && matchMedia("(max-width:1100px)").matches;
-    const sidebarModal = state.sidebar && matchMedia("(max-width:700px)").matches;
-    $("main").inert = devModal || sidebarModal;
-    $("developer-pane").inert = !state.dev.open || sidebarModal;
+    $("main").inert = devModal;
+    $("developer-pane").inert = !state.dev.open;
     $("developer-backdrop").hidden = !devModal;
     if (devModal) { $("developer-pane").setAttribute("role", "dialog"); $("developer-pane").setAttribute("aria-modal", "true"); }
     else { $("developer-pane").removeAttribute("role"); $("developer-pane").removeAttribute("aria-modal"); }
@@ -1589,7 +1578,6 @@
   $("live-speed").addEventListener("click", () => toggleDeveloper(true, "system"));
   $("toggle-sidebar").addEventListener("click", () => toggleSidebar());
   $("close-sidebar").addEventListener("click", () => { toggleSidebar(false); $("toggle-sidebar").focus(); });
-  $("sidebar-backdrop").addEventListener("click", () => toggleSidebar(false));
   $("new-chat").addEventListener("click", () => selectChat(null));
   $("home").addEventListener("click", () => selectChat(null));
   $("open-settings").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
@@ -1760,6 +1748,9 @@
     try { Object.assign(state.newChat, JSON.parse(localStorage.getItem("instinct-new-chat") || "{}")); } catch {}
     try { state.models = (await api("/api/models")).models || []; } catch {}
     loadSettings();
+    let sidebar = null;
+    try { sidebar = localStorage.getItem("instinct-sidebar"); } catch {}
+    if (sidebar ? sidebar === "open" : innerWidth >= 1100) toggleSidebar(true);
     await refresh();
     connectStream();
   }
@@ -1831,7 +1822,8 @@
     if (!term.xterm) {
       term.xterm = new window.Terminal({
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000,
-        theme: { background: "#0f1619", foreground: "#e8eeed", cursor: "#a2d5c9", selectionBackground: "#2f4a4a" },
+        // The terminal stays dark in both themes.
+        theme: { background: getComputedStyle(document.documentElement).getPropertyValue("--terminal-bg").trim(), foreground: "#ecebf4", cursor: "#ff9cc1", selectionBackground: "rgba(185, 166, 255, 0.3)" },
       });
       term.fit = new window.FitAddon.FitAddon();
       term.xterm.loadAddon(term.fit);

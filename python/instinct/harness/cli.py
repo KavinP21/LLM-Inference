@@ -9,15 +9,13 @@ import os
 import signal
 import stat
 import threading
-import webbrowser
 from pathlib import Path
-from urllib.parse import quote
 
 from ..agents.cli import load_config
 from ..agents.protocol import _unique_object
 from .extensions import MCPServerConfig, MCPStdioClient, SkillRegistry
-from .server import StudioHTTPServer
-from .service import StudioService
+from .server import AppServer
+from .service import AppService
 
 
 def load_mcp_config(path: str | Path, workspace: Path) -> list[MCPServerConfig]:
@@ -111,7 +109,7 @@ async def serve(args):
         else []
     )
     config = load_config(args.config) if args.config else {}
-    service = StudioService(
+    service = AppService(
         workspace,
         state_dir,
         config=config,
@@ -123,12 +121,12 @@ async def serve(args):
     thread = None
     thread_started = False
     try:
-        server = StudioHTTPServer(
+        server = AppServer(
             ("127.0.0.1", args.port),
             service,
             asyncio.get_running_loop(),
             # The Mac app makes the token itself, so it is never printed.
-            token=os.environ.get(APP_TOKEN) if args.app else None,
+            token=os.environ.get(APP_TOKEN),
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -154,12 +152,7 @@ async def serve(args):
 
             threading.Thread(target=watch_app, daemon=True).start()
         else:
-            print(
-                f"Instinct is serving at {server.origin}. Press Ctrl-C to stop.",
-                flush=True,
-            )
-        if not args.no_open and not args.app:
-            webbrowser.open(server.origin + "/#token=" + quote(server.bootstrap_token))
+            print(f"Instinct is serving at {server.origin}.", flush=True)
         await stopped.wait()
     finally:
         try:
@@ -178,7 +171,7 @@ async def serve(args):
 def main():
     parser = argparse.ArgumentParser(description="Instinct local agent workspace")
     parser.add_argument("--workspace", default=".")
-    parser.add_argument("--state-dir", default=".instinct/studio")
+    parser.add_argument("--state-dir", default=".instinct")
     parser.add_argument("--config", help="Existing Instinct agent worker configuration")
     parser.add_argument(
         "--demo",
@@ -186,11 +179,6 @@ def main():
         help="Deterministic harness exercise; no model inference",
     )
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument(
-        "--no-open",
-        action="store_true",
-        help="Do not open browser; existing authorized cookies remain valid only for this server process",
-    )
     # Used by the Mac app: token from $INSTINCT_APP_TOKEN, a JSON ready line
     # with the port, and exit when the app closes our stdin.
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
@@ -210,9 +198,7 @@ def main():
     if args.demo and args.mcp_config:
         parser.error("--demo cannot be combined with --mcp-config")
     if not args.demo and not args.config:
-        parser.error(
-            "Live Studio requires --config; use --demo to exercise the harness"
-        )
+        parser.error("--config is required unless --demo is given")
     if not 0 <= args.port <= 65535:
         parser.error("port must be between zero and 65535")
     if args.app and len(os.environ.get(APP_TOKEN, "")) < 32:

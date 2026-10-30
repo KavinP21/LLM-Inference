@@ -7,8 +7,8 @@ import re
 import threading
 
 import pytest
-from instinct.harness.server import StudioHTTPServer
-from instinct.harness.service import StudioService, worker_state
+from instinct.harness.server import AppServer
+from instinct.harness.service import AppService, worker_state
 from test_harness_conversation import ChatBackend, make_service, settle
 
 WORKERS = [
@@ -161,7 +161,7 @@ def test_worker_state(health, state):
 def test_event_stream_requires_auth_and_sends_the_live_snapshot(tmp_path):
     async def check():
         service = make_service(tmp_path, backend=ChatBackend())
-        server = StudioHTTPServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
+        server = AppServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
 
@@ -257,7 +257,7 @@ def test_rewind_drops_later_turns_and_can_restore_files(tmp_path):
     notes = workspace / "notes.txt"
 
     async def check():
-        service = StudioService(
+        service = AppService(
             workspace, tmp_path / "state", demo=True, backend=ChatBackend()
         )
         try:
