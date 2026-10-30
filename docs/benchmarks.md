@@ -36,7 +36,46 @@ PYTHONPATH=python python benchmarks/run_matrix.py \
 PYTHONPATH=python python benchmarks/summarize.py benchmark-results/paged
 ```
 
-## Long context
+## Several users at once
+
+`benchmarks/multi_user.py` runs three users on one engine with different
+sampling (greedy; temperature 0.7 with top-p 0.95; temperature 1.0 with top-k 64
+and min-p 0.05), prompts of 256, 768 and 1,280 tokens, and 256 tokens each. Once
+every user has 64 tokens, a fourth request arrives with an 8,192-token prompt.
+
+| | Gemma 4 26B A4B | Qwen3.5-4B |
+| --- | ---: | ---: |
+| Each user while only they decode | 38.6 tok/s (25.9 ms a token) | 53.2 tok/s (18.8 ms) |
+| Each user over the whole run | 15.0–17.0 tok/s | 19.3–22.0 tok/s |
+| Their token gap while the 8K prompt prefills | 540–580 ms | 437–487 ms |
+| The 8K prompt's first token | 8.8 s | 7.1 s |
+| Pages left in use afterwards | 0 | 0 |
+
+The decode rate holds up, but a long prompt arriving stalls everyone else: each
+step decodes one token per user and then prefills a 512-token chunk in a
+separate pass, which takes about 0.45 s on Gemma. A pass costs about 40 ms
+before its first token, so smaller chunks shorten the gaps but lengthen the
+prompt's wait (128 tokens: 200 ms gaps, 12.7 s to first token; 64 tokens:
+150 ms, 18.9 s). Raw JSON is in
+[benchmarks/results/multi-user-m3-max-2026-10-30](../benchmarks/results/multi-user-m3-max-2026-10-30/).
+
+```bash
+PYTHONPATH=python python benchmarks/multi_user.py models/gemma-4-26b-a4b-mlx
+```
+
+## 256K context
+
+Gemma 4 read a 261,840-token prompt (the repository's source, repeated) and
+answered a question about its very first line correctly. Prefill took 29
+minutes, 151 tok/s on average: the five global layers attend over the whole
+context with 512-wide heads, so each 4,096-token chunk costs more than the one
+before. Decoding right after that ran at 7.5 tok/s. With the same 261K-token
+cache filled directly and a GPU that hadn't just been working for half an hour,
+decode runs at 20.7 tok/s (58.6 at 1K, 48.2 at 32K, 30.9 at 128K). The paged
+decode kernel reads K/V at about 320 GB/s there, 6.7 ms per global layer. The
+K/V for the whole prompt took 7.05 GB, and every page was returned afterwards.
+
+## Long context on the older models
 
 A 32,766-token prompt plus two generated tokens (so one real decode step at
 ~32K) prefilled in 7.0 s on Qwen2.5-0.5B (2,048-token chunks; the previous engine

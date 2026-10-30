@@ -16,7 +16,7 @@ Tool = Callable[[dict[str, Any]], str | Awaitable[str]]
 # Context compaction (native agents): once the context passes COMPACT_AT of the
 # input budget, the model summarizes its work and messages older than about
 # COMPACT_TAIL of the budget (in bytes) are replaced by that summary.
-COMPACT_AT = 0.75
+COMPACT_AT = 0.9
 COMPACT_TAIL = 0.4
 COMPACT_SUMMARY_TOKENS = 2048
 COMPACT_SUMMARY_CHARS = 16_000

@@ -112,9 +112,21 @@ class ContextMixin:
         """
         schema = self._schema_input_bound(tool_specs)
         budget = config.max_context_tokens - config.max_output_tokens - schema
+        summary_tokens = min(COMPACT_SUMMARY_TOKENS, config.max_output_tokens)
+        # Compact at COMPACT_AT, or sooner if what's left couldn't take one
+        # more tool result plus the summary request: past that point there's
+        # no room to compact and projection would take over.
+        threshold = min(
+            budget * COMPACT_AT,
+            config.max_context_tokens
+            - schema
+            - summary_tokens
+            - len(COMPACT_REQUEST.encode())
+            - config.max_tool_result_chars,
+        )
         history = self._history(run_id, agent_id, config)
         view = self._compacted(run_id, agent_id, history)
-        if self._input_bound(run_id, agent_id, view) <= budget * COMPACT_AT:
+        if self._input_bound(run_id, agent_id, view) <= threshold:
             return
         floor = max(self._anchor_indices(run_id, agent_id, history)) + 1
         previous = self.store.last_event(run_id, agent_id, "context_compacted")
@@ -130,7 +142,6 @@ class ContextMixin:
                 break
             if history[index].role == "assistant":
                 keep_from = index
-        summary_tokens = min(COMPACT_SUMMARY_TOKENS, config.max_output_tokens)
         request = [*view, ChatMessage("user", COMPACT_REQUEST)]
         if (
             keep_from <= floor
