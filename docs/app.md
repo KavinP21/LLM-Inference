@@ -24,9 +24,14 @@ worker about 3 GB plus its cache while it runs.
 
 ## The workspace and sandbox
 
-The agent works in `~/Instinct` until you pick another folder with **File >
-Open Folder** (⌘O). It keeps one set of chats per folder, in
-`~/Library/Application Support/Instinct/workspaces/`.
+The agent works in a project folder: `~/Instinct` to begin with. Click the
+project's name in the header, or press ⌘O, to switch projects: the list keeps
+the folders you've used (pin the ones you want on top, and give them your own
+titles), and **Open a folder…** adds another. Switching happens in place, so the
+models stay loaded; it waits for running chats to finish or be stopped. Each
+project keeps its own chats and checkpoints, in
+`~/Library/Application Support/Instinct/workspaces/`. On another device the
+same list has a folder browser for your home folder.
 
 - **File tools** can't reach outside the folder: list, read, search (text or
   regular expressions), write, edit, make folders, move and rename, and delete.

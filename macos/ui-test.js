@@ -96,3 +96,18 @@ await check("creates and revokes an API key", async () => {
   await until(() => !document.querySelector("[data-revoke-key]"));
   $("close-settings").click();
 });
+
+await check("opens another project in place and comes back", async () => {
+  $("workspace-name").click();
+  await until(() => $("projects").open && document.querySelector("[data-open-project]"));
+  await snapshot("8-projects");
+  const { projects, current } = await api("/api/projects");
+  const first = projects.find((project) => project.id === current);
+  await window.instinct.openFolder(first.path.replace(/workspace$/, "workspace-2"));
+  await until(() => $("workspace-name").textContent === "workspace-2");
+  await until(() => !document.querySelector(".chat-list [data-chat]"));
+  $("workspace-name").click();
+  await until(() => document.querySelector(`[data-open-project="${first.id}"]`));
+  document.querySelector(`[data-open-project="${first.id}"]`).click();
+  await until(() => $("workspace-name").textContent === first.title);
+});
