@@ -142,6 +142,32 @@ It opens your browser with a one-time link and serves only on 127.0.0.1. Ctrl-C
 or SIGTERM stops it and its model workers, and the workers also exit if the
 server is killed.
 
+## OpenAI-compatible API
+
+Other apps can use Instinct's models through the same server: `GET /v1/models`
+and `POST /v1/chat/completions`, streaming or not. Their requests join the
+batches the app's own agents run in. Create a key under **Settings > API** (it's
+shown once) and point any OpenAI client at the address shown there:
+
+```bash
+curl http://127.0.0.1:PORT/v1/chat/completions \
+  -H "Authorization: Bearer sk-instinct-..." -H "Content-Type: application/json" \
+  -d '{"model": "gemma-4", "messages": [{"role": "user", "content": "Hi"}], "stream": true}'
+```
+
+- `model` is a worker name (`gemma-4`, `qwen`) or a checkpoint folder name; it
+  defaults to the driver.
+- `reasoning_effort` (`none`, `low`, `medium`, `high`) turns thinking on, and
+  the thought comes back as `reasoning_content`. `temperature`, `top_p`,
+  `top_k`, `seed` and `max_tokens` work as usual.
+- `tools` get OpenAI `tool_calls` back, read from each model's own call
+  syntax. Images go in as base64 `data:` URLs (Gemma only).
+- Usage includes `prompt_tokens_details.cached_tokens`, the part of the prompt
+  served from the prefix cache.
+
+A standalone `instinct-worker` answers the same two routes with its worker token.
+Keys only open `/v1`; they can't reach chats, files or the terminal.
+
 ## Optional extensions
 
 Skills: pass `--skills-dir ./my-skills`. Each skill is a folder with a

@@ -1147,3 +1147,38 @@ def test_worker_streams_partial_text_while_generating():
         server.shutdown()
         server.server_close()
         service.close()
+
+
+def test_worker_answers_openai_requests_with_its_token():
+    class Model(AsyncModel):
+        partial = {}
+
+        async def generate(self, messages, max_tokens, request_id, *, options=None):
+            self.calls.append((messages[-1].content, options))
+            return Generation("pong", 6, 1, "stop", "fake-model")
+
+    with serving(Model()) as (url, backend, _):
+        host = urllib.parse.urlsplit(url)
+        connection = http.client.HTTPConnection(host.hostname, host.port, timeout=5)
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TOKEN}",
+        }
+        connection.request("GET", "/v1/models", headers=headers)
+        assert (
+            json.loads(connection.getresponse().read())["data"][0]["object"] == "model"
+        )
+        body = {
+            "messages": [{"role": "user", "content": "ping"}],
+            "temperature": 0.3,
+            "stream": True,
+        }
+        connection.request("POST", "/v1/chat/completions", json.dumps(body), headers)
+        events = connection.getresponse().read().decode().split("\n\n")
+        assert events[-2] == "data: [DONE]"
+        assert '"content": "pong"' in "".join(events)
+        assert backend.calls[-1] == ("ping", {"temperature": 0.3})
+        connection.request(
+            "GET", "/v1/models", headers={"Authorization": "Bearer wrong"}
+        )
+        assert connection.getresponse().status == 401

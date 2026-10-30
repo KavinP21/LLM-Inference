@@ -662,7 +662,19 @@
     $("composer-status").classList.toggle("error", Boolean(state.sendError));
     renderAttachments(); resizeComposer();
   }
+  async function renderKeys() {
+    $("api-base").textContent = `${location.origin}/v1`;
+    try {
+      const { keys } = await api("/api/keys");
+      const used = (time) => (time ? `used ${new Date(time * 1000).toLocaleDateString()}` : "not used yet");
+      patch($("key-list"), keys.length ? keys.map((key) => `<div class="key-row"><span><strong>${escape(key.name)}</strong><small>${used(key.last_used)}</small></span><button type="button" class="icon-button" data-revoke-key="${escape(key.id)}" aria-label="Revoke ${escape(key.name)}">×</button></div>`).join("") : `<p class="settings-note">No keys yet.</p>`);
+    } catch (error) {
+      patch($("key-list"), `<p class="settings-note">${escape(error.message)}</p>`);
+    }
+  }
   function renderSettings() {
+    $("new-key").hidden = true;
+    renderKeys();
     const existingPolicy = state.detail?.chat?.policy;
     $("policy-note").textContent = existingPolicy ? `This chat uses ${policyNames[existingPolicy] || policyNames.review}. Changes here apply to new chats.` : "Applies to new chats.";
     $("command-network").checked = Boolean(state.settings?.command_network);
@@ -1583,6 +1595,26 @@
   $("open-settings").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
   $("permission-shortcut").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
   $("close-settings").addEventListener("click", () => $("settings").close());
+  $("key-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = $("key-name").value.trim();
+    if (!name) return;
+    try {
+      const created = await api("/api/keys", { name });
+      $("key-name").value = "";
+      $("new-key-value").textContent = created.key;
+      $("new-key").hidden = false;
+      renderKeys();
+    } catch (error) { toast(error.message, true); }
+  });
+  $("copy-key").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("new-key-value").textContent); toast("Key copied"); } catch { toast("Couldn't copy the key", true); }
+  });
+  $("key-list").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-revoke-key]");
+    if (!button) return;
+    try { await api(`/api/keys/${encodeURIComponent(button.dataset.revokeKey)}/delete`, {}); renderKeys(); toast("Key revoked"); } catch (error) { toast(error.message, true); }
+  });
   $("settings").addEventListener("click", (event) => {
     const bounds = $("settings").getBoundingClientRect();
     if (event.target === $("settings") && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) $("settings").close();
