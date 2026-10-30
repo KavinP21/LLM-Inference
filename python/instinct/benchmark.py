@@ -213,7 +213,6 @@ def benchmark(
     backend: str = "auto",
     mlx_kernel_mode: str = "full",
     capture_path: Path | None = None,
-    int8_mode: str = "auto",
     decode_mode: str = "batched",
 ) -> dict:
     if output_length <= 0 or repetitions <= 0 or warmups < 0:
@@ -255,7 +254,6 @@ def benchmark(
             raise ValueError("unknown MLX kernel mode")
         engine_options["custom_metal"] = mlx_kernel_mode != "baseline"
         engine_options["metal_paged_attention"] = mlx_kernel_mode == "full"
-        engine_options["int8_mode"] = int8_mode
         engine_options["decode_mode"] = decode_mode
     elif decode_mode != "batched":
         raise ValueError("rowwise decode is only supported by the MLX backend")
@@ -323,11 +321,7 @@ def benchmark(
     result = {
         "schema_version": 1,
         "implementation": (
-            (
-                f"instinct-mlx-int8-paged-{mlx_kernel_mode}-{int8_mode}"
-                if engine_stats["quantized_matrices"]
-                else f"instinct-mlx-fp16-paged-{mlx_kernel_mode}"
-            )
+            f"instinct-mlx-fp16-paged-{mlx_kernel_mode}"
             + ("-rowwise" if decode_mode == "rowwise" else "")
             if getattr(engine, "backend", "cuda") == "mlx"
             else "instinct-cuda-fp16-paged"
@@ -347,7 +341,6 @@ def benchmark(
             "stop_on_eos": stop_on_eos,
             "backend": getattr(engine, "backend", "cuda"),
             "mlx_kernel_mode": mlx_kernel_mode,
-            "int8_mode": int8_mode,
             "decode_mode": decode_mode,
             "warmup_output_length": output_length,
             "capture_path": str(capture_path) if capture_path is not None else None,
@@ -429,11 +422,6 @@ def main() -> None:
         help="MLX decode projections: batched throughput or single-row reductions",
     )
     parser.add_argument(
-        "--int8-mode",
-        choices=["auto", "dequantize", "metal", "reconstruct"],
-        default="auto",
-    )
-    parser.add_argument(
         "--stop-on-eos",
         action="store_true",
         help="allow EOS to shorten requests (disabled for fixed-length benchmarks)",
@@ -464,7 +452,6 @@ def main() -> None:
         args.backend,
         args.mlx_kernel_mode,
         args.capture,
-        args.int8_mode,
         args.decode_mode,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

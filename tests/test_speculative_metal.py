@@ -5,9 +5,9 @@ import pytest
 
 pytest.importorskip("mlx.core")
 
+from conftest import tiny_artifact
 from instinct.mlx_engine import MlxEngine
 from instinct.speculative import NoDraft, SpeculativeEngine
-from test_quantization import tiny_artifact
 
 
 class ReplayDraft:

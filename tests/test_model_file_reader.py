@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import struct
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +15,7 @@ from instinct.format import (
     MAGIC,
     TENSOR,
     ModelConfig,
+    QuantizationSpec,
     write_engine,
 )
 from instinct.model_file import ModelFile
@@ -134,3 +137,59 @@ def test_v2_gemma_config_round_trip(tmp_path: Path) -> None:
         assert model.config.embedding_scale == pytest.approx(config.embedding_scale)
         assert model.config.is_sliding_layer(0)
         assert not model.config.is_sliding_layer(1)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing",
+        "dtype",
+        "shape",
+        "zero",
+        "nan",
+        "range",
+        "unregistered",
+        "scheme",
+        "axis",
+    ],
+)
+def test_reader_rejects_malformed_quantization_metadata(tmp_path, case):
+    path = tmp_path / "bad.engine"
+    weights = np.ones((3, 4), dtype=np.int8)
+    scales = np.ones(3, dtype=np.float32)
+    specs = {"weight": QuantizationSpec("scales")}
+    if case == "range":
+        weights[0, 0] = -128
+    if case == "zero":
+        scales[0] = 0
+    if case == "nan":
+        scales[0] = np.nan
+    if case == "shape":
+        scales = np.ones(4, dtype=np.float32)
+    if case == "dtype":
+        weights = weights.astype(np.float16)
+    if case == "scheme":
+        specs["weight"] = QuantizationSpec("scales", scheme=2)
+    if case == "axis":
+        specs["weight"] = QuantizationSpec("scales", axis=1)
+    tensors = {"weight": weights, "scales": scales}
+    if case == "missing":
+        del tensors["scales"]
+    if case == "unregistered":
+        specs = {}
+    write_engine(
+        path,
+        ModelConfig(8, 4, 8, 1, 1, 1, 32, 2, 10000, 1e-6),
+        tensors,
+        quantization=specs,
+    )
+    with pytest.raises((ValueError, KeyError)):
+        ModelFile(path)
+    inspector = os.environ.get("INSTINCT_INSPECT_MODEL")
+    if inspector:
+        assert (
+            subprocess.run(
+                [inspector, path], capture_output=True, check=False
+            ).returncode
+            != 0
+        )
