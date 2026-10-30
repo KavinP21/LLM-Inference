@@ -14,9 +14,9 @@ export = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
 mlx = ["mlx>=0.32,<0.33; platform_system == 'Darwin' and platform_machine == 'arm64'"]
 test = ["pytest>=8", "Pillow>=10"]
 dev = ["ruff>=0.16,<0.17"]
-reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4"]
-agents = ["transformers>=4.50,<6", "safetensors>=0.4"]
-vlm = ["mlx-vlm==0.7.6; platform_system == 'Darwin' and platform_machine == 'arm64'", "huggingface-hub>=1.0", "transformers>=5.14,<6", "safetensors>=0.8"]
+# Reference implementations the tests compare against.
+reference = ["torch>=2.4", "transformers>=4.50,<6", "safetensors>=0.4", "mlx-vlm==0.7.6; platform_system == 'Darwin' and platform_machine == 'arm64'"]
+agents = ["transformers>=5.14,<6", "safetensors>=0.8", "huggingface-hub>=1.0", "Pillow>=10"]
 
 [project.scripts]
 instinct-export = "instinct.export:main"

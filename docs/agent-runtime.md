@@ -12,7 +12,7 @@ parallelism: each worker must fit a complete model on its selected device.
 ## Install and run
 
 ```bash
-pip install -e '.[mlx,vlm,agents,test]'
+pip install -e '.[mlx,agents,test]'
 python -m instinct.prepare_models
 instinct-agents --state-dir .instinct run --config examples/instinct.json \
   --workspace . --task 'Review the architecture and explain its resource limits.'
@@ -254,7 +254,7 @@ and once delegating to two children:
 
 | Model (runner) | Code, single / delegated | Docs, single / delegated |
 | --- | --- | --- |
-| Qwen3.5-4B, 4-bit (MLX-VLM) | Pass, 25.9 s / Pass, 56.1 s | Pass, 8.4 s / Pass, 51.4 s |
+| Qwen3.5-4B, 4-bit (via MLX-VLM, before the native adapter) | Pass, 25.9 s / Pass, 56.1 s | Pass, 8.4 s / Pass, 51.4 s |
 | Qwen3-30B-A3B, 4-bit (via MLX-LM, before the VLM runner) | Pass, 17.4 s / Pass, 110.2 s | Pass, 8.8 s / Pass, 25.6 s |
 | Qwen2.5-7B-Instruct, 4-bit (via MLX-LM) | Fail / Fail | Pass / Fail |
 | Qwen2.5-0.5B (native) | Fail / Fail | Fail / Fail |

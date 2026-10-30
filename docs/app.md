@@ -11,7 +11,7 @@ else.
 ## Install
 
 ```bash
-pip install -e '.[mlx,vlm,agents]'      # into .venv
+pip install -e '.[mlx,agents]'      # into .venv
 python -m instinct.prepare_models       # ~18 GB of models into models/
 macos/build.sh --install                # builds ~/Applications/Instinct.app
 ```
@@ -57,7 +57,7 @@ for the chat's model and a reasoning slider:
 
 | Reasoning | What the model does |
 | --- | --- |
-| Fast | Answers without thinking first. Gemma's drafter speeds up tool calls |
+| Fast | Answers without thinking first |
 | Low / Medium | Thinks for up to about 1,000 / 4,000 tokens first |
 | High | Thinks as long as it needs, within the output limit |
 

@@ -40,16 +40,9 @@ def create_engine(
     if selected == "mlx":
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise RuntimeError("the MLX backend requires Apple Silicon")
-        path = Path(DEFAULT_MODEL_PATH if model_path is None else model_path)
-        if path.is_dir():
-            # A checkpoint directory (Gemma 4, Qwen3.5, ...) runs through mlx-vlm.
-            from .vlm_runner import VlmRunner
-
-            options = dict(kwargs)
-            if "max_model_length" in options:
-                options["max_context_tokens"] = options.pop("max_model_length")
-            return VlmRunner(path, **options)
-        return MlxEngine(model_path, **kwargs)
+        return MlxEngine(
+            DEFAULT_MODEL_PATH if model_path is None else model_path, **kwargs
+        )
     raise ValueError(f"unknown backend {backend!r}; expected 'auto', 'cuda', or 'mlx'")
 
 

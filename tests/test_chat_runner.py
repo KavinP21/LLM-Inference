@@ -104,5 +104,5 @@ def test_worker_backend_serves_requests_concurrently():
 
     results, _, health = asyncio.run(run())
     assert all(result.text for result in results)
-    assert health["runner"] == "engine" and health["family"] == "qwen3_5"
+    assert health["runner"] == "chat" and health["family"] == "qwen3_5"
     assert health["last_runner_stats"]["requests"] >= 3

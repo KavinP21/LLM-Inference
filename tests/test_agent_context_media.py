@@ -34,11 +34,14 @@ def media(tmp_path):
 
 
 def actor(tmp_path, engine):
+    (tmp_path / "config.json").write_text(
+        '{"model_type": "gemma4", "vision_config": {"model_type": "gemma4_vision"}}'
+    )
     return LocalModelBackend(
         WorkerConfig(
             str(tmp_path),
             str(tmp_path),
-            runner="vlm",
+            runner="chat",
             backend="mlx",
             max_model_length=32768,
             kv_cache_bytes=2 << 30,

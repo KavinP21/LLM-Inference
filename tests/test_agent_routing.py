@@ -91,7 +91,7 @@ def lazy_config(tmp_path):
     (model / "tokenizer.json").write_text("{}")
     (model / "model.safetensors").write_bytes(b"\0" * 64)
     return WorkerConfig(
-        str(model), str(model), backend="mlx", runner="vlm", native_tool_calls=True
+        str(model), str(model), backend="mlx", runner="chat", native_tool_calls=True
     )
 
 
