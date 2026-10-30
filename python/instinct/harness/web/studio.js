@@ -357,13 +357,19 @@
   function activityMarkup(turn) {
     const rows = toolRows(turn);
     if (!rows.length) return "";
-    const reads = rows.filter((row) => !row.pending && !toolFailed(row.result) && ["read_file", "list_files", "search_files", "search_text"].includes(row.name)).length;
-    const edits = rows.filter((row) => !row.pending && !toolFailed(row.result) && ["write_file", "replace_text", "edit_lines"].includes(row.name)).length;
-    const tests = rows.some((row) => !row.pending && row.name === "run_tests" && !(typeof row.result === "string" && /^Tool failed:/.test(row.result)));
-    const descriptions = [];
-    if (reads) descriptions.push("Explored the codebase");
-    if (edits) descriptions.push(`made ${edits} ${edits === 1 ? "edit" : "edits"}`);
-    if (tests) descriptions.push("ran tests");
+    const done = rows.filter((row) => !row.pending && !toolFailed(row.result));
+    const count = (names) => done.filter((row) => names.includes(row.name)).length;
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const edits = count(["write_file", "replace_text", "edit_lines", "make_directory", "move_path", "delete_path"]);
+    const commands = count(["run_command"]);
+    const descriptions = [
+      count(["read_file", "list_files", "search"]) && "explored the codebase",
+      count(["web_search", "fetch_url"]) && "searched the web",
+      edits && `made ${plural(edits, "change")}`,
+      commands && `ran ${plural(commands, "command")}`,
+      count(["run_tests"]) && "ran tests",
+    ].filter(Boolean);
+    if (descriptions.length) descriptions[0] = descriptions[0][0].toUpperCase() + descriptions[0].slice(1);
     const summary = rows.at(-1).pending ? currentToolLabel(rows.at(-1).name, rows.at(-1).args) + "…" : descriptions.join(" · ") || `${rows.length} ${rows.length === 1 ? "action" : "actions"}`;
     return `<details class="activity-group" data-key="activity-${escape(turn.turn_id || turn.run_id)}">${disclosureSummary(summary, descriptions.length ? `${rows.length} ${rows.length === 1 ? "action" : "actions"}` : "", rows.at(-1).pending)}<div class="activity-rows">${renderToolRows(rows)}${rows.length > 80 ? '<p class="settings-note">Earlier actions are available in the conversation trace.</p>' : ""}</div></details>`;
   }
@@ -526,16 +532,47 @@
     $("live-speed").hidden = !busy.length;
     $("live-speed").textContent = busy.length ? `${workers.length || busy.length} generating` : "";
   }
-  function renderSelects() {
-    const select = $("model-select");
+  const EFFORTS = [
+    ["off", "Fast", "Answers right away without thinking first. Best for quick questions and simple edits."],
+    ["low", "Low", "Thinks briefly before answering, up to about a thousand tokens."],
+    ["medium", "Medium", "Thinks things through, up to about four thousand tokens. A good default for real work."],
+    ["high", "High", "Thinks for as long as it needs. Best for hard bugs and design questions; slowest."],
+  ];
+  const MODEL_NOTES = { driver: "Strongest. Hands work to sub-agents.", subagent: "Fastest and lightest." };
+  function shortLabel(label) { return String(label || "").replace(/\s+\d+B.*$/, "").replace(/-\d+B$/, ""); }
+  function currentMode() {
     const chat = state.detail?.chat;
-    const model = chat?.model || state.newChat.model || state.models[0]?.id;
-    const options = state.models.map((entry) => `<option value="${escape(entry.id)}">${escape(entry.label)}</option>`).join("");
-    if (select.dataset.options !== options) { select.innerHTML = options; select.dataset.options = options; }
-    select.hidden = state.models.length < 2;
-    if (model) select.value = model;
-    $("effort-select").value = chat?.effort || state.newChat.effort || "off";
-    $("effort-select").hidden = state.overview?.mode === "demo";
+    return {
+      model: chat?.model || state.newChat.model || state.models[0]?.id,
+      effort: chat?.effort || state.newChat.effort || "off",
+    };
+  }
+  function renderSelects() {
+    const { model, effort } = currentMode();
+    const demo = state.overview?.mode === "demo";
+    const level = Math.max(0, EFFORTS.findIndex(([value]) => value === effort));
+    const chosen = state.models.find((entry) => entry.id === model) || state.models[0];
+    $("mode-picker").hidden = demo && state.models.length < 2;
+    $("mode-model").textContent = chosen ? shortLabel(chosen.label) : "Model";
+    $("mode-effort").textContent = demo ? "" : EFFORTS[level][1];
+    $("mode-models-section").hidden = state.models.length < 2;
+    $("mode-effort-section").hidden = demo;
+    patch($("mode-models"), state.models.map((entry) => `<button type="button" role="radio" class="mode-model-option" data-model="${escape(entry.id)}" aria-checked="${entry.id === chosen?.id}"><span><strong>${escape(entry.label)}</strong><small>${escape([MODEL_NOTES[entry.id], entry.context ? `${Math.round(entry.context / 1024)}K context` : ""].filter(Boolean).join(" · "))}</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5l3 3 7-7"></path></svg></button>`).join(""));
+    if (document.activeElement !== $("effort-slider")) showEffort(level);
+  }
+  function showEffort(level) {
+    const slider = $("effort-slider");
+    slider.value = String(level);
+    slider.style.setProperty("--fill", `${(level / 3) * 100}%`);
+    slider.setAttribute("aria-valuetext", EFFORTS[level][1]);
+    $("mode-level").textContent = EFFORTS[level][1];
+    $("effort-help").textContent = EFFORTS[level][2];
+    document.querySelectorAll(".effort-ticks span").forEach((tick, index) => tick.classList.toggle("active", index === level));
+  }
+  function toggleModePanel(open = $("mode-panel").hidden) {
+    $("mode-panel").hidden = !open;
+    $("mode-button").setAttribute("aria-expanded", String(open));
+    if (open) (document.querySelector('.mode-model-option[aria-checked="true"]') || $("effort-slider")).focus();
   }
   async function changeSetting(key, value) {
     if (!state.selected) {
@@ -546,7 +583,7 @@
     try {
       const result = await api(`/api/chats/${encodeURIComponent(state.selected)}/settings`, { [key]: value });
       if (state.detail?.chat) Object.assign(state.detail.chat, result);
-      toast(key === "model" ? `Next replies use ${chosenModel()?.label || value}` : `Effort set to ${$("effort-select").selectedOptions[0]?.textContent || value}`);
+      toast(key === "model" ? `Next replies use ${chosenModel()?.label || value}` : `Reasoning set to ${EFFORTS.find(([name]) => name === value)?.[1] || value}`);
       renderOverview();
     } catch (error) { toast(error.message, true); renderSelects(); }
   }
@@ -1533,8 +1570,20 @@
       toast(restore ? `Rewound ${result.removed} message${result.removed === 1 ? "" : "s"} and restored files` : `Rewound ${result.removed} message${result.removed === 1 ? "" : "s"}`);
     } catch (error) { toast(error.message, true); }
   });
-  $("model-select").addEventListener("change", (event) => changeSetting("model", event.target.value));
-  $("effort-select").addEventListener("change", (event) => changeSetting("effort", event.target.value));
+  $("mode-button").addEventListener("click", () => toggleModePanel());
+  $("mode-models").addEventListener("click", (event) => {
+    const option = event.target.closest("[data-model]");
+    if (!option || option.getAttribute("aria-checked") === "true") return;
+    changeSetting("model", option.dataset.model).then(renderSelects);
+    if (!state.selected) renderSelects();
+  });
+  $("effort-slider").addEventListener("input", (event) => showEffort(Number(event.target.value)));
+  $("effort-slider").addEventListener("change", (event) => {
+    const value = EFFORTS[Number(event.target.value)][0];
+    if (value !== currentMode().effort) changeSetting("effort", value).then(renderSelects);
+  });
+  $("mode-panel").addEventListener("keydown", (event) => { if (event.key === "Escape") { event.stopPropagation(); toggleModePanel(false); $("mode-button").focus(); } });
+  document.addEventListener("pointerdown", (event) => { if (!$("mode-panel").hidden && !$("mode-picker").contains(event.target)) toggleModePanel(false); });
   $("chat-search").addEventListener("input", (event) => { state.chatQuery = event.target.value; renderOverview(); });
   $("context-meter").addEventListener("click", () => toggleDeveloper(true, "performance"));
   $("live-speed").addEventListener("click", () => toggleDeveloper(true, "system"));
