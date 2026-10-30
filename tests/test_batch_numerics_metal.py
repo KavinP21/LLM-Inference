@@ -5,9 +5,9 @@ import pytest
 
 mx = pytest.importorskip("mlx.core")
 
-from forge_llm.mlx_engine import MlxEngine
-from forge_llm.paged_kv import MlxPagedKVStore
-from forge_llm.quantization import quantize_model
+from instinct.mlx_engine import MlxEngine
+from instinct.paged_kv import MlxPagedKVStore
+from instinct.quantization import quantize_model
 from test_quantization import tiny_artifact
 
 

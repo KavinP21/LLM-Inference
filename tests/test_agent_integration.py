@@ -18,8 +18,8 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
-from forge_llm.agents import cli
-from forge_llm.agents.backends import (
+from instinct.agents import cli
+from instinct.agents.backends import (
     LocalProcessBackend,
     RemoteWorkerBackend,
     RequestValidationError,
@@ -27,12 +27,12 @@ from forge_llm.agents.backends import (
     WorkerPool,
     WorkerUnavailableError,
 )
-from forge_llm.agents.profiles import CompletionProfile
-from forge_llm.agents.protocol import Generation
-from forge_llm.agents.runtime import AgentRuntime, CompletionCheck, RuntimeConfig
-from forge_llm.agents.store import AgentStore
-from forge_llm.agents.tools import WorkspaceTools
-from forge_llm.agents.worker import WorkerHTTPServer, WorkerService
+from instinct.agents.profiles import CompletionProfile
+from instinct.agents.protocol import Generation
+from instinct.agents.runtime import AgentRuntime, CompletionCheck, RuntimeConfig
+from instinct.agents.store import AgentStore
+from instinct.agents.tools import WorkspaceTools
+from instinct.agents.worker import WorkerHTTPServer, WorkerService
 
 BEARER = "control-test-credential-never-used-outside-loopback"
 
@@ -1125,7 +1125,7 @@ def test_cli_failed_backend_readiness_closes_new_backend(monkeypatch, kind):
             raise WorkerUnavailableError("injected remote readiness failure")
 
     monkeypatch.setenv("TEST_WORKER_AUTH", "operator-secret")
-    monkeypatch.setattr(cli, "LocalForgeBackend", FailedReadiness)
+    monkeypatch.setattr(cli, "LocalModelBackend", FailedReadiness)
     monkeypatch.setattr(cli, "RemoteWorkerBackend", FailedReadiness)
     worker = (
         {"type": "local", "model": "fixture.engine", "tokenizer": "fixture"}
@@ -1189,7 +1189,7 @@ def test_process_startup_failure_cleans_owned_process_and_preserves_parent_gpu_e
 
     async def spawn(*command, **options):
         environment.update(options["env"])
-        assert command[1:3] == ("-m", "forge_llm.agents.worker")
+        assert command[1:3] == ("-m", "instinct.agents.worker")
         return process
 
     async def bad_health(self):
@@ -1205,7 +1205,7 @@ def test_process_startup_failure_cleans_owned_process_and_preserves_parent_gpu_e
     assert process.returncode is not None
     assert process.terminated == (0 if failure == "eof" else 1)
     assert environment["CUDA_VISIBLE_DEVICES"] == "child-gpu"
-    assert len(environment["FORGE_WORKER_TOKEN"]) >= 32
+    assert len(environment["INSTINCT_WORKER_TOKEN"]) >= 32
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "parent-gpu"
 
 
@@ -1257,7 +1257,7 @@ def identity():
         "draft_model_data_sha256": None,
         "speculative": None,
         "native_tool_calls": False,
-        "runner": "forge",
+        "runner": "engine",
         "runner_version": "0.1.0",
         "mlx_version": None,
         "checkpoint_format": None,

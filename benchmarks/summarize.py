@@ -14,7 +14,7 @@ def metric(result: dict, path: str) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Summarize raw Forge benchmark JSON as Markdown"
+        description="Summarize raw Instinct benchmark JSON as Markdown"
     )
     parser.add_argument("results", type=Path)
     parser.add_argument(

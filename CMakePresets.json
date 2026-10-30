@@ -8,9 +8,9 @@
       "binaryDir": "${sourceDir}/build/host-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "FORGE_ENABLE_CUDA": "OFF",
-        "FORGE_BUILD_PYTHON": "OFF",
-        "FORGE_BUILD_TESTS": "ON"
+        "INSTINCT_ENABLE_CUDA": "OFF",
+        "INSTINCT_BUILD_PYTHON": "OFF",
+        "INSTINCT_BUILD_TESTS": "ON"
       }
     },
     {
@@ -21,9 +21,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_CUDA_ARCHITECTURES": "86",
-        "FORGE_ENABLE_CUDA": "ON",
-        "FORGE_BUILD_PYTHON": "ON",
-        "FORGE_BUILD_TESTS": "ON"
+        "INSTINCT_ENABLE_CUDA": "ON",
+        "INSTINCT_BUILD_PYTHON": "ON",
+        "INSTINCT_BUILD_TESTS": "ON"
       }
     }
   ],

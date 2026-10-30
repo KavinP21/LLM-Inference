@@ -1,5 +1,5 @@
-#include "forge/engine.h"
-#include "forge/scheduler.h"
+#include "instinct/engine.h"
+#include "instinct/scheduler.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -9,8 +9,8 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(_forge, module) {
-  module.doc() = "Forge LLM C++/CUDA runtime";
+PYBIND11_MODULE(_instinct, module) {
+  module.doc() = "Instinct C++/CUDA runtime";
   module.def("build_info", [] {
     int runtime_version = 0;
     int driver_version = 0;
@@ -28,30 +28,30 @@ PYBIND11_MODULE(_forge, module) {
     result["cuda_driver_version"] = driver_version;
     return result;
   });
-  py::enum_<forge::SequenceState>(module, "SequenceState")
-      .value("WAITING", forge::SequenceState::waiting)
-      .value("PREFILLING", forge::SequenceState::prefilling)
-      .value("RUNNING", forge::SequenceState::running)
-      .value("COMPLETED", forge::SequenceState::completed)
-      .value("CANCELLED", forge::SequenceState::cancelled)
-      .value("REJECTED", forge::SequenceState::rejected);
-  py::class_<forge::TokenEvent>(module, "TokenEvent")
-      .def_readonly("request_id", &forge::TokenEvent::request_id)
-      .def_readonly("token", &forge::TokenEvent::token)
-      .def_readonly("finished", &forge::TokenEvent::finished);
-  py::class_<forge::Engine>(module, "Engine")
+  py::enum_<instinct::SequenceState>(module, "SequenceState")
+      .value("WAITING", instinct::SequenceState::waiting)
+      .value("PREFILLING", instinct::SequenceState::prefilling)
+      .value("RUNNING", instinct::SequenceState::running)
+      .value("COMPLETED", instinct::SequenceState::completed)
+      .value("CANCELLED", instinct::SequenceState::cancelled)
+      .value("REJECTED", instinct::SequenceState::rejected);
+  py::class_<instinct::TokenEvent>(module, "TokenEvent")
+      .def_readonly("request_id", &instinct::TokenEvent::request_id)
+      .def_readonly("token", &instinct::TokenEvent::token)
+      .def_readonly("finished", &instinct::TokenEvent::finished);
+  py::class_<instinct::Engine>(module, "Engine")
       .def(py::init<const std::filesystem::path&, std::uint32_t, std::uint32_t, std::uint64_t>(),
            py::arg("model_path"), py::arg("max_num_sequences") = 16,
            py::arg("max_model_length") = 2048,
            py::arg("kv_cache_bytes") = 512ULL << 20U)
-      .def("submit", [](forge::Engine& engine, const std::vector<std::int32_t>& tokens,
+      .def("submit", [](instinct::Engine& engine, const std::vector<std::int32_t>& tokens,
                          std::uint32_t maximum, const std::vector<std::int32_t>& eos) {
         return engine.submit(tokens, maximum, eos);
       }, py::arg("input_ids"), py::arg("max_new_tokens"), py::arg("eos_token_ids"))
-      .def("step", &forge::Engine::step, py::call_guard<py::gil_scoped_release>())
-      .def("cancel", &forge::Engine::cancel)
-      .def("forget", &forge::Engine::forget)
-      .def("stats", [](const forge::Engine& engine) {
+      .def("step", &instinct::Engine::step, py::call_guard<py::gil_scoped_release>())
+      .def("cancel", &instinct::Engine::cancel)
+      .def("forget", &instinct::Engine::forget)
+      .def("stats", [](const instinct::Engine& engine) {
         const auto stats = engine.stats();
         py::dict scheduler;
         scheduler["submitted"] = stats.scheduler.submitted;
@@ -76,12 +76,12 @@ PYBIND11_MODULE(_forge, module) {
         result["kv_device_bytes"] = stats.kv_device_bytes;
         return result;
       })
-      .def("generate", [](forge::Engine& engine, const std::vector<std::int32_t>& tokens,
+      .def("generate", [](instinct::Engine& engine, const std::vector<std::int32_t>& tokens,
                            std::uint32_t maximum, const std::vector<std::int32_t>& eos) {
         py::gil_scoped_release release;
         return engine.generate(tokens, maximum, eos);
       }, py::arg("input_ids"), py::arg("max_new_tokens"), py::arg("eos_token_ids"))
-      .def("debug_prefill_logits", [](forge::Engine& engine,
+      .def("debug_prefill_logits", [](instinct::Engine& engine,
                                        const std::vector<std::int32_t>& tokens) {
         py::gil_scoped_release release;
         return engine.debug_prefill_logits(tokens);

@@ -6,14 +6,14 @@ import argparse
 import json
 from pathlib import Path
 
-from forge_llm.benchmark import (
+from gpu_guard import exclusive_gpu_workflow
+from instinct.benchmark import (
     model_provenance,
     percentile,
     run_once,
     source_provenance,
 )
-from forge_llm.mlx_engine import MlxEngine
-from gpu_guard import exclusive_gpu_workflow
+from instinct.mlx_engine import MlxEngine
 
 
 def measure(model, mode, length, concurrency, warmups=5, repetitions=3):

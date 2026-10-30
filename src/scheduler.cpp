@@ -1,10 +1,10 @@
-#include "forge/scheduler.h"
+#include "instinct/scheduler.h"
 
-#include "forge/error.h"
+#include "instinct/error.h"
 
 #include <algorithm>
 
-namespace forge {
+namespace instinct {
 
 Scheduler::Scheduler(std::uint32_t max_sequences, std::uint32_t max_model_length,
                      KVBlockPool& cache)
@@ -126,4 +126,4 @@ Sequence& Scheduler::mutable_sequence(RequestId id) {
   return it->second;
 }
 
-}  // namespace forge
+}  // namespace instinct

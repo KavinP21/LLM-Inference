@@ -1,16 +1,16 @@
 # MLX-VLM runner (Gemma 4, Qwen3.5)
 
-`forge_llm.vlm_runner.VlmRunner` runs any checkpoint mlx-vlm can load. Its forward
+`instinct.vlm_runner.VlmRunner` runs any checkpoint mlx-vlm can load. Its forward
 pass is mlx-vlm's; what the runner adds is prompt reuse, which matters far more
 than raw decode speed for an agent. Every agent step re-sends the whole
 conversation, so a naive server re-prefills thousands of tokens per step.
 
 ```bash
-python -m forge_llm.prepare_models     # Gemma 4 26B A4B (QAT 4-bit) + drafter, Qwen3.5-4B
+python -m instinct.prepare_models     # Gemma 4 26B A4B (QAT 4-bit) + drafter, Qwen3.5-4B
 ```
 
 ```python
-from forge_llm.vlm_runner import VlmRunner
+from instinct.vlm_runner import VlmRunner
 
 runner = VlmRunner("models/gemma-4-26b-a4b-mlx",
                    draft_path="models/gemma-4-26b-a4b-assistant")
@@ -44,10 +44,12 @@ rewritten trailing menu.
 
 **Drafting.** Gemma 4 ships a 4-layer MTP "assistant" drafter. On the 26B A4B
 MoE a 3-token verify round costs about 2.4 single decode steps, since it touches
-more experts. Drafting therefore helps tool calls (+12%), edits (+7%) and code
-(+5%) but hurts free prose (−14%). The runner only drafts on greedy agent turns
-and backs off for a few requests when the measured tokens per round fall below
-break-even.
+more experts, and more as the prompt grows. Drafting helped tool calls (+12%),
+edits (+7%) and code (+5%) on short prompts, hurt free prose (−14%), and was
+about 30% slower than plain decoding once an agent's prompt reached 20K tokens.
+So the runner only drafts on greedy agent turns. For those it measures decode
+speed with and without the drafter in 8K-token bands of prompt length, uses
+whichever is faster, and tries the other every eighth request.
 
 **Reasoning effort.** `off` disables thinking. `low` and `medium` cap it at 1,024
 and 4,096 tokens, forcing the thinking block closed at the budget. `high` is

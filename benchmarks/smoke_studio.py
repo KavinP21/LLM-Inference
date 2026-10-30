@@ -9,7 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from forge_llm.harness.service import StudioService
+from instinct.harness.service import StudioService
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,8 +31,8 @@ async def execute(args):
     source_revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
-    source_files = sorted((ROOT / "python/forge_llm/harness").rglob("*.py")) + sorted(
-        (ROOT / "python/forge_llm/harness/web").glob("*")
+    source_files = sorted((ROOT / "python/instinct/harness").rglob("*.py")) + sorted(
+        (ROOT / "python/instinct/harness/web").glob("*")
     )
     source_identity = {
         str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -40,13 +40,13 @@ async def execute(args):
         if path.is_file()
     }
     recipe_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    with tempfile.TemporaryDirectory(prefix="forge-studio-real-") as directory:
+    with tempfile.TemporaryDirectory(prefix="instinct-real-") as directory:
         workspace = Path(directory)
         (workspace / "README.md").write_text(
-            "# Cedar Tools\n\nA fixture for the Forge Studio integration smoke test.\nIt contains no executable code and supports no claimed benchmarks.\n"
+            "# Cedar Tools\n\nA fixture for the Instinct integration smoke test.\nIt contains no executable code and supports no claimed benchmarks.\n"
         )
         service = StudioService(
-            workspace, ROOT / ".forge/studio-smoke", config=configuration
+            workspace, ROOT / ".instinct/studio-smoke", config=configuration
         )
         started = time.monotonic()
         try:

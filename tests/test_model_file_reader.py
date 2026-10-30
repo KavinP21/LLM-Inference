@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from forge_llm.format import (
+from instinct.format import (
     ALIGNMENT,
     CONFIG_V1,
     HEADER,
@@ -15,7 +15,7 @@ from forge_llm.format import (
     ModelConfig,
     write_engine,
 )
-from forge_llm.model_file import ModelFile
+from instinct.model_file import ModelFile
 
 
 def _write_minimal(path: Path) -> None:

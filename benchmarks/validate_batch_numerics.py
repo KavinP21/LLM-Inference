@@ -9,10 +9,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
-from forge_llm.benchmark import model_provenance, source_provenance
-from forge_llm.mlx_engine import MlxEngine
-from forge_llm.runtime import SequenceState
 from gpu_guard import exclusive_gpu_workflow
+from instinct.benchmark import model_provenance, source_provenance
+from instinct.mlx_engine import MlxEngine
+from instinct.runtime import SequenceState
 
 
 def fingerprint(logits):

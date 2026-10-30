@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from forge_llm.runtime import SequenceState
+from instinct.runtime import SequenceState
 
 
 def driver(monkeypatch):

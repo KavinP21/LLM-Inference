@@ -7,10 +7,10 @@ import time
 from contextlib import contextmanager
 
 import pytest
-from forge_llm.agents.context import tool_actor
-from forge_llm.agents.store import AgentStore
-from forge_llm.agents.tools import ToolValidationError, WorkspaceTools
-from forge_llm.harness.policy import ApprovalGate, HookRegistry, workspace_preview
+from instinct.agents.context import tool_actor
+from instinct.agents.store import AgentStore
+from instinct.agents.tools import ToolValidationError, WorkspaceTools
+from instinct.harness.policy import ApprovalGate, HookRegistry, workspace_preview
 
 
 @pytest.fixture
@@ -420,5 +420,21 @@ def test_hooks_are_ordered_isolated_and_after_failure_preserves_receipt(store):
             store.events("one", kinds=("hook_failed",))[0]["payload"]["event"]
             == "after_tool"
         )
+
+    asyncio.run(scenario())
+
+
+def test_auto_mode_runs_mutations_without_asking(store):
+    calls = []
+
+    async def tool(args):
+        calls.append(args)
+        return "ok"
+
+    async def scenario():
+        gate = ApprovalGate(store, "auto", run_id="one")
+        with actor():
+            assert await gate.wrap("write", tool, mutating=True)({"path": "a"}) == "ok"
+        assert calls == [{"path": "a"}] and not gate.pending("one")
 
     asyncio.run(scenario())

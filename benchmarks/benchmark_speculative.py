@@ -14,10 +14,10 @@ import platform
 import statistics
 from pathlib import Path
 
-from forge_llm.benchmark import model_provenance, source_provenance
-from forge_llm.mlx_engine import MlxEngine
-from forge_llm.speculative import NGramDraft, NoDraft, SpeculativeEngine
 from gpu_guard import exclusive_gpu_workflow
+from instinct.benchmark import model_provenance, source_provenance
+from instinct.mlx_engine import MlxEngine
+from instinct.speculative import NGramDraft, NoDraft, SpeculativeEngine
 
 
 def run(args):
@@ -25,7 +25,7 @@ def run(args):
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, local_files_only=True)
-    runtime_root = Path(__file__).resolve().parents[1] / "python" / "forge_llm"
+    runtime_root = Path(__file__).resolve().parents[1] / "python" / "instinct"
     implementation_hashes = {
         name: hashlib.sha256((runtime_root / name).read_bytes()).hexdigest()
         for name in (
@@ -134,7 +134,7 @@ def run(args):
             }
         )
     return {
-        "schema": "forge_speculative_benchmark_v1",
+        "schema": "instinct_speculative_benchmark_v1",
         "model": str(args.model),
         "model_provenance": model_provenance(args.model),
         "source_provenance": source_provenance(),

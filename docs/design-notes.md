@@ -8,8 +8,8 @@ request length at admission, then materializes 16-token pages as needed.
 
 Prefix reuse counts shared pages once and reserves a private copy for partial-tail
 append. Cache pins and requests own separate references; clearing pins must not
-invalidate active readers. See [runtime.py](../python/forge_llm/runtime.py),
-[prefix_cache.py](../python/forge_llm/prefix_cache.py), and their
+invalidate active readers. See [runtime.py](../python/instinct/runtime.py),
+[prefix_cache.py](../python/instinct/prefix_cache.py), and their
 [ownership tests](../tests/test_prefix_cache.py).
 
 ## Make long prompts visible to the scheduler
@@ -17,7 +17,7 @@ invalidate active readers. See [runtime.py](../python/forge_llm/runtime.py),
 Chunking prefill lets each iteration service runnable decodes and at most one
 prompt chunk. Requests join or leave between iterations. This bounds a unit of
 prompt work; it does not implement packed multi-prompt prefill or general fairness.
-The loop is in [mlx_engine.py](../python/forge_llm/mlx_engine.py).
+The loop is in [mlx_engine.py](../python/instinct/mlx_engine.py).
 
 ## Operation shapes affect FP16 argmax
 
@@ -38,7 +38,7 @@ Forcing MLX 0.32.2's fused short-query kernel on that shape failed. The guard no
 checks head width and the query-length/GQA limit before forcing fusion; other
 shapes use normal MLX dispatch. Execution errors are not swallowed.
 
-Read `_fast_attention` in [the Qwen adapter](../python/forge_llm/backends/mlx.py).
+Read `_fast_attention` in [the Qwen adapter](../python/instinct/backends/mlx.py).
 [Metal regressions](../tests/test_prefix_cache_metal.py) cover query lengths
 1, 4, 5, 6, 7, 8, 9, and 17.
 

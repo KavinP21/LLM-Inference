@@ -1,0 +1,2 @@
+xterm.js 5.5.0 and @xterm/addon-fit 0.10.0 from npm, unmodified apart from
+the removed source-map comments. MIT licensed; see XTERM-LICENSE.

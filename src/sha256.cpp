@@ -1,10 +1,10 @@
-#include "forge/sha256.h"
+#include "instinct/sha256.h"
 
 #include <array>
 #include <bit>
 #include <cstring>
 
-namespace forge {
+namespace instinct {
 namespace {
 
 constexpr std::array<std::uint32_t, 64> k = {
@@ -82,4 +82,4 @@ std::array<std::uint8_t, 32> sha256(std::span<const std::byte> input) {
   return output;
 }
 
-}  // namespace forge
+}  // namespace instinct

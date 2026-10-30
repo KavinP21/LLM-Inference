@@ -6,14 +6,14 @@ import json
 import threading
 
 import pytest
-from forge_llm.harness.server import StudioHTTPServer
-from forge_llm.harness.service import StudioService
+from instinct.harness.server import StudioHTTPServer
+from instinct.harness.service import StudioService
 
 
 def test_loopback_http_security_and_run_roundtrip(tmp_path):
     async def check():
         (tmp_path / "README.md").write_text("# Fixture\n")
-        service = StudioService(tmp_path, tmp_path / ".forge", demo=True)
+        service = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
         service.backend.delay = 0.01
         server = StudioHTTPServer(("127.0.0.1", 0), service, asyncio.get_running_loop())
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -25,7 +25,7 @@ def test_loopback_http_security_and_run_roundtrip(tmp_path):
             )
             selected = {"Content-Type": "application/json", "Origin": server.origin}
             if auth:
-                selected["Cookie"] = "forge_studio=" + server.session_token
+                selected["Cookie"] = "instinct_session=" + server.session_token
             selected.update(headers or {})
             connection.request(method, path, body=body, headers=selected)
             response = connection.getresponse()
@@ -91,7 +91,7 @@ def test_loopback_http_security_and_run_roundtrip(tmp_path):
             status, body, headers = await call("GET", f"/api/runs/{run_id}/export")
             assert status == 200
             assert json.loads(body)["run"]["status"] == "completed"
-            assert headers["Content-Disposition"].endswith('"forge-trace.json"')
+            assert headers["Content-Disposition"].endswith('"instinct-trace.json"')
             assert (await call("GET", "/../../pyproject.toml"))[0] == 404
             assert headers["X-Content-Type-Options"] == "nosniff"
             first_payload = json.dumps(

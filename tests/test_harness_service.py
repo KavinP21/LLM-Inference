@@ -4,15 +4,15 @@ import asyncio
 import json
 
 import pytest
-from forge_llm.agents.context import tool_actor
-from forge_llm.agents.tools import ToolValidationError
-from forge_llm.harness.extensions import SkillRegistry
-from forge_llm.harness.service import StudioService
+from instinct.agents.context import tool_actor
+from instinct.agents.tools import ToolValidationError
+from instinct.harness.extensions import SkillRegistry
+from instinct.harness.service import StudioService
 
 
 def make_service(tmp_path, **kwargs):
     (tmp_path / "README.md").write_text("# Fixture\nObserved evidence.\n")
-    service = StudioService(tmp_path, tmp_path / ".forge", demo=True, **kwargs)
+    service = StudioService(tmp_path, tmp_path / ".instinct", demo=True, **kwargs)
     service.backend.delay = 0.01
     return service
 
@@ -52,7 +52,7 @@ def test_durable_subagents_export_and_followup(tmp_path):
                 await service.resume(first)
         finally:
             await service.close()
-        restarted = StudioService(tmp_path, tmp_path / ".forge", demo=True)
+        restarted = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
         try:
             state = await restarted.state()
             assert len(state["runs"]) == 2
@@ -81,7 +81,9 @@ def test_review_requires_exact_approval_and_artifact_executes_once(tmp_path):
             approval = detail["approvals"][0]
             assert approval["tool"] == "save_artifact"
             assert "demo-inspection.md" in approval["preview"]["diff"]
-            artifact = tmp_path / ".forge" / "artifacts" / run_id / "demo-inspection.md"
+            artifact = (
+                tmp_path / ".instinct" / "artifacts" / run_id / "demo-inspection.md"
+            )
             assert not artifact.exists()
             await service.decide(approval["id"], {"approved": True})
             with pytest.raises(ValueError, match="no longer pending"):
@@ -142,7 +144,7 @@ def test_recovery_preserves_manifest_and_rejects_changed_backend(tmp_path):
         run_id = (await service.create_run({"task": "Inspect evidence"}))["run_id"]
         await asyncio.sleep(0.02)
         await service.close()
-        service = StudioService(tmp_path, tmp_path / ".forge", demo=True)
+        service = StudioService(tmp_path, tmp_path / ".instinct", demo=True)
         service.backend.delay = 0.01
         try:
             assert (await service.detail(run_id))["run"]["status"] == "interrupted"
@@ -172,11 +174,13 @@ def test_private_state_and_read_only_mutations_are_unavailable(tmp_path):
             token = tool_actor.set((run_id, "root"))
             try:
                 with pytest.raises(ToolValidationError, match="private"):
-                    await runtime.tools["read_file"]({"path": ".forge/studio.sqlite"})
+                    await runtime.tools["read_file"](
+                        {"path": ".instinct/studio.sqlite"}
+                    )
                 files = json.loads(await runtime.tools["list_files"]({"path": "."}))[
                     "files"
                 ]
-                assert not any(".forge" in name for name in files)
+                assert not any(".instinct" in name for name in files)
             finally:
                 tool_actor.reset(token)
             await service.cancel(run_id)
