@@ -264,7 +264,7 @@ def test_actual_http_workers_tools_spawn_message_wait_and_synthesis(tmp_path):
                 store,
                 mappings,
                 RuntimeConfig(max_output_tokens=512, deadline_seconds=10),
-                tool_descriptions=tools.descriptions,
+                tool_descriptions=tools.tool_descriptions(),
                 replay_safe_tools=tools.replay_safe_tools,
             )
             try:
@@ -794,7 +794,7 @@ def test_http_child_tool_grants_and_per_agent_read_versions_guard_real_edits(tmp
                 pool,
                 store,
                 tools.mapping(),
-                tool_descriptions=tools.descriptions,
+                tool_descriptions=tools.tool_descriptions(),
                 replay_safe_tools=tools.replay_safe_tools,
             )
             try:

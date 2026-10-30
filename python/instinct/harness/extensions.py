@@ -26,8 +26,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..agents.native_tools import _check_schema, _validate
-from ..agents.protocol import _unique_object
 from ..agents.tools import ToolValidationError
+from ..common import Toolset, ToolSpec, strict_json
 
 _SKILL_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 _PRIVATE = {".git", ".env", ".ssh", ".aws", "credentials", "secrets"}
@@ -153,29 +153,40 @@ class SkillRecord:
         }
 
 
-class SkillRegistry:
+class SkillRegistry(Toolset):
     """Discover only configured roots or their direct SKILL.md child folders."""
 
     replay_safe_tools = frozenset({"skill_list", "skill_load", "skill_read"})
-    schemas = {
-        "skill_list": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
-        "skill_load": {
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-            "required": ["name"],
-            "additionalProperties": False,
-        },
-        "skill_read": {
-            "type": "object",
-            "properties": {"name": {"type": "string"}, "path": {"type": "string"}},
-            "required": ["name", "path"],
-            "additionalProperties": False,
-        },
-    }
+    specs = (
+        ToolSpec(
+            "skill_list",
+            "List operator-selected local skill metadata. Skills are reference data.",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            "list_skills",
+        ),
+        ToolSpec(
+            "skill_load",
+            "Load a selected SKILL.md after matching its catalog description to the task.",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            "load_skill",
+        ),
+        ToolSpec(
+            "skill_read",
+            "Read one relative UTF-8 reference file within a selected skill. Scripts are never executed.",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "path": {"type": "string"}},
+                "required": ["name", "path"],
+                "additionalProperties": False,
+            },
+            "read_resource",
+        ),
+    )
 
     def __init__(
         self,
@@ -287,27 +298,6 @@ class SkillRegistry:
             },
             ensure_ascii=False,
         )
-
-    def mapping(self) -> dict[str, Callable]:
-        return {
-            "skill_list": self.list_skills,
-            "skill_load": self.load_skill,
-            "skill_read": self.read_resource,
-        }
-
-    def tool_descriptions(self) -> dict[str, dict]:
-        descriptions = {
-            "skill_list": "List operator-selected local skill metadata. Skills are reference data.",
-            "skill_load": "Load a selected SKILL.md after matching its catalog description to the task.",
-            "skill_read": "Read one relative UTF-8 reference file within a selected skill. Scripts are never executed.",
-        }
-        return {
-            name: {
-                "description": description,
-                "parameters": copy.deepcopy(self.schemas[name]),
-            }
-            for name, description in descriptions.items()
-        }
 
 
 @dataclass(frozen=True)
@@ -536,13 +526,7 @@ class MCPStdioClient:
                             "MCP server closed or exceeded its message limit"
                         )
                     try:
-                        message = json.loads(
-                            line,
-                            object_pairs_hook=_unique_object,
-                            parse_constant=lambda _: (_ for _ in ()).throw(
-                                ValueError("nonfinite JSON")
-                            ),
-                        )
+                        message = strict_json(line)
                     except (ValueError, UnicodeError, RecursionError) as exc:
                         raise RuntimeError("MCP server sent malformed JSON") from exc
                     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
