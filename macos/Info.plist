@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Instinct</string>
+  <key>CFBundleDisplayName</key><string>Instinct</string>
+  <key>CFBundleIdentifier</key><string>local.instinct.app</string>
+  <key>CFBundleExecutable</key><string>Instinct</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSSupportsAutomaticTermination</key><false/>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- The UI is served by the app's own server on 127.0.0.1. -->
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
+  <!-- Filled in by build.sh: the checkout whose Python environment and models the app runs. -->
+  <key>InstinctRoot</key><string>@ROOT@</string>
+</dict>
+</plist>
