@@ -214,6 +214,9 @@ class DecodeBatch:
             scale=scale,
             window=group.window,
             softcap=softcap,
+            scales=(self.cache.key_scales[layer], self.cache.value_scales[layer])
+            if self.cache.bits == 8
+            else None,
         )
         return out.reshape(self.count, -1)
 

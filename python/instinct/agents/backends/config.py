@@ -154,7 +154,9 @@ def validate_request(
 
 
 # Options an MLX worker passes to its ChatRunner.
-CHAT_OPTIONS = frozenset({"effort", "prefill_chunk_size", "prefix_cache_bytes"})
+CHAT_OPTIONS = frozenset(
+    {"effort", "kv_bits", "prefill_chunk_size", "prefix_cache_bytes"}
+)
 
 
 def _positive(value: float, name: str) -> float:
@@ -237,6 +239,8 @@ class WorkerConfig:
             )
         if self.engine_options.get("effort", "off") not in EFFORT_BUDGETS:
             raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
+        if self.engine_options.get("kv_bits", 16) not in {8, 16}:
+            raise ValueError("kv_bits must be 8 or 16")
         if {
             "max_model_length",
             "kv_cache_bytes",
