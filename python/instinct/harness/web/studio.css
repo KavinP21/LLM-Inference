@@ -36,7 +36,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .app.sidebar-open .sidebar { margin-left: 0; }
 .sidebar-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 19px; }
 .brand { display: flex; gap: 9px; align-items: center; color: var(--ink); text-decoration: none; font-size: 17px; font-weight: 600; letter-spacing: -.4px; }
-.brand-mark { width: 24px; height: 27px; display: grid; place-items: center; font: italic 700 29px Georgia, serif; color: var(--accent); }
+.brand-mark { width: 22px; height: 22px; display: grid; place-items: center; color: var(--accent); }
+.spark { width: 100%; height: 100%; fill: currentColor; stroke: none; }
 .icon-button { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 7px; display: grid; place-items: center; background: transparent; color: var(--muted); font-size: 25px; line-height: 1; }
 .icon-button:hover { color: var(--ink); background: var(--raised); }
 .new-chat { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--line); background: var(--surface); padding: 9px 12px; border-radius: 8px; text-align: left; font-size: 13px; }
@@ -71,7 +72,7 @@ kbd { font: 10px var(--sans); color: var(--muted); border: 1px solid var(--line)
 .text-button { color: var(--accent); background: transparent; padding: 2px 0; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .transcript-pane { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; padding: 22px 28px 0; scroll-padding-bottom: 30px; }
 .welcome { max-width: 740px; margin: clamp(24px, 11vh, 125px) auto 50px; }
-.welcome-mark { font: italic 700 59px Georgia, serif; color: var(--accent); display: block; line-height: 1; margin: 0 0 23px 4px; }
+.welcome-mark { width: 44px; height: 44px; color: var(--accent); display: block; margin: 0 0 24px 2px; }
 .welcome h1 { font-size: clamp(24px, 3vw, 32px); font-weight: 450; letter-spacing: -.8px; line-height: 1.3; }
 .welcome > p { color: var(--muted); margin-top: 12px; font-size: 14px; }
 .starter-chips { display: flex; gap: 11px; flex-wrap: wrap; margin-top: 30px; }
@@ -85,7 +86,7 @@ kbd { font: 10px var(--sans); color: var(--muted); border: 1px solid var(--line)
 .user-message.steering { margin-top: 14px; }
 .assistant-turn { padding: 0 3px; }
 .assistant-label { display: flex; gap: 8px; align-items: center; font-size: 12px; font-weight: 600; margin: 0 0 13px; color: var(--accent); }
-.assistant-mark { font: italic 700 18px Georgia, serif; line-height: 1; }
+.assistant-mark { width: 14px; height: 14px; display: inline-grid; }
 .turn-activity:empty, .turn-agents:empty, .turn-approvals:empty, .turn-error:empty, .turn-artifacts:empty, .turn-progress:empty, .turn-directions:empty { display: none; }
 .activity-group, .agents-group { margin-bottom: 12px; color: var(--muted); font-size: 12px; }
 summary { cursor: pointer; list-style: none; }
@@ -347,3 +348,25 @@ details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
 .chat-rename { width: calc(100% - 60px); margin: 9px 12px; padding: 4px 6px; font-size: 12px; background: var(--page); border: 1px solid var(--accent); border-radius: 5px; color: var(--ink); }
 .chat-action.armed { width: auto; padding: 0 6px; color: var(--danger); background: var(--raised); font-size: 10px; }
 .chat-row:has(.chat-rename) .chat-actions { display: none; }
+
+/* Mac app: the window's traffic-light buttons sit over the top-left corner. */
+.app-mac .topbar, .app-mac .sidebar-heading { user-select: none; -webkit-user-select: none; }
+.app-mac .app:not(.sidebar-open) .topbar { padding-left: 84px; }
+.app-mac .sidebar { padding-top: 14px; }
+.app-mac .sidebar-heading { padding-left: 72px; min-height: 36px; }
+.app-mac .sidebar-heading .brand { display: none; }
+.app-mac .sidebar-heading { justify-content: flex-end; }
+
+/* Terminal panel, under the composer. */
+.terminal-panel { flex: 0 0 auto; height: 280px; display: flex; flex-direction: column; position: relative; border-top: 1px solid var(--line); background: #0f1619; }
+.terminal-resize { position: absolute; top: -4px; left: 0; right: 0; height: 8px; cursor: ns-resize; z-index: 2; }
+.terminal-heading { display: flex; align-items: center; gap: 10px; height: 34px; flex: 0 0 34px; padding: 0 10px 0 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.terminal-title { color: var(--ink); font-weight: 500; }
+.terminal-badge { font-size: 10px; color: var(--accent); border: 1px solid #a2d5c955; border-radius: 4px; padding: 0 5px; line-height: 16px; }
+.terminal-state { margin-left: auto; font-size: 11px; color: var(--faint); }
+.terminal-host { flex: 1; min-height: 0; padding: 6px 6px 4px 14px; }
+.terminal-host .xterm-viewport { background: transparent !important; }
+.toggle-row { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; cursor: pointer; }
+.toggle-row input { margin-top: 4px; accent-color: var(--accent); }
+.toggle-row strong { display: block; font-size: 13px; font-weight: 500; }
+.toggle-row small { display: block; color: var(--faint); font-size: 11px; line-height: 1.5; }
