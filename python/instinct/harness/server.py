@@ -180,7 +180,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 and parts[3] == "stream"
             ):
                 return self._terminal_stream(parts[2])
-            return self._dispatch("GET", path, {})
+            query = {}
+            if path == "/api/folders":
+                query = {
+                    k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()
+                }
+            return self._dispatch("GET", path, query)
         files = {
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.css": ("app.css", "text/css; charset=utf-8"),

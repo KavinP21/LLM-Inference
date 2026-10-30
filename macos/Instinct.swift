@@ -51,11 +51,9 @@ final class Backend {
         stopping = false
         port = nil
         token = Self.randomToken()
-        // Keys and network settings belong to the app, not to a workspace; a
-        // test's state folder keeps its own.
-        let shared = state ?? Self.supportDirectory
-        let keys = shared.appendingPathComponent("api-keys.json")
-        let network = shared.appendingPathComponent("network.json")
+        // Keys, network settings and the project list belong to the app, not
+        // to a workspace; a test's state folder keeps its own.
+        let home = state ?? Self.supportDirectory
         let state = state ?? Self.stateDirectory(for: workspace)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
 
@@ -64,7 +62,7 @@ final class Backend {
         process.currentDirectoryURL = root
         var arguments = ["-m", "instinct.harness.cli", "--app", "--port", "0",
                          "--workspace", workspace.path, "--state-dir", state.path,
-                         "--keys-file", keys.path, "--network-file", network.path]
+                         "--home", home.path]
         arguments += modelsReady && !demo ? ["--config", config.path] : ["--demo"]
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
@@ -370,6 +368,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         webView.load(URLRequest(url: url))
     }
 
+    /// ⌘O: the page's project switcher, which can also ask for the open panel.
+    @objc func openProject(_ sender: Any?) {
+        if webView.isHidden { openFolder(sender) } else { run("projects") }
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -380,10 +383,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         panel.directoryURL = workspace
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
-            self.workspace = url
-            UserDefaults.standard.set(url.path, forKey: "workspace")
-            self.launch()
+            if self.webView.isHidden {
+                // No page to switch in place (it failed to start): relaunch there.
+                self.useWorkspace(url)
+                self.launch()
+            } else {
+                // The server opens it in place, keeping the models loaded.
+                self.webView.evaluateJavaScript("window.instinct.openFolder(\(Self.jsString(url.path)))")
+            }
         }
+    }
+
+    func useWorkspace(_ url: URL) {
+        workspace = url
+        window.subtitle = url.path
+        UserDefaults.standard.set(url.path, forKey: "workspace")
     }
 
     @objc func revealWorkspace(_ sender: Any?) {
@@ -436,7 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         ])
         _ = submenu("File", [
             command("New Chat", "newChat", "n"),
-            item("Open Folder…", #selector(openFolder(_:)), "o", target: self),
+            item("Open Project…", #selector(openProject(_:)), "o", target: self),
             item("Show Workspace in Finder", #selector(revealWorkspace(_:)), "r", [.command, .shift], target: self),
             .separator(),
             item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
@@ -504,6 +518,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             window.performZoom(nil)
         case "openFolder":
             openFolder(nil)
+        case "workspace":
+            if let path = body["path"] as? String { useWorkspace(URL(fileURLWithPath: path, isDirectory: true)) }
         case "reveal":
             let path = (body["path"] as? String).map { workspace.appendingPathComponent($0) } ?? workspace!
             NSWorkspace.shared.activateFileViewerSelecting([path])

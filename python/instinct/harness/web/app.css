@@ -624,3 +624,25 @@ html.app-mac .sidebar { background: color-mix(in srgb, var(--rail) 55%, transpar
   .developer-pane { position: fixed; inset: 0; z-index: 40; width: auto; max-width: none; flex: none; }
   pre, .markdown table { max-width: 100%; overflow-x: auto; }
 }
+
+/* Projects: the switcher behind the header's project name. */
+button.workspace-name { border: 0; background: none; padding: 3px 7px; margin-left: -7px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }
+button.workspace-name:hover { background: var(--raised); color: var(--ink); }
+.projects-dialog { width: min(520px, calc(100vw - 32px)); }
+.projects-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.projects-heading h2 { font-size: 16px; font-weight: 600; }
+.project-list, .folder-list { display: grid; gap: 4px; max-height: min(52vh, 420px); overflow: auto; margin-bottom: 12px; }
+.project-row { display: flex; align-items: center; gap: 2px; border: 1px solid transparent; border-radius: 9px; padding: 2px 4px 2px 2px; }
+.project-row:hover { background: var(--raised); }
+.project-row.current { border-color: var(--accent-line); background: var(--accent-soft); }
+.project-row.missing { opacity: .55; }
+.project-open { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 7px 9px; cursor: pointer; color: var(--ink); }
+.project-open strong { display: block; font-size: 13px; font-weight: 500; }
+.project-open small { display: block; font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-row .pinned { color: var(--accent); }
+.project-title-input { width: 100%; border: 1px solid var(--accent-line); border-radius: 6px; padding: 3px 6px; background: var(--surface); color: var(--ink); font-size: 13px; }
+.folder-path { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.folder-path code { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-row { text-align: left; border: 0; background: none; border-radius: 7px; padding: 7px 10px; color: var(--ink); font-size: 12px; cursor: pointer; }
+.folder-row:hover { background: var(--raised); }
+.folder-actions { display: flex; justify-content: flex-end; gap: 8px; }
