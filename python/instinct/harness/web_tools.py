@@ -19,6 +19,7 @@ import urllib.request
 from html.parser import HTMLParser
 
 from ..agents.tools import ToolValidationError
+from ..common import Toolset, ToolSpec
 
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Instinct/0.1"
 SEARCH_URL = "https://lite.duckduckgo.com/lite/"
@@ -146,27 +147,37 @@ class _NoRedirects(urllib.request.HTTPRedirectHandler):
         return None  # Redirects are followed by hand so each hop is checked.
 
 
-class WebTools:
-    schemas = {
-        "web_search": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+class WebTools(Toolset):
+    specs = (
+        ToolSpec(
+            "web_search",
+            "Search the web. Returns titles, URLs and snippets; use fetch_url to read a result. Prefer official documentation.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
             },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-        "fetch_url": {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string"},
-                "max_chars": {"type": "integer", "minimum": 500, "maximum": 40000},
+            "web_search",
+        ),
+        ToolSpec(
+            "fetch_url",
+            "Read a web page or text file from a public URL as plain text.",
+            {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "max_chars": {"type": "integer", "minimum": 500, "maximum": 40000},
+                },
+                "required": ["url"],
+                "additionalProperties": False,
             },
-            "required": ["url"],
-            "additionalProperties": False,
-        },
-    }
+            "fetch_url",
+        ),
+    )
     replay_safe_tools = frozenset({"web_search", "fetch_url"})
 
     def __init__(self, *, timeout: float = 15.0):
@@ -174,21 +185,6 @@ class WebTools:
         self._opener = urllib.request.build_opener(
             _NoRedirects, urllib.request.HTTPSHandler(context=_context())
         )
-
-    def mapping(self):
-        return {"web_search": self.web_search, "fetch_url": self.fetch_url}
-
-    def tool_descriptions(self):
-        return {
-            "web_search": {
-                "description": "Search the web. Returns titles, URLs and snippets; use fetch_url to read a result. Prefer official documentation.",
-                "parameters": self.schemas["web_search"],
-            },
-            "fetch_url": {
-                "description": "Read a web page or text file from a public URL as plain text.",
-                "parameters": self.schemas["fetch_url"],
-            },
-        }
 
     def _get(self, url: str) -> tuple[str, str, bytes]:
         for _ in range(5):

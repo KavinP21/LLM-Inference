@@ -7,7 +7,6 @@ an optional edit can require the version the agent actually inspected.
 from __future__ import annotations
 
 import asyncio
-import copy
 import hashlib
 import json
 import os
@@ -21,8 +20,9 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
+from ..common import Toolset, ToolSpec
 from .context import tool_actor
 
 _IGNORED = {
@@ -105,163 +105,221 @@ def _integer(value: Any, low: int, high: int, name: str) -> int:
     return value
 
 
-class WorkspaceTools:
+class WorkspaceTools(Toolset):
     """Tools confined to one operator-selected directory and an artifact directory."""
 
-    descriptions: ClassVar[dict[str, str]] = {
-        "list_files": 'List workspace files. Arguments: {"path":".","limit":100}.',
-        "read_file": 'Read UTF-8 lines and SHA256. Arguments: {"path":"file","start_line":1,"max_lines":120}.',
-        "search": 'Search workspace files for text or a regular expression; lowercase queries ignore case. Arguments: {"query":"text","path":".","limit":30}.',
-        "save_artifact": 'Save a new reviewable artifact. Arguments: {"path":"report.md","content":"..."}. Existing files cannot be overwritten.',
-        "write_file": 'Replace a COMPLETE file after read_file. Last read version is checked automatically; omit hashes and receipts. Never write partial excerpts. Arguments: {"path":"file","content":"..."}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
-        "replace_text": 'Replace one unique substring after read_file. Include leading spaces in code matches and indent EVERY replacement line; whitespace is never added. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","old_text":"exact unique text","new_text":"replacement"}. Explicit read_receipt or expected_sha256 remains available through the tool API.',
-        "edit_lines": 'Preferred for multiline source edits: replace an inclusive whole-line range from read_file. Provide complete replacement lines with exact indentation and no displayed line-number labels. Unselected lines stay unchanged; a missing trailing newline preserves the original range boundary. Last read version is checked automatically; omit hashes and receipts. Arguments: {"path":"file","start_line":1,"end_line":3,"content":"complete replacement lines"}.',
-        "run_tests": 'Run configured Python pytest on explicit workspace test files. Arguments: {"paths":["tests/test_example.py"]}.',
-        "make_directory": 'Create a folder (and any missing parents). Arguments: {"path":"src/new_package"}.',
-        "move_path": 'Move or rename a file or folder inside the workspace. Fails if the destination exists. Arguments: {"source":"old/name.py","destination":"new/name.py"}.',
-        "delete_path": 'Move a file or folder to the Trash, where the user can restore it. Arguments: {"path":"build/output.log"}.',
-    }
     replay_safe_tools = frozenset({"list_files", "read_file", "search"})
-    schemas: ClassVar[dict[str, dict]] = {
-        "list_files": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
-            },
-            "additionalProperties": False,
-        },
-        "read_file": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "start_line": {"type": "integer", "minimum": 1},
-                "max_lines": {"type": "integer", "minimum": 1, "maximum": 1000},
-            },
-            "required": ["path"],
-            "additionalProperties": False,
-        },
-        "search": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "path": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-        "save_artifact": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
-            "required": ["path", "content"],
-            "additionalProperties": False,
-        },
-        "make_directory": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"],
-            "additionalProperties": False,
-        },
-        "move_path": {
-            "type": "object",
-            "properties": {
-                "source": {"type": "string"},
-                "destination": {"type": "string"},
-            },
-            "required": ["source", "destination"],
-            "additionalProperties": False,
-        },
-        "delete_path": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"],
-            "additionalProperties": False,
-        },
-        "write_file": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-                "read_receipt": {"type": "string"},
-                "expected_sha256": {"type": "string"},
-            },
-            "required": ["path", "content"],
-            "additionalProperties": False,
-        },
-        "replace_text": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "old_text": {
-                    "type": "string",
-                    "description": "Exact unique file text, including leading spaces; exclude displayed line-number labels.",
+    specs = (
+        ToolSpec(
+            "list_files",
+            "List workspace files.",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
                 },
-                "new_text": {
-                    "type": "string",
-                    "description": "Exact replacement with correct indentation on every line. No whitespace is added automatically.",
-                },
-                "read_receipt": {"type": "string"},
-                "expected_sha256": {"type": "string"},
+                "additionalProperties": False,
             },
-            "required": ["path", "old_text", "new_text"],
-            "additionalProperties": False,
-        },
-        "edit_lines": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "start_line": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1_000_000,
-                    "description": "First existing line to replace, inclusive; use read_file line numbers.",
+            "list_files",
+        ),
+        ToolSpec(
+            "read_file",
+            "Read UTF-8 lines and SHA256.",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "start_line": {"type": "integer", "minimum": 1},
+                    "max_lines": {"type": "integer", "minimum": 1, "maximum": 1000},
                 },
-                "end_line": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1_000_000,
-                    "description": "Last existing line to replace, inclusive; must be at least start_line.",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Complete replacement lines, exactly indented; no displayed line-number labels. Empty text deletes the selected lines.",
-                },
-                "read_receipt": {"type": "string"},
-                "expected_sha256": {"type": "string"},
+                "required": ["path"],
+                "additionalProperties": False,
             },
-            "required": ["path", "start_line", "end_line", "content"],
-            "additionalProperties": False,
-        },
-        "run_tests": {
-            "type": "object",
-            "properties": {
-                "paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "minItems": 1,
-                    "maxItems": 20,
-                }
+            "read_file",
+        ),
+        ToolSpec(
+            "search",
+            "Search workspace files for text or a regular expression; lowercase queries ignore case.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "path": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
             },
-            "required": ["paths"],
-            "additionalProperties": False,
-        },
-    }
+            "search",
+        ),
+        ToolSpec(
+            "save_artifact",
+            "Save a new reviewable artifact.",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+            "save_artifact",
+        ),
+        ToolSpec(
+            "write_file",
+            "Replace a COMPLETE file after read_file. Last read version is checked automatically; omit hashes and receipts. Never write partial excerpts.",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                    "read_receipt": {"type": "string"},
+                    "expected_sha256": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+            "write_file",
+        ),
+        ToolSpec(
+            "replace_text",
+            "Replace one unique substring after read_file. Include leading spaces in code matches and indent EVERY replacement line; whitespace is never added. Last read version is checked automatically; omit hashes and receipts.",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "old_text": {
+                        "type": "string",
+                        "description": "Exact unique file text, "
+                        "including leading "
+                        "spaces; exclude "
+                        "displayed line-number "
+                        "labels.",
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "Exact replacement with "
+                        "correct indentation on "
+                        "every line. No "
+                        "whitespace is added "
+                        "automatically.",
+                    },
+                    "read_receipt": {"type": "string"},
+                    "expected_sha256": {"type": "string"},
+                },
+                "required": ["path", "old_text", "new_text"],
+                "additionalProperties": False,
+            },
+            "replace_text",
+        ),
+        ToolSpec(
+            "edit_lines",
+            "Preferred for multiline source edits: replace an inclusive whole-line range from read_file. Provide complete replacement lines with exact indentation and no displayed line-number labels. Unselected lines stay unchanged; a missing trailing newline preserves the original range boundary. Last read version is checked automatically; omit hashes and receipts.",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "start_line": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000000,
+                        "description": "First existing line to "
+                        "replace, inclusive; "
+                        "use read_file line "
+                        "numbers.",
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000000,
+                        "description": "Last existing line to "
+                        "replace, inclusive; must "
+                        "be at least start_line.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Complete replacement "
+                        "lines, exactly indented; "
+                        "no displayed line-number "
+                        "labels. Empty text "
+                        "deletes the selected "
+                        "lines.",
+                    },
+                    "read_receipt": {"type": "string"},
+                    "expected_sha256": {"type": "string"},
+                },
+                "required": ["path", "start_line", "end_line", "content"],
+                "additionalProperties": False,
+            },
+            "edit_lines",
+        ),
+        ToolSpec(
+            "make_directory",
+            "Create a folder (and any missing parents).",
+            {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            "make_directory",
+        ),
+        ToolSpec(
+            "move_path",
+            "Move or rename a file or folder inside the workspace. Fails if the destination exists.",
+            {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string"},
+                    "destination": {"type": "string"},
+                },
+                "required": ["source", "destination"],
+                "additionalProperties": False,
+            },
+            "move_path",
+        ),
+        ToolSpec(
+            "delete_path",
+            "Move a file or folder to the Trash, where the user can restore it.",
+            {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            "delete_path",
+        ),
+        ToolSpec(
+            "run_tests",
+            "Run configured Python pytest on explicit workspace test files.",
+            {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                        "maxItems": 20,
+                    }
+                },
+                "required": ["paths"],
+                "additionalProperties": False,
+            },
+            "run_tests",
+        ),
+    )
 
     def tool_descriptions(self) -> dict:
-        result = {}
-        for name in self.mapping():
-            parameters = copy.deepcopy(self.schemas[name])
-            if name in {"write_file", "replace_text", "edit_lines"}:
-                # Native models use the automatically recorded per-agent read
-                # version. Keep explicit version selection in the direct API,
-                # without asking the model to copy opaque hashes or receipts.
-                parameters["properties"].pop("read_receipt", None)
-                parameters["properties"].pop("expected_sha256", None)
-            result[name] = {
-                "description": self.descriptions[name].split("Arguments:")[0].strip(),
-                "parameters": parameters,
-            }
+        result = super().tool_descriptions()
+        for name in {"write_file", "replace_text", "edit_lines"} & result.keys():
+            # Native models use the automatically recorded per-agent read
+            # version. Keep explicit version selection in the direct API,
+            # without asking the model to copy opaque hashes or receipts.
+            properties = result[name]["parameters"]["properties"]
+            properties.pop("read_receipt", None)
+            properties.pop("expected_sha256", None)
         return result
 
     def __init__(
@@ -395,22 +453,21 @@ class WorkspaceTools:
             "read_file before editing this file; no version was observed by this agent"
         )
 
-    def mapping(self) -> dict:
-        names = ["list_files", "read_file", "search", "save_artifact"]
-        if self.allow_write:
-            names.extend(
-                [
-                    "write_file",
-                    "replace_text",
-                    "edit_lines",
-                    "make_directory",
-                    "move_path",
-                    "delete_path",
-                ]
-            )
-        if self.allow_tests:
-            names.append("run_tests")
-        return {name: getattr(self, name) for name in names}
+    def available(self):
+        writes = {
+            "write_file",
+            "replace_text",
+            "edit_lines",
+            "make_directory",
+            "move_path",
+            "delete_path",
+        }
+        for spec in self.specs:
+            if spec.name in writes and not self.allow_write:
+                continue
+            if spec.name == "run_tests" and not self.allow_tests:
+                continue
+            yield spec
 
     def _path(self, value: Any, *, artifact: bool = False) -> Path:
         if not isinstance(value, str) or not value or "\x00" in value:

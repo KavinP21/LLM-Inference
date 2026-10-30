@@ -15,7 +15,8 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
-from .protocol import ProtocolError, _unique_object, parse_action
+from ..common import strict_decoder, strict_json
+from .protocol import ProtocolError, parse_action
 
 _CONTROLS = frozenset({"spawn", "send", "wait", "finish"})
 _RESERVED = _CONTROLS | {"tool"}
@@ -527,13 +528,7 @@ def _xml_argument(raw: str, schema: dict) -> Any:
         value = scalar in {"true", "True"}
     else:
         try:
-            value = json.loads(
-                scalar,
-                object_pairs_hook=_unique_object,
-                parse_constant=lambda value: (_ for _ in ()).throw(
-                    ProtocolError(f"invalid JSON constant: {value}")
-                ),
-            )
+            value = strict_json(scalar, ProtocolError)
         except (ValueError, RecursionError) as exc:
             raise ProtocolError(f"invalid typed native parameter: {exc}") from exc
     _validate(value, schema)
@@ -641,13 +636,7 @@ def parse_native_action(
             _native_xml_call(body, catalog), ensure_ascii=False, allow_nan=False
         )
     try:
-        call = json.loads(
-            body,
-            object_pairs_hook=_unique_object,
-            parse_constant=lambda value: (_ for _ in ()).throw(
-                ProtocolError(f"invalid JSON constant: {value}")
-            ),
-        )
+        call = strict_json(body, ProtocolError)
     except (ValueError, RecursionError) as exc:
         raise ProtocolError(f"invalid native call JSON: {exc}") from exc
     if (
@@ -743,12 +732,7 @@ def parse_native_actions(
         allow_xml_text and "<tool_call>" in body
     ):
         return [parse_native_action(body, specs, max_chars=max_chars)]
-    decoder = json.JSONDecoder(
-        object_pairs_hook=_unique_object,
-        parse_constant=lambda value: (_ for _ in ()).throw(
-            ProtocolError(f"invalid JSON constant: {value}")
-        ),
-    )
+    decoder = strict_decoder(ProtocolError)
 
     def skip_whitespace(position: int) -> int:
         while position < len(body) and body[position] in " \t\r\n":
