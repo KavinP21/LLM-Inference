@@ -6,17 +6,14 @@
   arenas and tests exist, and CI compiles them, but nothing has been checked for
   correctness or speed on NVIDIA hardware. Its attention kernels also cap context
   at 2,048 tokens.
-- **Paged attention on Metal copies pages.** MLX arrays are immutable, so the
-  attention kernel stacks each layer's live pages into one array before launch.
-  That copy is why a single long request barely speeds up.
 - **One prefill chunk per step.** The scheduler doesn't pack several prompts into
   one prefill batch.
-- **Gemma's sliding-window layers** limit how much attention work they do, but they
-  keep their pages until the request finishes.
-- **Qwen3.5 runs through MLX-VLM**, one request per replica. It doesn't get the
-  native engine's paged KV cache, continuous batching or prefix reuse.
-- **No sampling in the native engine** (greedy only), no native 4-bit weights,
-  no streaming or OpenAI-compatible server, and no tensor/pipeline parallelism.
+- **One user decodes slower than mlx-vlm did** (65 vs 76 tok/s on Gemma): the
+  engine builds each step's graph while the GPU waits, and Gemma's MTP drafter
+  isn't wired in. Several users at once are much faster than before.
+- **Small batches of 4-bit matmuls** cost about twice a single row in MLX at
+  eight rows, which limits how well eight users scale.
+- **No OpenAI-compatible server** and no tensor/pipeline parallelism.
 - **Long context is only smoke-tested.** The 32K runs show it executes and frees
   memory, not that output quality holds up or how fast sustained decoding is.
 
@@ -26,5 +23,6 @@
 | --- | --- |
 | NVIDIA bring-up | Qwen runs on an RTX card and matches reference tokens and logits, Compute Sanitizer is clean, and there's a benchmark matrix with Nsight traces |
 | Prefix-cache timing | Disabled/cold/primed runs at 128 and 1,024 tokens, concurrency 1 and 8, for both models, with insertion and reuse cost reported separately |
-| Cheaper page packing | Profile the per-layer page stack on its own, then compare alternatives at the same workload and memory accounting |
+| Pipelined decode | Build step N+1's graph while the GPU runs step N; one user back above 76 tok/s on Gemma |
+| MTP drafting | Gemma 4's assistant drafts inside the batched engine and helps at agent-length contexts |
 | Qwen3.5 | Longer contexts, more varied visual and agent tasks, and load testing. Speculation stays off until it helps on more than copying |

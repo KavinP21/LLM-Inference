@@ -620,7 +620,7 @@ def main(argv: list[str] | None = None) -> int:
         help="report ready without loading the model; it loads on the first request",
     )
     parser.add_argument("--backend", choices=("auto", "mlx", "cuda"), default="auto")
-    parser.add_argument("--runner", choices=("engine", "vlm"), default="engine")
+    parser.add_argument("--runner", choices=("auto", "chat", "engine"), default="auto")
     parser.add_argument("--max-model-length", type=int, default=2048)
     parser.add_argument("--kv-cache-bytes", type=int, default=256 << 20)
     parser.add_argument("--max-pending", type=int, default=8)
@@ -705,9 +705,7 @@ def main(argv: list[str] | None = None) -> int:
             (args.host, args.port),
             service,
             token,
-            max_body_bytes=MAX_MEDIA_REQUEST_BYTES
-            if config.runner == "vlm"
-            else 1 << 20,
+            max_body_bytes=MAX_MEDIA_REQUEST_BYTES if config.takes_media else 1 << 20,
         )
         if args.tls_cert:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

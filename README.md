@@ -19,7 +19,7 @@ silicon with nothing sent to an API.
   work, context use, and per-call timing and cache hits.
 
 ```bash
-pip install -e '.[mlx,vlm,agents]'
+pip install -e '.[mlx,agents]'
 python -m instinct.prepare_models       # ~18 GB of models into models/
 macos/build.sh --install                # ~/Applications/Instinct.app
 ```
@@ -29,12 +29,12 @@ macos/build.sh --install                # ~/Applications/Instinct.app
 ## The inference engine
 
 Underneath is an LLM inference engine written from scratch in Python and C++,
-with an Apple MLX/Metal backend and a CUDA backend. It runs Qwen2 and Gemma 3
+with an Apple MLX/Metal backend and a CUDA backend. On Apple silicon it runs
+the app's Gemma 4 (MoE, with images) and Qwen3.5 (hybrid linear attention)
+straight from their 4-bit checkpoints, plus Qwen2 and Gemma 3 `.engine` files,
 with paged KV arenas, continuous batching and custom Metal kernels. PyTorch and
 Transformers are only used to export weights, tokenize and check outputs;
-they're never in the generation loop. The app's Gemma 4 and Qwen3.5 models run
-through mlx-vlm instead (see below), because their architectures aren't in the
-engine.
+they're never in the generation loop.
 
 ### What the engine does
 
@@ -125,15 +125,15 @@ covers building the CUDA backend under WSL2.
 ## Also in this repo
 
 **Gemma 4 and Qwen3.5 (text, images).** The default setup uses Gemma 4 26B A4B
-(QAT 4-bit) as the main model and Qwen3.5-4B for sub-agents. Both run through
-[mlx-vlm](https://github.com/Blaizzy/mlx-vlm) inside Instinct's [VLM runner](docs/vlm-runner.md),
-which reuses prompts across turns: a follow-up message starts generating in
-57 ms on Qwen3.5 and 84 ms on Gemma, against ~1 s or more for a cold prompt. See
-[docs/models.md](docs/models.md).
+(QAT 4-bit) as the main model and Qwen3.5-4B for sub-agents, both on the engine
+through `ChatRunner`, which batches concurrent requests and reuses each
+conversation's computed prefix across turns. One user gets about 65 tok/s from
+Gemma and 76 from Qwen on an M3 Max; three at once get about 49 and 53 each.
+See [docs/models.md](docs/models.md).
 
 ```bash
-pip install -e '.[mlx,vlm,agents]'
-python -m instinct.prepare_models       # ~18 GB into models/
+pip install -e '.[mlx,agents]'
+python -m instinct.prepare_models       # ~17 GB into models/
 ```
 
 **Agent runtime.** Logical agents share a pool of model worker processes (local
