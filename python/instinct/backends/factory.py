@@ -11,8 +11,9 @@ from .dense import DenseModel
 
 def _adapters() -> dict[str, Any]:
     from .gemma4 import Gemma4Model
+    from .qwen35 import Qwen35Model
 
-    return {"gemma4": Gemma4Model}
+    return {"gemma4": Gemma4Model, "qwen3_5": Qwen35Model}
 
 
 def load_model(path: str | Path) -> Any:
