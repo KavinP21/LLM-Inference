@@ -188,7 +188,19 @@ estimate is that count plus a byte bound for only what was appended since. It
 is still an upper bound, and agents keep several times more history before
 anything is dropped. Omitted/truncated evidence is marked explicitly. The
 built-in `journal_read` tool retrieves earlier agent evidence with bounded
-pagination. Normal evidence pages skip the reader's
+pagination.
+
+Native agents compact rather than project. Projection rebuilds the window on
+every step, which changes the prompt near its start and misses the prompt cache
+each time. Instead, once the context passes 75% of the input budget, the model
+is asked for a plain-text summary of its work. That request extends the cached
+prompt, so it only costs the summary's tokens. From then on the agent sees its
+system prompt, its task, the summary and the recent messages (about 40% of the
+budget, starting at an assistant message), and the prompt grows by appending
+until the next compaction. If the summary request fails or comes back as a tool
+call, projection is used instead. In a Gemma 4 run that read two 2,000-line
+files, compaction at about 28K tokens cost one 4K-token re-prefill, after which
+cache reuse returned to about 80% per step. Normal evidence pages skip the reader's
 own recall copies; full audit metadata is available with `include_control`.
 The full source evidence remains in the
 journal; an initial task that cannot fit fails explicitly.
