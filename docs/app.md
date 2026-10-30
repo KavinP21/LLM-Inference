@@ -19,8 +19,8 @@ macos/build.sh --install                # builds ~/Applications/Instinct.app
 The app runs the Python environment and models of the checkout it was built
 from, so build it from the copy you want it to use. Without the models it starts
 in demo mode, which exercises the interface without inference. It needs macOS 14
-or later on Apple silicon. Gemma alone takes about 16 GB of memory, and the two
-Qwen workers about 3.5 GB each while they run.
+or later on Apple silicon. Gemma alone takes about 16 GB of memory, and the Qwen
+worker about 3 GB plus its cache while it runs.
 
 ## The workspace and sandbox
 
@@ -63,8 +63,9 @@ for the chat's model and a reasoning slider:
 
 Replies stream in as they are written. While the model thinks, its reasoning
 shows in a collapsible block, which stays as "Thought" above the answer.
-Sub-agents stream into their own cards. The Qwen workers start when a sub-agent
-first needs one and stop after ten idle minutes.
+Sub-agents stream into their own cards. One Qwen worker runs up to eight
+sub-agents at once in shared batches; it starts when a sub-agent first needs it
+and stops after ten idle minutes.
 
 ## Rewind and edit
 

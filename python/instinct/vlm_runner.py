@@ -41,6 +41,7 @@ from .chat_formats import (
     thinking_budget,
     to_gemma_messages,
 )
+from .chat_runner import checkpoint_fingerprint  # noqa: F401  (re-exported)
 
 # Whether the drafter helps depends on the output and on the prompt length: a
 # verify round gets more expensive as the context grows. On Gemma 4 26B A4B it
@@ -94,46 +95,6 @@ def _identity(message: dict) -> dict:
             (item["type"], item.get("key") or item["path"])
             for item in message.get("media", ())
         ],
-    }
-
-
-def checkpoint_fingerprint(path: str | Path) -> dict[str, str]:
-    """Cheap identity for resumable runs: each file's size plus a hash of its
-    first and last MiB. That covers the safetensors header (shapes, dtypes,
-    offsets), so a re-quantized or replaced file changes it, without reading
-    gigabytes of weights at every start."""
-    directory = Path(path)
-
-    def digest(names: list[str]) -> str:
-        entries = []
-        for name in sorted(names):
-            file = directory / name
-            if not file.is_file():
-                continue
-            size = file.stat().st_size
-            with file.open("rb") as stream:
-                head = stream.read(1 << 20)
-                stream.seek(max(0, size - (1 << 20)))
-                tail = stream.read(1 << 20)
-            entries.append([name, size, hashlib.sha256(head + tail).hexdigest()])
-        return hashlib.sha256(json.dumps(entries).encode()).hexdigest()
-
-    files = [f.name for f in directory.iterdir() if f.is_file()]
-    tokenizer = [
-        n
-        for n in files
-        if n
-        in {
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "chat_template.jinja",
-            "vocab.json",
-        }
-    ]
-    return {
-        "model_data_sha256": digest([n for n in files if n.endswith(".safetensors")]),
-        "model_config_sha256": digest(["config.json"]),
-        "tokenizer_signature": digest(tokenizer),
     }
 
 
