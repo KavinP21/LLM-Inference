@@ -156,6 +156,7 @@ class ChatRunner:
         kv_cache_bytes: int = 4 << 30,
         prefix_cache_bytes: int | None = None,
         prefill_chunk_size: int = 512,
+        kv_bits: int = 16,
         max_sessions: int = 64,
         eos_token_ids: Sequence[int] | None = None,
         local_files_only: bool = True,
@@ -185,6 +186,7 @@ class ChatRunner:
             if prefix_cache_bytes is None
             else prefix_cache_bytes,
             prefill_chunk_size=prefill_chunk_size,
+            kv_bits=kv_bits,
         )
         loaded = threading.Event()
         failure: list[BaseException] = []

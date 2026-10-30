@@ -41,8 +41,18 @@ class KVGroup:
     head_dim: int
     window: int = 0  # 0 for full attention
 
-    def bytes_per_token(self, itemsize: int) -> int:
-        return 2 * len(self.layers) * self.kv_heads * self.head_dim * itemsize
+    def bytes_per_token(self, bits: int = 16) -> int:
+        # 8-bit rows carry a 2-byte scale per head.
+        row = self.head_dim * bits // 8 + (2 if bits == 8 else 0)
+        return 2 * len(self.layers) * self.kv_heads * row
+
+
+def quantize(mx: Any, x: Any) -> tuple[Any, Any]:
+    """Rows of ``x`` as int8 with one fp16 scale each (absmax / 127)."""
+    x = x.astype(mx.float32)
+    scale = (mx.maximum(mx.max(mx.abs(x), axis=-1), 1e-4) / 127.0).astype(mx.float16)
+    q = mx.round(x / scale[..., None].astype(mx.float32))
+    return mx.clip(q, -127, 127).astype(mx.int8), scale
 
 
 @dataclass(frozen=True)
@@ -151,10 +161,18 @@ class KVCache:
         dtype: Any,
         state_groups: Sequence[StateGroup] = (),
         state_slots: int = 0,
+        bits: int = 16,
     ) -> None:
+        if bits not in {8, 16}:
+            raise ValueError("K/V is stored in 16 or 8 bits")
         self.mx = mx
         self.page_size = page_size
         self.dtype = dtype
+        # 8-bit K/V keeps one scale per token and head (absmax / 127).
+        self.bits = bits
+        self.storage = mx.int8 if bits == 8 else dtype
+        self.key_scales: dict[int, Any] = {}
+        self.value_scales: dict[int, Any] = {}
         self.groups = {group.name: group for group in groups}
         self.layer_group = {layer: group for group in groups for layer in group.layers}
         self.pools = {group.name: PagePool(capacities[group.name]) for group in groups}
@@ -177,12 +195,18 @@ class KVCache:
         }
         self.state_slots = list(range(state_slots - 1, -1, -1))
         mx.eval(
-            *self.keys.values(),
-            *self.values.values(),
+            *[a for store in self._stores for a in store.values()],
             *[a for arrays in self.states.values() for a in arrays],
         )
 
     # --- capacity -------------------------------------------------------------
+
+    @property
+    def _stores(self) -> tuple[dict[int, Any], ...]:
+        """Per-layer arrays indexed by row: K, V and, at 8 bits, their scales."""
+        if self.bits == 8:
+            return self.keys, self.values, self.key_scales, self.value_scales
+        return self.keys, self.values
 
     def _grow(self, group: KVGroup, pages: int) -> None:
         mx = self.mx
@@ -191,8 +215,11 @@ class KVCache:
             return
         extra = (pages - old) * self.page_size
         for layer in group.layers:
-            for store in (self.keys, self.values):
-                fresh = mx.zeros((extra, group.kv_heads, group.head_dim), self.dtype)
+            for index, store in enumerate(self._stores):
+                tail, dtype = (
+                    ((group.head_dim,), self.storage) if index < 2 else ((), mx.float16)
+                )
+                fresh = mx.zeros((extra, group.kv_heads, *tail), dtype)
                 store[layer] = (
                     fresh
                     if layer not in store
@@ -210,15 +237,14 @@ class KVCache:
                     self.pools[name].capacity, max(needed, 2 * self._pages[name])
                 )
                 self._grow(group, target)
-                grown.extend(self.keys[layer] for layer in group.layers)
-                grown.extend(self.values[layer] for layer in group.layers)
+                for store in self._stores:
+                    grown.extend(store[layer] for layer in group.layers)
         if grown:
             self.mx.eval(*grown)
 
     @property
     def device_bytes(self) -> int:
-        total = sum(array.nbytes for array in self.keys.values())
-        total += sum(array.nbytes for array in self.values.values())
+        total = sum(array.nbytes for store in self._stores for array in store.values())
         return total + sum(a.nbytes for arrays in self.states.values() for a in arrays)
 
     # --- pages ----------------------------------------------------------------
@@ -237,17 +263,26 @@ class KVCache:
         src = mx.arange(source * self.page_size, source * self.page_size + count)
         dst = mx.arange(target * self.page_size, target * self.page_size + count)
         for layer in group.layers:
-            self.keys[layer][dst] = self.keys[layer][src]
-            self.values[layer][dst] = self.values[layer][src]
+            for store in self._stores:
+                store[layer][dst] = store[layer][src]
 
     # --- writes and reads -----------------------------------------------------
 
     def write(self, layer: int, rows: Any, keys: Any, values: Any) -> None:
-        self.keys[layer][rows] = keys.astype(self.dtype)
-        self.values[layer][rows] = values.astype(self.dtype)
+        if self.bits == 8:
+            keys, self.key_scales[layer][rows] = quantize(self.mx, keys)
+            values, self.value_scales[layer][rows] = quantize(self.mx, values)
+        self.keys[layer][rows] = keys.astype(self.storage)
+        self.values[layer][rows] = values.astype(self.storage)
 
     def gather(self, layer: int, rows: Any) -> tuple[Any, Any]:
-        return self.keys[layer][rows], self.values[layer][rows]
+        keys, values = self.keys[layer][rows], self.values[layer][rows]
+        if self.bits == 8:
+            f32 = self.mx.float32
+            keys = keys.astype(f32) * self.key_scales[layer][rows][..., None]
+            values = values.astype(f32) * self.value_scales[layer][rows][..., None]
+            keys, values = keys.astype(self.dtype), values.astype(self.dtype)
+        return keys, values
 
     # --- recurrent state slots ------------------------------------------------
 
