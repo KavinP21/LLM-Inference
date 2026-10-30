@@ -36,12 +36,15 @@ def percentile(values: list[float], q: float) -> float:
     return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
 
-def run(model: Path, *, users: int, tokens: int, late_prompt: int) -> dict:
+def run(
+    model: Path, *, users: int, tokens: int, late_prompt: int, **options
+) -> dict:
     engine = MlxEngine(
         model,
         max_num_sequences=users + 1,
         kv_cache_bytes=16 << 30,
         max_model_length=65536,
+        **options,
     )
     engine.generate(prompt(64, 99), 8)  # Compile kernels before timing.
     lengths = [256 + 512 * i for i in range(users)]
@@ -123,10 +126,15 @@ def main() -> None:
     parser.add_argument("--users", type=int, default=3)
     parser.add_argument("--tokens", type=int, default=256)
     parser.add_argument("--late-prompt", type=int, default=8192)
+    parser.add_argument("--prefill-chunk", type=int, default=512)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     result = run(
-        args.model, users=args.users, tokens=args.tokens, late_prompt=args.late_prompt
+        args.model,
+        users=args.users,
+        tokens=args.tokens,
+        late_prompt=args.late_prompt,
+        prefill_chunk_size=args.prefill_chunk,
     )
     text = json.dumps(result, indent=2)
     if args.output:

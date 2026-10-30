@@ -1,0 +1,55 @@
+{
+  "model": "models/qwen3.5-4b-mlx",
+  "users": [
+    {
+      "sampling": {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "min_p": 0.0,
+        "seed": null
+      },
+      "prompt_tokens": 256,
+      "tokens": 256,
+      "tok_per_s": 19.3,
+      "gap_p50_ms": 18.8,
+      "gap_p99_ms": 468.7
+    },
+    {
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "top_k": 0,
+        "min_p": 0.0,
+        "seed": 1
+      },
+      "prompt_tokens": 768,
+      "tokens": 256,
+      "tok_per_s": 20.2,
+      "gap_p50_ms": 18.7,
+      "gap_p99_ms": 468.7
+    },
+    {
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "top_k": 64,
+        "min_p": 0.05,
+        "seed": 2
+      },
+      "prompt_tokens": 1280,
+      "tokens": 256,
+      "tok_per_s": 22.0,
+      "gap_p50_ms": 18.7,
+      "gap_p99_ms": 468.7
+    }
+  ],
+  "aggregate_tok_per_s": 56.8,
+  "late_prompt_tokens": 8192,
+  "late_time_to_first_token_s": 7.1,
+  "gap_while_late_prefills_ms": {
+    "p50": 437.1,
+    "max": 487.2
+  },
+  "leaked_pages": {}
+}

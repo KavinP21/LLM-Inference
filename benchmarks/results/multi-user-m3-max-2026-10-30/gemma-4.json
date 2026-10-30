@@ -1,0 +1,55 @@
+{
+  "model": "models/gemma-4-26b-a4b-mlx",
+  "users": [
+    {
+      "sampling": {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "min_p": 0.0,
+        "seed": null
+      },
+      "prompt_tokens": 256,
+      "tokens": 256,
+      "tok_per_s": 15.0,
+      "gap_p50_ms": 25.9,
+      "gap_p99_ms": 568.6
+    },
+    {
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "top_k": 0,
+        "min_p": 0.0,
+        "seed": 1
+      },
+      "prompt_tokens": 768,
+      "tokens": 256,
+      "tok_per_s": 15.7,
+      "gap_p50_ms": 25.9,
+      "gap_p99_ms": 568.6
+    },
+    {
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "top_k": 64,
+        "min_p": 0.05,
+        "seed": 2
+      },
+      "prompt_tokens": 1280,
+      "tokens": 256,
+      "tok_per_s": 17.0,
+      "gap_p50_ms": 25.9,
+      "gap_p99_ms": 568.6
+    }
+  ],
+  "aggregate_tok_per_s": 44.0,
+  "late_prompt_tokens": 8192,
+  "late_time_to_first_token_s": 8.78,
+  "gap_while_late_prefills_ms": {
+    "p50": 539.8,
+    "max": 579.5
+  },
+  "leaked_pages": {}
+}
