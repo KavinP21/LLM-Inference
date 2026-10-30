@@ -49,13 +49,14 @@ _DECODE_BODY = r"""
         auto value = values + (row * HKV + kvh) * D + base;
         float s = 0.0f;
         for (uint i = 0; i < E; ++i) if (IN_HEAD(i)) s += q[i] * float(key[i]);
-        s = simd_sum(s);
+        s = simd_sum(s) KEY_SCALE;
         if (params[1] > 0.0f) s = metal::precise::tanh(s / params[1]) * params[1];
         const float next = max(m, s);
         const float factor = metal::fast::exp(m - next);
         const float p = metal::fast::exp(s - next);
         l = l * factor + p;
-        for (uint i = 0; i < E; ++i) if (IN_HEAD(i)) o[i] = o[i] * factor + p * float(value[i]);
+        const float pv = p VALUE_SCALE;
+        for (uint i = 0; i < E; ++i) if (IN_HEAD(i)) o[i] = o[i] * factor + pv * float(value[i]);
         m = next;
     }
 
@@ -127,19 +128,29 @@ MAX_SPLITS = 128
 
 
 @cache
-def _kernels(mx: Any) -> tuple[Any, Any, Any]:
+def _kernels(mx: Any, quantized: bool) -> tuple[Any, Any, Any]:
     inputs = ["queries", "keys", "values", "tables", "lengths", "params"]
+    body = _DECODE_BODY
+    if quantized:
+        # 8-bit K/V: one scale per token and head, applied to the score and
+        # to the probability that weights the value row.
+        inputs += ["key_scales", "value_scales"]
+        body = body.replace("KEY_SCALE", "* float(key_scales[row * HKV + kvh])")
+        body = body.replace("VALUE_SCALE", "* float(value_scales[row * HKV + kvh])")
+    else:
+        body = body.replace("KEY_SCALE", "").replace("VALUE_SCALE", "")
+    suffix = "_q8" if quantized else ""
     single = mx.fast.metal_kernel(
-        name="instinct_paged_decode",
+        name="instinct_paged_decode" + suffix,
         input_names=inputs,
         output_names=["out"],
-        source=_DECODE_BODY.replace("WRITE", _SINGLE_WRITE),
+        source=body.replace("WRITE", _SINGLE_WRITE),
     )
     split = mx.fast.metal_kernel(
-        name="instinct_paged_decode_split",
+        name="instinct_paged_decode_split" + suffix,
         input_names=inputs,
         output_names=["partial_o", "partial_m", "partial_l"],
-        source=_DECODE_BODY.replace("WRITE", _SPLIT_WRITE),
+        source=body.replace("WRITE", _SPLIT_WRITE),
     )
     merge = mx.fast.metal_kernel(
         name="instinct_paged_decode_merge",
@@ -163,6 +174,7 @@ def paged_decode_attention(
     scale: float,
     window: int = 0,
     softcap: float = 0.0,
+    scales: tuple[Any, Any] | None = None,
 ) -> Any:
     """Attention for one new token per sequence over its paged keys.
 
@@ -180,7 +192,7 @@ def paged_decode_attention(
     repeat = max(1, min(4, 32 // group))
     span = min(longest, window) if window else longest
     splits = max(1, min(MAX_SPLITS, math.ceil(span / KEYS_PER_SPLIT)))
-    single, split, merge = _kernels(mx)
+    single, split, merge = _kernels(mx, scales is not None)
     template = [
         ("T", queries.dtype),
         ("D", head_dim),
@@ -199,6 +211,7 @@ def paged_decode_attention(
         tables,
         lengths,
         mx.array([scale, softcap], mx.float32),
+        *(scales or ()),
     ]
     grid = (splits * 32 * group * repeat, kv_heads, batch)
     threads = (32 * group * repeat, 1, 1)

@@ -59,6 +59,16 @@ each other in both directions. Agent workers send image bytes with the request
 (8 MiB per item, 16 MiB per conversation) keyed by SHA-256, so a follow-up about
 the same image reuses the cached prefix instead of encoding it again.
 
+**8-bit K/V.** A worker's `"engine_options": {"kv_bits": 8}` stores keys and
+values as int8 with one fp16 scale per token and head, which halves the K/V
+memory a context needs. The paged decode kernel applies the scales as it reads.
+On an 8,000-token prompt the last-position logits keep a cosine of 0.9990
+(Gemma) and 0.9994 (Qwen) to 16-bit, the top token matches, and greedy output
+stays identical for the first 39 of 64 tokens, which is about as far as bf16
+rounding alone carries it. Qwen decodes at the same speed; Gemma is about 10%
+slower at that length, from quantizing on 30 layers each step. The app's
+profile uses it for the Qwen sub-agents, so 8 GiB holds two full 256K contexts.
+
 The engine also runs FP16 Qwen2 and Gemma 3 `.engine` files.
 
 ## Limits

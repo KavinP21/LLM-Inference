@@ -14,6 +14,7 @@ from conftest import tiny_artifact
 from instinct.backends.metal_kernels import paged_decode_attention
 from instinct.format import ModelConfig, write_engine
 from instinct.mlx_engine import MlxEngine
+from instinct.paged_kv import quantize
 from instinct.runtime import SequenceState
 from instinct.sampling import SamplingParams
 
@@ -235,6 +236,18 @@ def test_batched_requests_match_running_alone(tmp_path, family):
         assert _drained(engine)
 
 
+def test_eight_bit_kv_stays_close_to_sixteen(tmp_path):
+    path = tmp_path / "tiny.engine"
+    tiny_artifact(path, "gemma3_text")
+    prompt = [(i * 5 + 3) % 32 for i in range(23)]
+    with _engine(path) as full, _engine(path, kv_bits=8) as small:
+        expected, actual = full.prefill_logits(prompt), small.prefill_logits(prompt)
+        assert np.corrcoef(expected, actual)[0, 1] > 0.999
+        prompts = [prompt[:n] for n in (3, 11, 23)]
+        assert _run(small, prompts, 8) == [small.generate(p, 8) for p in prompts]
+        assert _drained(small)
+
+
 def test_sliding_window_pages_are_released_as_the_window_moves(tmp_path):
     path = tmp_path / "gemma.engine"
     tiny_artifact(path, "gemma3_text")  # window 4
@@ -349,8 +362,9 @@ def test_sampling_settings_per_request(tmp_path):
         (2, 1, 4, [9], 4, 0.0),
     ],
 )
+@pytest.mark.parametrize("bits", [16, 8])
 def test_paged_decode_kernel_matches_dense_attention(
-    q_heads, kv_heads, head_dim, lengths, window, softcap
+    q_heads, kv_heads, head_dim, lengths, window, softcap, bits
 ):
     page = 16
     mx.random.seed(0)
@@ -365,6 +379,13 @@ def test_paged_decode_kernel_matches_dense_attention(
     values = mx.random.normal((rows, kv_heads, head_dim)).astype(mx.bfloat16)
     queries = mx.random.normal((len(lengths), q_heads, head_dim)).astype(mx.bfloat16)
     scale = head_dim**-0.5
+    scales = None
+    if bits == 8:
+        (keys, key_scales), (values, value_scales) = (
+            quantize(mx, keys),
+            quantize(mx, values),
+        )
+        scales = (key_scales, value_scales)
     out = paged_decode_attention(
         mx,
         queries,
@@ -377,7 +398,11 @@ def test_paged_decode_kernel_matches_dense_attention(
         scale=scale,
         window=window,
         softcap=softcap,
+        scales=scales,
     )
+    if bits == 8:
+        keys = keys.astype(mx.float32) * key_scales[..., None]
+        values = values.astype(mx.float32) * value_scales[..., None]
     for b, n in enumerate(lengths):
         positions = range(max(0, n - window) if window else 0, n)
         index = mx.array(
