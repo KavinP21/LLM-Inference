@@ -116,6 +116,7 @@ async def serve(args):
         demo=args.demo,
         skills=skills,
         mcp_clients=clients,
+        keys_file=args.keys_file,
     )
     server = None
     thread = None
@@ -172,6 +173,11 @@ def main():
     parser = argparse.ArgumentParser(description="Instinct local agent workspace")
     parser.add_argument("--workspace", default=".")
     parser.add_argument("--state-dir", default=".instinct")
+    parser.add_argument(
+        "--keys-file",
+        type=Path,
+        help="Where API keys for /v1 are kept (default: in the state folder)",
+    )
     parser.add_argument("--config", help="Existing Instinct agent worker configuration")
     parser.add_argument(
         "--demo",

@@ -80,3 +80,19 @@ await check("opens settings", async () => {
   await snapshot("6-settings");
   $("close-settings").click();
 });
+
+await check("creates and revokes an API key", async () => {
+  $("open-settings").click();
+  await until(() => $("settings").open);
+  $("key-name").value = "UI test";
+  $("key-form").requestSubmit();
+  await until(() => !$("new-key").hidden && $("new-key-value").textContent.startsWith("sk-instinct-"));
+  const key = $("new-key-value").textContent;
+  const models = await fetch("/v1/models", { headers: { Authorization: `Bearer ${key}` } });
+  if (models.status !== 200) throw new Error(`/v1/models answered ${models.status}`);
+  await until(() => document.querySelector("[data-revoke-key]"));
+  await snapshot("7-api-keys");
+  document.querySelector("[data-revoke-key]").click();
+  await until(() => !document.querySelector("[data-revoke-key]"));
+  $("close-settings").click();
+});

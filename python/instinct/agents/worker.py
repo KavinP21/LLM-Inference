@@ -573,6 +573,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _route(self, method: str) -> None:
         try:
             self._authorize()
+            if self.path in {"/v1/models", "/v1/chat/completions"}:
+                return self._openai(method)
             if method == "GET" and self.path == "/health":
                 result = self.server.service.health()
             elif method == "POST" and self.path == "/v1/jobs":
@@ -597,6 +599,34 @@ class _Handler(BaseHTTPRequestHandler):
                 self._respond(status, result)
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 pass
+
+    def _openai(self, method: str) -> None:
+        """OpenAI-compatible access to this worker's model, with the worker token."""
+        from ..harness.openai_api import chat_completion, serve
+
+        service = self.server.service
+        name = service.worker_id
+        if method == "GET" and self.path == "/v1/models":
+            model = {
+                "id": name,
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "instinct",
+            }
+            return self._respond(200, {"object": "list", "data": [model]})
+        if method != "POST" or self.path != "/v1/chat/completions":
+            raise ValueError("unknown worker route")
+
+        async def chat(body: Any, emit: Any) -> Any:
+            return await chat_completion(
+                body,
+                emit,
+                backend=service.backend,
+                identity=service.backend.health(),
+                model=name,
+            )
+
+        serve(self, service._loop, self._body(), chat)
 
     def do_GET(self) -> None:
         self._route("GET")

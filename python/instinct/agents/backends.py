@@ -45,16 +45,30 @@ def _installed_version(package: str) -> str | None:
         return None
 
 
+SAMPLING_OPTIONS = {"temperature", "top_p", "top_k", "seed"}
+
+
 def validate_options(options: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Per-request generation options; currently just the reasoning effort."""
+    """Per-request generation options: reasoning effort and sampling."""
     if options is None:
         return {}
-    if not isinstance(options, Mapping) or set(options) - {"effort"}:
-        raise RequestValidationError("generation options accept only effort")
+    if not isinstance(options, Mapping) or set(options) - {"effort"} - SAMPLING_OPTIONS:
+        raise RequestValidationError(
+            "generation options accept effort, temperature, top_p, top_k and seed"
+        )
     effort = options.get("effort", "off")
     if effort not in EFFORT_BUDGETS:
         raise RequestValidationError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
-    return {"effort": effort}
+    result: dict[str, Any] = {"effort": effort}
+    for name in SAMPLING_OPTIONS & set(options):
+        value = options[name]
+        integral = name in {"top_k", "seed"}
+        if isinstance(value, bool) or not isinstance(
+            value, int if integral else (int, float)
+        ):
+            raise RequestValidationError(f"{name} must be a number")
+        result[name] = value
+    return result
 
 
 class BackendError(RuntimeError):
@@ -728,6 +742,7 @@ class LocalModelBackend:
                     ]
                 turns.append(turn)
             try:
+                sampling = {k: options[k] for k in SAMPLING_OPTIONS & set(options)}
                 result = self._engine.generate(
                     turns,
                     max_tokens=max_tokens,
@@ -736,6 +751,7 @@ class LocalModelBackend:
                     cancelled=lambda: cancel.is_set() or time.monotonic() >= deadline,
                     on_text=on_text,
                     max_context_tokens=context_limit,
+                    **sampling,
                 )
             except InterruptedError as exc:
                 if time.monotonic() >= deadline:
