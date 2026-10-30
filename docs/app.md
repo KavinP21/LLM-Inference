@@ -103,9 +103,10 @@ offline.
 
 Every agent step sends the whole conversation, so long tasks depend on the
 prompt cache. The model only processes what is new since its last step; a
-follow-up typically starts in under 100 ms. When an agent's context passes three
-quarters of its budget, the agent writes a summary of its work so far, and older
-messages are replaced by that summary. The prompt then grows by appending again.
+follow-up typically starts in under 100 ms. Agents have a 250K-token context.
+When an agent's context passes 90% of its budget, the agent writes a summary of
+its work so far, and older messages are replaced by that summary. It compacts
+sooner if one more tool result would leave no room to write the summary. The prompt then grows by appending again.
 The full history stays in the journal, and the agent can read it back with
 `journal_read`. A run may take 200 steps per agent, 50M tokens and four hours.
 
