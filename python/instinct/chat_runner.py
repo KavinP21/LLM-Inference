@@ -484,6 +484,7 @@ class ChatRunner:
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
+        seed: int | None = None,
         cancelled: Callable[[], bool] = lambda: False,
         on_text: Callable[[str], None] | None = None,
         max_context_tokens: int | None = None,
@@ -502,6 +503,7 @@ class ChatRunner:
             temperature=temperature,
             top_p=family.top_p if top_p is None else top_p,
             top_k=family.top_k if top_k is None else top_k,
+            seed=seed,
         )
         render_key = hashlib.sha256(
             json.dumps([tools, thinking], sort_keys=True, default=str).encode()

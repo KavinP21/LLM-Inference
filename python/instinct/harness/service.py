@@ -21,11 +21,13 @@ from ..agents.store import TERMINAL, AgentStore
 from ..agents.tools import ToolValidationError, WorkspaceTools
 from ..chat_formats import EFFORT_BUDGETS
 from . import sandbox
+from .api_keys import ApiKeys
 from .checkpoints import Checkpoints
 from .commands import CommandTools
 from .conversation import ConversationController, ConversationRuntime
 from .demo import DemoBackend
 from .extensions import MCPStdioClient
+from .openai_api import OpenAIEndpoint
 from .policy import POLICIES, ApprovalGate, workspace_preview
 from .terminal import Terminals
 from .web_tools import WebTools
@@ -116,6 +118,7 @@ class AppService:
         skills=None,
         mcp_clients=(),
         hooks=None,
+        keys_file: Path | None = None,
     ):
         self.workspace = workspace.resolve(strict=True)
         if not self.workspace.is_dir():
@@ -141,6 +144,8 @@ class AppService:
         self.terminals = Terminals(self.workspace)
         self.checkpoints = Checkpoints(self.workspace, self.state_dir)
         self.settings_path = self.state_dir / "settings.json"
+        self.api_keys = ApiKeys(keys_file or self.state_dir / "api-keys.json")
+        self.openai = OpenAIEndpoint(self)
         try:
             saved = json.loads(self.settings_path.read_text())
         except (OSError, ValueError):
@@ -814,6 +819,12 @@ class AppService:
             return {"path": name, "content": content}
         if parts[:2] == ["api", "terminals"]:
             return self.terminals.dispatch(method, parts, payload)
+        if parts[:2] == ["api", "keys"]:
+            if method == "POST" and len(parts) == 2:
+                return self.api_keys.create(_text(payload.get("name"), "key name", 64))
+            if method == "POST" and len(parts) == 4 and parts[3] == "delete":
+                self.api_keys.revoke(parts[2])
+            return {"keys": self.api_keys.list()}
         if path == "/api/settings":
             if method == "POST":
                 self.update_settings(payload)
