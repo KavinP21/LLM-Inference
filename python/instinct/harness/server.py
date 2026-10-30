@@ -1,4 +1,10 @@
-"""Loopback-only app server, with exact-origin and cookie authentication."""
+"""The app's HTTP server, with exact-origin and cookie authentication.
+
+The Mac app talks to a loopback server it signs into with a one-time token.
+For other devices a second server can listen on the network (behind TLS, or
+over a network that already encrypts, like Tailscale); browsers there sign in
+with an app key from Settings, and other apps use API keys on ``/v1``.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,7 @@ import concurrent.futures
 import hmac
 import json
 import secrets
+import ssl
 import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,14 +31,31 @@ MAX_BODY = 128_000
 class AppServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, service, loop, *, token: str | None = None):
-        if address[0] != "127.0.0.1":
-            raise ValueError("the server only binds to 127.0.0.1")
+    def __init__(
+        self,
+        address,
+        service,
+        loop,
+        *,
+        token: str | None = None,
+        tls: ssl.SSLContext | None = None,
+        remote: bool = False,
+    ):
+        if not remote and address[0] != "127.0.0.1":
+            raise ValueError("the app's own server only binds to 127.0.0.1")
         self.service, self.loop = service, loop
-        self.bootstrap_token = token or secrets.token_urlsafe(32)
+        self.remote = remote
+        # A remote server has no bootstrap sign-in, only app keys.
+        self.bootstrap_token = None if remote else token or secrets.token_urlsafe(32)
         self.session_token = secrets.token_urlsafe(32)
         super().__init__(address, AppHandler)
-        self.origin = f"http://127.0.0.1:{self.server_port}"
+        self.scheme = "https" if tls else "http"
+        if tls is not None:
+            # Handshake in the request's thread, so a slow client can't stall accept().
+            self.socket = tls.wrap_socket(
+                self.socket, server_side=True, do_handshake_on_connect=False
+            )
+        self.origin = f"{self.scheme}://127.0.0.1:{self.server_port}"
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -65,12 +89,20 @@ class AppHandler(BaseHTTPRequestHandler):
         )
 
     def _origin_ok(self):
-        return (
-            self.headers.get("Host") == urlsplit(self.server.origin).netloc
-            and self.headers.get("Origin", self.server.origin) == self.server.origin
-            and self.headers.get("Sec-Fetch-Site", "same-origin")
-            in {"same-origin", "none"}
-        )
+        host = self.headers.get("Host", "")
+        if self.server.remote:
+            # Reached by whatever name or address the device used; everything
+            # past the static files needs a key-based sign-in anyway.
+            origin = f"{self.server.scheme}://{host}"
+            if not host.endswith(f":{self.server.server_port}"):
+                return False
+        else:
+            origin = self.server.origin
+            if host != urlsplit(origin).netloc:
+                return False
+        return self.headers.get("Origin", origin) == origin and self.headers.get(
+            "Sec-Fetch-Site", "same-origin"
+        ) in {"same-origin", "none"}
 
     def _authenticated(self):
         try:
@@ -188,21 +220,24 @@ class AppHandler(BaseHTTPRequestHandler):
         except (ValueError, TypeError, OSError, RecursionError) as exc:
             return self._json(400, {"error": str(exc)})
         if path == "/api/auth":
-            token = body.get("token")
-            if (
-                set(body) != {"token"}
-                or not isinstance(token, str)
-                or not token.isascii()
-                or not hmac.compare_digest(token, self.server.bootstrap_token)
-            ):
-                return self._json(401, {"error": "invalid session token"})
+            token, key = body.get("token"), body.get("key")
+            valid = False
+            if set(body) == {"token"} and isinstance(token, str) and token.isascii():
+                expected = self.server.bootstrap_token
+                valid = expected is not None and hmac.compare_digest(token, expected)
+            elif set(body) == {"key"} and isinstance(key, str) and key.isascii():
+                record = self.server.service.api_keys.check(key)
+                valid = record is not None and record["scope"] == "app"
+            if not valid:
+                return self._json(401, {"error": "invalid sign-in token or key"})
+            secure = "; Secure" if self.server.scheme == "https" else ""
             return self._json(
                 200,
                 {"authenticated": True},
                 [
                     (
                         "Set-Cookie",
-                        f"instinct_session={self.server.session_token}; HttpOnly; SameSite=Strict; Path=/",
+                        f"instinct_session={self.server.session_token}; HttpOnly; SameSite=Strict; Path=/{secure}",
                     )
                 ],
             )
