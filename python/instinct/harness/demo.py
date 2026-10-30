@@ -15,6 +15,13 @@ class DemoBackend:
 
     async def generate(self, messages, max_tokens, request_id):
         await asyncio.sleep(self.delay)
+        if request_id.startswith("summary."):
+            # A chat summary (conversation.SUMMARY_REQUEST).
+            asked = [m for m in messages if m.role == "user"][:-1]
+            return self._reply(
+                messages,
+                f"Demo summary of {len(asked)} earlier messages. No model inference occurred.",
+            )
         run_id, agent_id, _ = request_id.split(".")
         agent = self.store.agent(run_id, agent_id)
         receipts = self.store.recent_tool_results(run_id, agent_id)
@@ -88,7 +95,10 @@ class DemoBackend:
                     + "\n\n".join(a.result or a.error or a.status for a in children)
                     + artifact_note,
                 }
-        text = json.dumps(action)
+        return self._reply(messages, json.dumps(action))
+
+    @staticmethod
+    def _reply(messages, text):
         return Generation(
             text,
             min(
