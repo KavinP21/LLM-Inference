@@ -8,9 +8,7 @@
       "backend": "mlx",
       "max_model_length": 32768,
       "kv_cache_bytes": 2147483648,
-      "engine_options": {},
-      "native_tool_calls": true,
-      "runner": "vlm"
+      "native_tool_calls": true
     },
     {
       "type": "process",
@@ -20,9 +18,7 @@
       "backend": "mlx",
       "max_model_length": 32768,
       "kv_cache_bytes": 2147483648,
-      "engine_options": {},
-      "native_tool_calls": true,
-      "runner": "vlm"
+      "native_tool_calls": true
     }
   ],
   "runtime": {

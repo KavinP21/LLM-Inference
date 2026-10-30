@@ -28,7 +28,9 @@ MODELS = {
         "models/qwen3.5-4b-mlx",
     ),
 }
-DEFAULT = ("gemma-4-26b-a4b", "gemma-4-26b-a4b-assistant", "qwen3.5-4b")
+# The assistant (Gemma 4's MTP drafter) is only fetched by name until the
+# engine drafts with it.
+DEFAULT = ("gemma-4-26b-a4b", "qwen3.5-4b")
 
 
 def prepare(name: str, root: Path = Path(".")) -> dict:

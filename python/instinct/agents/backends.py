@@ -182,26 +182,27 @@ class WorkerConfig:
     eos_token_ids: list[int] | None = None
     local_files_only: bool = True
     native_tool_calls: bool = False
-    runner: str = "engine"
+    # "chat": ChatRunner, many requests at once (MLX checkpoints and .engine
+    # files on Apple silicon). "engine": one request at a time through an
+    # engine's submit/step API (CUDA). "auto" picks chat on Apple silicon.
+    runner: str = "auto"
     enable_thinking: bool = False
     # Set only in independently launched processes; never mutate the parent's GPU.
     cuda_visible_devices: str | None = None
 
     @property
     def chat_runner(self) -> bool:
-        """MLX engine workers serve requests concurrently through ChatRunner."""
+        if self.runner != "auto":
+            return self.runner == "chat"
         return (
-            self.runner == "engine"
-            and self.backend != "cuda"
+            self.backend != "cuda"
             and platform.system() == "Darwin"
             and platform.machine() == "arm64"
         )
 
     @property
     def takes_media(self) -> bool:
-        """Image input: mlx-vlm, or a Gemma 4 checkpoint on the engine."""
-        if self.runner == "vlm":
-            return True
+        """Image input, which Gemma 4 checkpoints have on the chat runner."""
         config = Path(self.model) / "config.json"
         if not (self.chat_runner and config.is_file()):
             return False
@@ -215,39 +216,18 @@ class WorkerConfig:
             raise ValueError("model and tokenizer are required")
         if self.backend not in {"auto", "mlx", "cuda"}:
             raise ValueError("backend must be auto, mlx, or cuda")
-        if self.runner not in {"engine", "vlm"}:
-            raise ValueError("runner must be instinct or vlm")
+        if self.runner == "vlm":
+            raise ValueError(
+                'the mlx-vlm runner was removed; MLX checkpoints run on the engine (runner "auto")'
+            )
+        if self.runner not in {"auto", "chat", "engine"}:
+            raise ValueError("runner must be auto, chat or engine")
         if type(self.enable_thinking) is not bool:
             raise TypeError("enable_thinking must be a boolean")
-        if self.runner == "vlm":
-            if self.backend == "cuda" or self.cuda_visible_devices is not None:
-                raise ValueError("the vlm runner requires Apple MLX execution")
-            if not self.local_files_only:
-                raise ValueError(
-                    "the vlm runner needs a local checkpoint; configure drafting with engine_options.draft_model"
-                )
-            if not isinstance(
-                self.engine_options, dict
-            ) or self.engine_options.keys() - {
-                "draft_model",
-                "draft_block_size",
-                "prefill_step_size",
-                "cache_budget_bytes",
-                "effort",
-            }:
-                raise ValueError("unsupported vlm engine options")
-            if self.engine_options.get("effort", "off") not in EFFORT_BUDGETS:
-                raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
-            draft = self.engine_options.get("draft_model")
-            if draft is not None and not Path(draft).is_dir():
-                raise ValueError("draft_model must be a local checkpoint directory")
-            if (
-                not Path(self.model).is_dir()
-                or Path(self.model).resolve() != Path(self.tokenizer).resolve()
-            ):
-                raise ValueError(
-                    "vlm model and tokenizer must reference the same local directory"
-                )
+        if self.runner == "chat" and (
+            self.backend == "cuda" or self.cuda_visible_devices is not None
+        ):
+            raise ValueError("the chat runner needs Apple MLX execution")
         for name in ("max_model_length", "kv_cache_bytes", "max_pending"):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be a positive integer")
@@ -309,7 +289,11 @@ class LocalModelBackend:
         self._tokenizer_factory = tokenizer_factory
         # A ChatRunner batches every request it is given, so each waits on its
         # own thread; other engines run one request at a time.
-        self._chat = config.chat_runner and engine_factory is None
+        # An injected engine_factory supplies the runner itself for "chat",
+        # or a submit/step engine otherwise.
+        self._chat = config.chat_runner and (
+            engine_factory is None or config.runner == "chat"
+        )
         self._executor = ThreadPoolExecutor(
             max_workers=config.max_pending if self._chat else 1,
             thread_name_prefix=f"instinct-{config.worker_id[:12]}",
@@ -326,8 +310,8 @@ class LocalModelBackend:
         self._model_type = ""
         self._completed = 0
         self._runner_metadata: dict[str, Any] = {
-            "runner": config.runner,
-            "runner_version": "0.1.0" if config.runner == "engine" else None,
+            "runner": "chat" if self._chat else "engine",
+            "runner_version": "0.2.0" if self._chat else "0.1.0",
         }
         self._last_runner_stats: dict[str, Any] | None = None
         self._artifact_identity: dict[str, str | None] = {
@@ -336,7 +320,7 @@ class LocalModelBackend:
             "tokenizer_signature": None,
             "draft_model_data_sha256": None,
         }
-        if config.runner == "vlm" or (self._chat and Path(config.model).is_dir()):
+        if self._chat and Path(config.model).is_dir():
             # Everything that identifies a checkpoint worker comes from its
             # files, so it's known (and the same) before and after loading.
             from ..chat_formats import family_for
@@ -349,23 +333,13 @@ class LocalModelBackend:
                 else ""
             )
             self.native_call_dialect = family_for(model_type).dialect
-            self._runner_metadata.update(
-                runner_version=_installed_version("mlx-vlm")
-                if config.runner == "vlm"
-                else "0.2.0",
-                family=family_for(model_type).name,
-            )
+            self._runner_metadata.update(family=family_for(model_type).name)
             self._artifact_identity.update(checkpoint_fingerprint(config.model))
-            draft = config.engine_options.get("draft_model")
-            if draft:
-                self._artifact_identity["draft_model_data_sha256"] = (
-                    checkpoint_fingerprint(draft)["model_data_sha256"]
-                )
 
     def _load(self) -> None:
         if self._engine is not None:
             return
-        if self.config.runner == "vlm" or self._chat:
+        if self._chat:
             self._load_runner()
             return
         if self._tokenizer_factory:
@@ -515,7 +489,7 @@ class LocalModelBackend:
         options = self.config.engine_options
         if self._engine_factory:
             runner = self._engine_factory()
-        elif self._chat:
+        else:
             from ..chat_runner import ChatRunner
 
             runner = ChatRunner(
@@ -528,19 +502,6 @@ class LocalModelBackend:
                 prefill_chunk_size=options.get("prefill_chunk_size", 512),
                 eos_token_ids=self.config.eos_token_ids,
                 local_files_only=self.config.local_files_only,
-            )
-        else:
-            from ..vlm_runner import VlmRunner
-
-            runner = VlmRunner(
-                self.config.model,
-                draft_path=options.get("draft_model"),
-                draft_block_size=options.get("draft_block_size", 3),
-                max_context_tokens=self.config.max_model_length,
-                prefill_step_size=options.get("prefill_step_size", 1024),
-                cache_budget_bytes=options.get(
-                    "cache_budget_bytes", self.config.kv_cache_bytes
-                ),
             )
         self._engine = runner
         self._tokenizer = runner.tokenizer
@@ -643,7 +604,7 @@ class LocalModelBackend:
             raise RequestValidationError("this worker's model doesn't take images")
         self._load()
         check()
-        if self.config.runner == "vlm" or self._chat:
+        if self._chat:
             return self._generate_runner(
                 messages,
                 max_tokens,

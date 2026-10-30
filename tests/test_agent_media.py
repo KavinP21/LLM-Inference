@@ -10,7 +10,7 @@ from instinct.agents.media import materialize_media, media_from_file, validate_m
 from instinct.agents.protocol import ChatMessage
 from instinct.agents.runtime import AgentRuntime
 from instinct.agents.store import AgentStore
-from instinct.vlm_runner import RunnerResult
+from instinct.chat_runner import RunnerResult
 
 
 @pytest.fixture
@@ -143,7 +143,7 @@ def test_media_reserves_advertised_context_before_inference(attachment):
 
 
 class Runner:
-    """Stands in for VlmRunner: records the media files it was given."""
+    """Stands in for ChatRunner: records the media files it was given."""
 
     max_context_tokens = 32768
     model_type = "qwen3_5"
@@ -181,15 +181,18 @@ class Runner:
         pass
 
 
-def test_vlm_worker_passes_request_media_and_removes_it_afterwards(
+def test_chat_worker_passes_request_media_and_removes_it_afterwards(
     attachment, tmp_path
 ):
     runner = Runner()
+    (tmp_path / "config.json").write_text(
+        '{"model_type": "gemma4", "vision_config": {"model_type": "gemma4_vision"}}'
+    )
     backend = LocalModelBackend(
         WorkerConfig(
             str(tmp_path),
             str(tmp_path),
-            runner="vlm",
+            runner="chat",
             backend="mlx",
             max_model_length=32768,
             kv_cache_bytes=2 << 30,
