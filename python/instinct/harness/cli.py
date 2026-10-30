@@ -81,6 +81,9 @@ def load_mcp_config(path: str | Path, workspace: Path) -> list[MCPServerConfig]:
     return configs
 
 
+APP_TOKEN = "INSTINCT_APP_TOKEN"
+
+
 async def serve(args):
     # The deterministic demo must never launch operator external programs.
     if args.demo and args.mcp_config:
@@ -121,7 +124,11 @@ async def serve(args):
     thread_started = False
     try:
         server = StudioHTTPServer(
-            ("127.0.0.1", args.port), service, asyncio.get_running_loop()
+            ("127.0.0.1", args.port),
+            service,
+            asyncio.get_running_loop(),
+            # The Mac app makes the token itself, so it is never printed.
+            token=os.environ.get(APP_TOKEN) if args.app else None,
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -130,15 +137,29 @@ async def serve(args):
             # Warm the model in the background while the operator starts typing.
             # A submitted chat is durably queued if loading is still in progress.
             await service.start_backend()
-        print(
-            f"Instinct is serving at {server.origin}. Press Ctrl-C to stop.",
-            flush=True,
-        )
-        if not args.no_open:
-            webbrowser.open(server.origin + "/#token=" + quote(server.bootstrap_token))
+        loop = asyncio.get_running_loop()
         # SIGTERM gets the same cleanup as Ctrl-C, so model workers stop too.
         stopped = asyncio.Event()
-        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stopped.set)
+        loop.add_signal_handler(signal.SIGTERM, stopped.set)
+        if args.app:
+            print(
+                json.dumps({"event": "ready", "port": server.server_port}), flush=True
+            )
+
+            def watch_app() -> None:
+                # The app holds our stdin open; EOF means it quit or crashed.
+                while os.read(0, 4096):
+                    pass
+                loop.call_soon_threadsafe(stopped.set)
+
+            threading.Thread(target=watch_app, daemon=True).start()
+        else:
+            print(
+                f"Instinct is serving at {server.origin}. Press Ctrl-C to stop.",
+                flush=True,
+            )
+        if not args.no_open and not args.app:
+            webbrowser.open(server.origin + "/#token=" + quote(server.bootstrap_token))
         await stopped.wait()
     finally:
         try:
@@ -170,6 +191,9 @@ def main():
         action="store_true",
         help="Do not open browser; existing authorized cookies remain valid only for this server process",
     )
+    # Used by the Mac app: token from $INSTINCT_APP_TOKEN, a JSON ready line
+    # with the port, and exit when the app closes our stdin.
+    parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--skills-dir",
         action="append",
@@ -191,6 +215,8 @@ def main():
         )
     if not 0 <= args.port <= 65535:
         parser.error("port must be between zero and 65535")
+    if args.app and len(os.environ.get(APP_TOKEN, "")) < 32:
+        parser.error(f"--app needs a token of at least 32 characters in ${APP_TOKEN}")
     try:
         asyncio.run(serve(args))
     except KeyboardInterrupt:

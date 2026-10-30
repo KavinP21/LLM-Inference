@@ -1,0 +1,528 @@
+// Instinct for macOS: a native window around the local agent server.
+//
+// The app starts `python -m instinct.harness.cli --app` from the checkout it
+// was built from, hands it a fresh session token through the environment, and
+// shows the UI in a WKWebView once the server reports its port. Quitting the
+// app closes the server's stdin, which stops it and its model workers.
+
+import Cocoa
+import CryptoKit
+import WebKit
+
+let background = NSColor(srgbRed: 0x18 / 255, green: 0x21 / 255, blue: 0x27 / 255, alpha: 1)
+
+// MARK: - Backend process
+
+final class Backend {
+    let root: URL
+    private(set) var port: Int?
+    private(set) var token = ""
+    private var process: Process?
+    private var stdin: Pipe?
+    private var stopping = false
+    private var buffer = Data()
+    var onReady: ((Int) -> Void)?
+    var onExit: ((String) -> Void)?
+
+    static let logURL: URL = {
+        let logs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Instinct", isDirectory: true)
+        try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        return logs.appendingPathComponent("backend.log")
+    }()
+
+    init(root: URL) { self.root = root }
+
+    var python: URL { root.appendingPathComponent(".venv/bin/python") }
+    var config: URL { root.appendingPathComponent("examples/agents-studio.json") }
+    var modelsReady: Bool {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent("models/gemma-4-26b-a4b-mlx/config.json").path)
+    }
+
+    func start(workspace: URL) throws {
+        guard FileManager.default.isExecutableFile(atPath: python.path) else {
+            throw AppError("No Python environment at \(python.path). Run `macos/build.sh` from the repository after installing it.")
+        }
+        stopping = false
+        port = nil
+        token = Self.randomToken()
+        let state = Self.stateDirectory(for: workspace)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+
+        let process = Process()
+        process.executableURL = python
+        process.currentDirectoryURL = root
+        var arguments = ["-m", "instinct.harness.cli", "--app", "--port", "0",
+                         "--workspace", workspace.path, "--state-dir", state.path]
+        arguments += modelsReady ? ["--config", config.path] : ["--demo"]
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["INSTINCT_APP_TOKEN"] = token
+        environment["PYTHONPATH"] = root.appendingPathComponent("python").path
+        environment["PYTHONUNBUFFERED"] = "1"
+        process.environment = environment
+
+        let input = Pipe(), output = Pipe()
+        FileManager.default.createFile(atPath: Self.logURL.path, contents: nil)
+        let log = try FileHandle(forWritingTo: Self.logURL)
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = log
+        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            DispatchQueue.main.async { self?.consume(data) }
+        }
+        process.terminationHandler = { [weak self] finished in
+            DispatchQueue.main.async {
+                guard let self, !self.stopping else { return }
+                self.onExit?("The Instinct server stopped (exit \(finished.terminationStatus)).\n\n" + Self.logTail())
+            }
+        }
+        try process.run()
+        self.process = process
+        self.stdin = input
+    }
+
+    private func consume(_ data: Data) {
+        buffer.append(data)
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let line = buffer.prefix(upTo: newline)
+            buffer.removeSubrange(...newline)
+            guard port == nil,
+                  let message = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  message["event"] as? String == "ready",
+                  let value = message["port"] as? Int else { continue }
+            port = value
+            onReady?(value)
+        }
+    }
+
+    func stop() {
+        guard let process else { return }
+        stopping = true
+        // Closing stdin asks the server to shut down cleanly; SIGTERM backs it up.
+        try? stdin?.fileHandleForWriting.close()
+        if process.isRunning { process.terminate() }
+        let deadline = Date().addingTimeInterval(8)
+        while process.isRunning && Date() < deadline { usleep(50_000) }
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        self.process = nil
+    }
+
+    static func stateDirectory(for workspace: URL) -> URL {
+        let digest = SHA256.hash(data: Data(workspace.standardizedFileURL.path.utf8))
+        let id = digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Instinct/workspaces/\(workspace.lastPathComponent)-\(id)", isDirectory: true)
+    }
+
+    static func randomToken() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    static func logTail() -> String {
+        guard let text = try? String(contentsOf: logURL, encoding: .utf8) else { return "" }
+        return text.split(separator: "\n").suffix(12).joined(separator: "\n")
+    }
+}
+
+struct AppError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}
+
+// MARK: - Startup screen
+
+final class StartupView: NSView {
+    private let status = NSTextField(labelWithString: "")
+    private let spinner = NSProgressIndicator()
+    private let buttons = NSStackView()
+    var onRetry: (() -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = background.cgColor
+        let title = NSTextField(labelWithString: "Instinct")
+        title.font = .systemFont(ofSize: 26, weight: .semibold)
+        title.textColor = NSColor(white: 0.92, alpha: 1)
+        status.font = .systemFont(ofSize: 13)
+        status.textColor = NSColor(srgbRed: 0.61, green: 0.68, blue: 0.68, alpha: 1)
+        status.alignment = .center
+        status.maximumNumberOfLines = 14
+        status.preferredMaxLayoutWidth = 520
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        let retry = NSButton(title: "Try Again", target: self, action: #selector(retry))
+        let log = NSButton(title: "Open Log", target: self, action: #selector(openLog))
+        buttons.addArrangedSubview(retry)
+        buttons.addArrangedSubview(log)
+        buttons.isHidden = true
+        let stack = NSStackView(views: [title, spinner, status, buttons])
+        stack.orientation = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(_ message: String, failed: Bool = false) {
+        status.stringValue = message
+        buttons.isHidden = !failed
+        spinner.isHidden = failed
+        failed ? spinner.stopAnimation(nil) : spinner.startAnimation(nil)
+    }
+
+    @objc private func retry() { onRetry?() }
+    @objc private func openLog() { NSWorkspace.shared.open(Backend.logURL) }
+}
+
+// MARK: - App
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate,
+    WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate
+{
+    var window: NSWindow!
+    var webView: WKWebView!
+    let startup = StartupView()
+    var backend: Backend!
+    var workspace: URL!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let root = Bundle.main.object(forInfoDictionaryKey: "InstinctRoot") as? String else {
+            fatalError("Info.plist has no InstinctRoot; build the app with macos/build.sh")
+        }
+        backend = Backend(root: URL(fileURLWithPath: root))
+        workspace = Self.savedWorkspace()
+
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "instinct")
+        configuration.applicationNameForUserAgent = "InstinctApp/0.1"
+        configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.underPageBackgroundColor = background
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.isHidden = true
+
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 860),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                          backing: .buffered, defer: false)
+        window.title = "Instinct"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = background
+        window.minSize = NSSize(width: 760, height: 520)
+        window.delegate = self
+        let content = NSView()
+        for view in [startup, webView!] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+                view.topAnchor.constraint(equalTo: content.topAnchor),
+                view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            ])
+        }
+        window.contentView = content
+        window.center()
+        window.setFrameAutosaveName("Main")
+        window.makeKeyAndOrderFront(nil)
+        layoutWindowButtons()
+
+        startup.onRetry = { [weak self] in self?.launch() }
+        backend.onReady = { [weak self] port in self?.load(port: port) }
+        backend.onExit = { [weak self] message in
+            self?.webView.isHidden = true
+            self?.startup.show(message, failed: true)
+        }
+        NSApp.mainMenu = makeMenu()
+        launch()
+    }
+
+    /// Centre the close/minimize/zoom buttons on the page's 64-point header
+    /// instead of the default 28-point title bar.
+    func layoutWindowButtons() {
+        guard !window.styleMask.contains(.fullScreen),
+              let close = window.standardWindowButton(.closeButton),
+              let minimize = window.standardWindowButton(.miniaturizeButton),
+              let zoom = window.standardWindowButton(.zoomButton),
+              let container = close.superview?.superview else { return }
+        let top = 32 - close.frame.height / 2
+        var frame = container.frame
+        frame.size.height = close.frame.height + top
+        frame.origin.y = window.frame.height - frame.size.height
+        container.frame = frame
+        let spacing = minimize.frame.minX - close.frame.minX
+        for (index, button) in [close, minimize, zoom].enumerated() {
+            button.setFrameOrigin(NSPoint(x: 22 + CGFloat(index) * spacing, y: button.frame.minY))
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) { layoutWindowButtons() }
+    func windowDidExitFullScreen(_ notification: Notification) { layoutWindowButtons() }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ notification: Notification) { backend.stop() }
+
+    // MARK: Workspace
+
+    static func savedWorkspace() -> URL {
+        if let path = UserDefaults.standard.string(forKey: "workspace"),
+           FileManager.default.fileExists(atPath: path) {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        // A folder of its own, so the agent never starts out in your files.
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Instinct", isDirectory: true)
+        try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        return home
+    }
+
+    func launch() {
+        backend.stop()
+        webView.isHidden = true
+        window.subtitle = workspace.path
+        startup.show(backend.modelsReady ? "Starting in \(workspace.lastPathComponent)…" : "Models not found; starting in demo mode…")
+        do { try backend.start(workspace: workspace) } catch {
+            startup.show(error.localizedDescription, failed: true)
+        }
+    }
+
+    func load(port: Int) {
+        startup.show("Loading…")
+        let url = URL(string: "http://127.0.0.1:\(port)/?app=mac#token=\(backend.token)")!
+        webView.load(URLRequest(url: url))
+    }
+
+    @objc func openFolder(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Open"
+        panel.message = "Instinct can read, create and change files inside the folder you choose."
+        panel.directoryURL = workspace
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            self.workspace = url
+            UserDefaults.standard.set(url.path, forKey: "workspace")
+            self.launch()
+        }
+    }
+
+    @objc func revealWorkspace(_ sender: Any?) {
+        NSWorkspace.shared.activateFileViewerSelecting([workspace])
+    }
+
+    // MARK: Menu
+
+    func run(_ command: String) {
+        webView.evaluateJavaScript("window.instinct && window.instinct.command(\(Self.jsString(command)))")
+    }
+
+    @objc func menuCommand(_ sender: NSMenuItem) {
+        if let command = sender.representedObject as? String { run(command) }
+    }
+
+    @objc func reload(_ sender: Any?) { webView.reload() }
+
+    func makeMenu() -> NSMenu {
+        let main = NSMenu()
+        func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
+            let menu = NSMenu(title: title)
+            items.forEach(menu.addItem)
+            let holder = NSMenuItem()
+            holder.submenu = menu
+            main.addItem(holder)
+            return menu
+        }
+        func item(_ title: String, _ action: Selector?, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) -> NSMenuItem {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            entry.keyEquivalentModifierMask = modifiers
+            entry.target = target
+            return entry
+        }
+        func command(_ title: String, _ name: String, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+            let entry = item(title, #selector(menuCommand(_:)), key, modifiers, target: self)
+            entry.representedObject = name
+            return entry
+        }
+        _ = submenu("Instinct", [
+            item("About Instinct", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            command("Settings…", "settings", ","),
+            .separator(),
+            item("Hide Instinct", #selector(NSApplication.hide(_:)), "h"),
+            item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("Show All", #selector(NSApplication.unhideAllApplications(_:))),
+            .separator(),
+            item("Quit Instinct", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        _ = submenu("File", [
+            command("New Chat", "newChat", "n"),
+            item("Open Folder…", #selector(openFolder(_:)), "o", target: self),
+            item("Show Workspace in Finder", #selector(revealWorkspace(_:)), "r", [.command, .shift], target: self),
+            .separator(),
+            item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
+        ])
+        _ = submenu("Edit", [
+            item("Undo", Selector(("undo:")), "z"),
+            item("Redo", Selector(("redo:")), "z", [.command, .shift]),
+            .separator(),
+            item("Cut", #selector(NSText.cut(_:)), "x"),
+            item("Copy", #selector(NSText.copy(_:)), "c"),
+            item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Select All", #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
+            command("Search Chats", "searchChats", "f", [.command, .shift]),
+        ])
+        _ = submenu("View", [
+            command("Toggle Sidebar", "toggleSidebar", "s", [.command, .control]),
+            command("Toggle Workspace Panel", "toggleWorkspace", "d", [.command, .shift]),
+            command("Toggle Terminal", "toggleTerminal", "`", [.control]),
+            .separator(),
+            item("Reload", #selector(reload(_:)), "r", target: self),
+            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+        ])
+        let windows = submenu("Window", [
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("Zoom", #selector(NSWindow.performZoom(_:))),
+            .separator(),
+            item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
+        ])
+        NSApp.windowsMenu = windows
+        return main
+    }
+
+    static func jsString(_ value: String) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: [value])
+        return String(data: data, encoding: .utf8)!.dropFirst().dropLast().description
+    }
+
+    // MARK: Messages from the page
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        switch type {
+        case "drag":
+            if let event = NSApp.currentEvent, event.type == .leftMouseDown { window.performDrag(with: event) }
+        case "zoom":
+            window.performZoom(nil)
+        case "openFolder":
+            openFolder(nil)
+        case "reveal":
+            let path = (body["path"] as? String).map { workspace.appendingPathComponent($0) } ?? workspace!
+            NSWorkspace.shared.activateFileViewerSelecting([path])
+        case "openExternal":
+            if let link = body["url"] as? String, let url = URL(string: link),
+               ["http", "https", "mailto"].contains(url.scheme ?? "") {
+                NSWorkspace.shared.open(url)
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: Navigation, downloads and panels
+
+    func isLocal(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        if ["about", "blob", "data"].contains(url.scheme ?? "") { return true }
+        return url.host == "127.0.0.1" && url.port == backend.port
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if action.shouldPerformDownload { return decisionHandler(.download) }
+        if isLocal(action.request.url) { return decisionHandler(.allow) }
+        if let url = action.request.url { NSWorkspace.shared.open(url) }
+        decisionHandler(.cancel)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        decisionHandler(response.canShowMIMEType ? .allow : .download)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        var target = folder.appendingPathComponent(suggestedFilename)
+        let stem = target.deletingPathExtension().lastPathComponent, ext = target.pathExtension
+        var copy = 1
+        while FileManager.default.fileExists(atPath: target.path) {
+            copy += 1
+            target = folder.appendingPathComponent(ext.isEmpty ? "\(stem) \(copy)" : "\(stem) \(copy).\(ext)")
+        }
+        completionHandler(target)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        if let url = download.progress.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.isHidden = false
+        window.makeFirstResponder(webView)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = action.request.url { NSWorkspace.shared.open(url) }
+        return nil
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.beginSheetModal(for: window) { completionHandler($0 == .OK ? panel.urls : nil) }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.beginSheetModal(for: window) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
+    }
+}
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.setActivationPolicy(.regular)
+app.activate(ignoringOtherApps: true)
+app.run()

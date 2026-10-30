@@ -20,6 +20,7 @@ def _args(workspace, **updates):
         "demo": True,
         "port": 0,
         "no_open": True,
+        "app": False,
     }
     values.update(updates)
     return SimpleNamespace(**values)
@@ -166,7 +167,7 @@ def lifecycle_fakes(monkeypatch):
         origin = "http://127.0.0.1:12345"
         bootstrap_token = "TEST-BOOTSTRAP-NOT-PRINTED"
 
-        def __init__(self, address, service, loop):
+        def __init__(self, address, service, loop, token=None):
             assert address[0] == "127.0.0.1"
             if state.failure == "bind":
                 raise OSError("address unavailable")
