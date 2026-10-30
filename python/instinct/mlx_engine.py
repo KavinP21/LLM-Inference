@@ -74,6 +74,7 @@ class MlxEngine:
         prefix_cache_bytes: int = 0,
         prefix_cache_entries: int = 24,
         page_size: int = PAGE_SIZE,
+        kv_bits: int = 16,
         model: Any = None,
     ) -> None:
         if max_num_sequences <= 0 or kv_cache_bytes <= 0 or page_size <= 0:
@@ -97,9 +98,9 @@ class MlxEngine:
         self.prefill_burst_size = prefill_burst_size
         self.page_size = page_size
         groups: list[KVGroup] = list(self.model.kv_groups)
-        itemsize = 2
+        self.kv_bits = kv_bits
         self.page_bytes = {
-            g.name: g.bytes_per_token(itemsize) * page_size for g in groups
+            g.name: g.bytes_per_token(kv_bits) * page_size for g in groups
         }
         state_groups = list(getattr(self.model, "state_groups", ()))
         snapshot_slots = (
@@ -113,6 +114,7 @@ class MlxEngine:
             dtype=self.model.dtype,
             state_groups=state_groups,
             state_slots=(max_num_sequences + snapshot_slots) if state_groups else 0,
+            bits=kv_bits,
         )
         self.prefix_cache = (
             PrefixCache(
@@ -153,9 +155,9 @@ class MlxEngine:
                 capacities[group.name] = pages
                 remaining -= pages * self.page_bytes[group.name]
         full = [g for g in groups if not g.window]
-        per_token = sum(g.bytes_per_token(2) for g in full)
+        per_token = sum(g.bytes_per_token(self.kv_bits) for g in full)
         for group in full:
-            share = remaining * group.bytes_per_token(2) / per_token
+            share = remaining * group.bytes_per_token(self.kv_bits) / per_token
             capacities[group.name] = max(1, int(share // self.page_bytes[group.name]))
         return capacities
 
@@ -583,6 +585,7 @@ class MlxEngine:
             "waiting": len(self.waiting),
             "max_num_sequences": self.max_num_sequences,
             "max_model_length": self.max_model_length,
+            "kv_bits": self.kv_bits,
             "kv_pools": pools,
             "kv_device_bytes": self.cache.device_bytes,
             "prefix_cache": self.prefix_cache.stats() if self.prefix_cache else None,

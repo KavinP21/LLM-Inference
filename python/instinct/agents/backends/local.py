@@ -276,6 +276,7 @@ class LocalModelBackend:
                 kv_cache_bytes=self.config.kv_cache_bytes,
                 prefix_cache_bytes=options.get("prefix_cache_bytes"),
                 prefill_chunk_size=options.get("prefill_chunk_size", 512),
+                kv_bits=options.get("kv_bits", 16),
                 eos_token_ids=self.config.eos_token_ids,
                 local_files_only=self.config.local_files_only,
             )

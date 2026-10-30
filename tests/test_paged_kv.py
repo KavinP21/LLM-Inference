@@ -67,4 +67,5 @@ def test_random_traffic_never_loses_or_duplicates_pages(seed):
 
 def test_group_sizes():
     group = KVGroup("full", (3, 7), kv_heads=2, head_dim=512)
-    assert group.bytes_per_token(2) == 2 * 2 * 2 * 512 * 2
+    assert group.bytes_per_token() == 2 * 2 * 2 * 512 * 2
+    assert group.bytes_per_token(8) == 2 * 2 * 2 * (512 + 2)
