@@ -42,10 +42,14 @@ from .chat_formats import (
     to_gemma_messages,
 )
 
-# Below this many accepted tokens per round, a block-3 MTP round costs more
-# than plain decoding on Gemma 4 26B A4B (measured on an M3 Max).
-DRAFT_BREAK_EVEN = 2.25
-DRAFT_COOLDOWN_REQUESTS = 6
+# Whether the drafter helps depends on the output and on the prompt length: a
+# verify round gets more expensive as the context grows. On Gemma 4 26B A4B it
+# gained 5-12% on short agent prompts but lost ~30% at 20K tokens. So the
+# runner measures decode speed both ways for each band of prompt lengths, uses
+# the faster, and tries the other every few requests to notice changes.
+DRAFT_BAND_TOKENS = 8192
+DRAFT_EXPLORE_EVERY = 8
+DRAFT_MIN_TOKENS = 12  # Shorter outputs are mostly per-request overhead.
 MIN_SNAPSHOT_TOKENS = 256
 
 
@@ -186,8 +190,10 @@ class VlmRunner:
         self._sessions: OrderedDict[int, _Session] = OrderedDict()
         self._snapshots: OrderedDict[int, _Snapshot] = OrderedDict()
         self._next_key = 0
-        self._draft_ewma = DRAFT_BREAK_EVEN + 0.25
-        self._draft_cooldown = 0
+        # (prompt band, drafted) -> moving average of decode tokens/second.
+        self._decode_rates: dict[tuple[int, bool], float] = {}
+        self._draft_choices = 0
+        self._drafting = True  # The latest choice, for stats().
         self._lock = threading.Lock()
         self.totals = {
             "requests": 0,
@@ -532,20 +538,18 @@ class VlmRunner:
                     ].strip(),
                     thinking_end_token=self.family.think_close,
                 )
-        # Drafting pays off on tool calls, edits and code (+5-12% on Gemma 4
-        # 26B A4B) and costs ~14% on free prose, so it's only used for agent
-        # turns, and switched off for a while when acceptance drops.
-        use_draft = (
+        # Free prose drafts poorly (-14%), so only greedy agent turns are
+        # candidates; among those, measured speed decides.
+        band = min(len(ids) // DRAFT_BAND_TOKENS, 7)
+        draft_candidate = (
             self.draft_model is not None
             and bool(tools)
             and temperature == 0
             and not thinking
-            and self._draft_cooldown == 0
         )
-        if self._draft_cooldown:
-            self._draft_cooldown -= 1
-            if self._draft_cooldown == 0:
-                self._draft_ewma = DRAFT_BREAK_EVEN + 0.25
+        use_draft = draft_candidate and self._prefer_draft(band)
+        if draft_candidate:
+            self._drafting = use_draft
         draft_before = None
         if use_draft:
             from mlx_vlm.speculative.common import speculative_stats_snapshot
@@ -638,9 +642,6 @@ class VlmRunner:
             )
             if rounds:
                 per_round = (accepted + rounds) / rounds
-                self._draft_ewma = 0.7 * self._draft_ewma + 0.3 * per_round
-                if self._draft_ewma < DRAFT_BREAK_EVEN:
-                    self._draft_cooldown = DRAFT_COOLDOWN_REQUESTS
                 draft = {"rounds": rounds, "tokens_per_round": round(per_round, 2)}
 
         prompt_tokens = len(ids)
@@ -674,6 +675,12 @@ class VlmRunner:
             "temperature": temperature,
             "draft": draft,
         }
+        if draft_candidate and result.generation_tokens >= DRAFT_MIN_TOKENS:
+            key, rate = (band, use_draft), metrics["decode_tps"]
+            previous = self._decode_rates.get(key)
+            self._decode_rates[key] = (
+                rate if previous is None else 0.7 * previous + 0.3 * rate
+            )
         self.last_metrics = metrics
         return RunnerResult(
             text=answer,
@@ -687,6 +694,15 @@ class VlmRunner:
             metrics=metrics,
         )
 
+    def _prefer_draft(self, band: int) -> bool:
+        drafted = self._decode_rates.get((band, True))
+        plain = self._decode_rates.get((band, False))
+        if drafted is None or plain is None:
+            return drafted is None  # Measure drafting first, then plain.
+        self._draft_choices += 1
+        faster = drafted >= plain
+        return not faster if self._draft_choices % DRAFT_EXPLORE_EVERY == 0 else faster
+
     def stats(self) -> dict[str, Any]:
         return {
             "model": str(self.path),
@@ -694,7 +710,7 @@ class VlmRunner:
             "family": self.family.name,
             "dialect": self.family.dialect,
             "draft": self.draft_model is not None,
-            "draft_enabled": self.draft_model is not None and self._draft_cooldown == 0,
+            "draft_enabled": self.draft_model is not None and self._drafting,
             "load_seconds": round(self.load_seconds, 2),
             "weight_bytes": self.weight_bytes,
             "cache_entries": len(self._sessions) + len(self._snapshots),

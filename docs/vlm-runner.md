@@ -44,10 +44,12 @@ rewritten trailing menu.
 
 **Drafting.** Gemma 4 ships a 4-layer MTP "assistant" drafter. On the 26B A4B
 MoE a 3-token verify round costs about 2.4 single decode steps, since it touches
-more experts. Drafting therefore helps tool calls (+12%), edits (+7%) and code
-(+5%) but hurts free prose (−14%). The runner only drafts on greedy agent turns
-and backs off for a few requests when the measured tokens per round fall below
-break-even.
+more experts, and more as the prompt grows. Drafting helped tool calls (+12%),
+edits (+7%) and code (+5%) on short prompts, hurt free prose (−14%), and was
+about 30% slower than plain decoding once an agent's prompt reached 20K tokens.
+So the runner only drafts on greedy agent turns. For those it measures decode
+speed with and without the drafter in 8K-token bands of prompt length, uses
+whichever is faster, and tries the other every eighth request.
 
 **Reasoning effort.** `off` disables thinking. `low` and `medium` cap it at 1,024
 and 4,096 tokens, forcing the thinking block closed at the budget. `high` is

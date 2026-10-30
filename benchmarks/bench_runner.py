@@ -84,22 +84,22 @@ def main() -> None:
             )
             record("session ttft ms", follow.metrics["ttft_ms"])
         if runner.draft_model is not None:
-            # Force drafting on for a separate measurement of its effect.
-            runner._draft_cooldown, runner._draft_ewma = 0, 3.0
+            # Force drafting on, then off, for a separate measurement of each.
+            runner._prefer_draft = lambda band: True
             drafted = runner.generate(
                 [{"role": "user", "content": TASKS[0]}],
                 max_tokens=args.tokens,
                 tools=TOOLS,
             )
             record("decode tok/s with draft", drafted.metrics["decode_tps"])
-            runner._draft_cooldown = 10**9
+            runner._prefer_draft = lambda band: False
             plain = runner.generate(
                 [{"role": "user", "content": TASKS[0] + " "}],
                 max_tokens=args.tokens,
                 tools=TOOLS,
             )
             record("decode tok/s without draft", plain.metrics["decode_tps"])
-            runner._draft_cooldown = 0
+            del runner._prefer_draft
 
     summary = {
         name: round(statistics.median(values), 1) for name, values in rows.items()
