@@ -410,7 +410,7 @@
     const node = document.createElement("article");
     node.className = "turn";
     node.dataset.turn = key;
-    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg viewBox="0 0 30 49" aria-hidden="true"><use href="#instinct-mark"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div>';
+    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg viewBox="0 0 30 49" aria-hidden="true"><use href="#instinct-mark"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div><div class="turn-summary"></div>';
     state.turns.set(key, node);
     return node;
   }
@@ -453,6 +453,7 @@
       const thought = output ? finalThought(turn) : "";
       patch(node.querySelector(".turn-output"), output ? `${thought ? `<details class="live-thinking" data-key="thought-${escape(key)}">${disclosureSummary("Thought")}<p>${escape(thought)}</p></details>` : ""}<div class="markdown">${markdown(output)}</div><div class="output-actions"><button type="button" class="copy-response" data-copy-response="${escape(key)}">Copy response</button>${turn.status === "completed_with_failures" ? "Some delegated work needs attention." : ""}</div>` : "");
       patch(node.querySelector(".turn-error"), turn.error && !["cancelled", "interrupted"].includes(turn.status) ? `<p>${escape(turn.run_id ? "Instinct couldn’t finish this request. You can send a message to continue." : "The model couldn’t start. Your message is saved; send it again to retry.")}</p><details data-key="error-${escape(key)}">${disclosureSummary("Error details")}<pre>${escape(typeof turn.error === "string" ? turn.error : pretty(turn.error))}</pre></details>` : "");
+      patch(node.querySelector(".turn-summary"), turn.summary ? `<details class="chat-summary" data-key="summary-${escape(key)}">${disclosureSummary("Earlier messages summarized")}<div class="markdown">${markdown(turn.summary)}</div></details>` : "");
       patch(node.querySelector(".turn-artifacts"), turn.run_id && turn.artifacts?.length ? `<div class="artifact-list">${turn.artifacts.map((artifact) => `<button type="button" class="artifact-button" data-artifact="${escape(artifact.path)}" data-run="${escape(turn.run_id)}" title="Download ${escape(artifact.path)}"><span aria-hidden="true">▤</span><span>${escape(artifact.path)}</span><span aria-hidden="true">↓</span></button>`).join("")}</div>` : "");
     });
     for (const [key, node] of state.turns) if (!keys.has(key)) { node.remove(); state.turns.delete(key); }
@@ -1470,9 +1471,20 @@
     finally { state.dev.messageBusy = false; renderDeveloperAgents(); }
   }
 
+  async function compactChat() {
+    if (!state.selected || !state.detail?.turns?.length) { toast("Send a message first; there is nothing to summarize yet.", true); return; }
+    if (active()) { toast("Wait for the reply to finish, then compact.", true); return; }
+    toast("Summarizing this chat…", false, 120000);
+    try {
+      const result = await api(`/api/chats/${encodeURIComponent(state.selected)}/compact`, {});
+      toast(result.turns ? `Summarized ${result.turns} ${result.turns === 1 ? "message" : "messages"}. The next reply starts from the summary.` : "Already summarized: nothing new since the last summary.", false, 5500);
+      await refresh();
+    } catch (error) { toast(error.message, true, 6500); }
+  }
   const commands = [
     { name: "/new", description: "Start a fresh chat", run: () => selectChat(null) },
     { name: "/clear", description: "Start with a fresh context", run: () => selectChat(null) },
+    { name: "/compact", description: "Summarize this chat to free up context", run: compactChat },
     { name: "/tasks", description: "Inspect agent tasks", run: () => toggleDeveloper(true, "agents") },
     { name: "/files", description: "Browse workspace files", run: () => toggleDeveloper(true, "files") },
     { name: "/diff", description: "Review recorded changes", run: () => toggleDeveloper(true, "changes") },

@@ -11,14 +11,21 @@ from instinct.harness.service import AppService
 
 
 class ChatBackend:
-    def __init__(self, *, pause_first=False):
+    def __init__(self, *, pause_first=False, summary=None):
         self.calls = []
+        self.summaries = []
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.pause_first = pause_first
+        self.summary = summary
         self.closed = False
 
     async def generate(self, messages, max_tokens, request_id):
+        if request_id.startswith("summary."):
+            self.summaries.append(list(messages))
+            if self.summary is None:
+                raise RuntimeError("this backend does not summarize")
+            return Generation(f"{self.summary} {len(self.summaries)}", 100, 20)
         self.calls.append(list(messages))
         self.started.set()
         if self.pause_first and len(self.calls) == 1:
@@ -411,6 +418,91 @@ def test_history_bounds_are_explicit_and_latest_request_survives_projection(tmp_
                 m.content.startswith("Latest exact request") for m in backend.calls[-1]
             )
             assert detail["turns"][0]["user"].endswith("x" * 3000)
+        finally:
+            await service.close()
+
+    asyncio.run(check())
+
+
+def test_older_turns_are_summarized_once_the_history_is_nearly_full(tmp_path):
+    async def check():
+        backend = ChatBackend(summary="SUMMARY")
+        service = make_service(tmp_path, backend=backend)
+        service.conversations.history_bytes = 2_000
+        try:
+            chat = (
+                await service.conversations.create({"message": "first " + "x" * 1700})
+            )["chat_id"]
+            await settle(service, chat)
+            await service.conversations.message(chat, {"message": "second"})
+            await settle(service, chat)
+            assert not backend.summaries
+            await service.conversations.message(chat, {"message": "third"})
+            detail = await settle(service, chat)
+            # The first turn is summarized; the second stays as it was.
+            (request,) = backend.summaries
+            assert request[1].content.startswith("first ") and "second" not in [
+                m.content for m in request
+            ]
+            assert detail["turns"][0]["summary"] == "SUMMARY 1"
+            history = service.store.messages(detail["turns"][-1]["run_id"], "root")
+            assert history[1].content.endswith("SUMMARY 1")
+            assert history[2].content == "second"
+            assert all("x" * 100 not in m.content for m in history)
+            assert any(
+                e["kind"] == "conversation_compacted"
+                for e in detail["turns"][-1]["events"]
+            )
+        finally:
+            await service.close()
+
+    asyncio.run(check())
+
+
+def test_compact_summarizes_the_chat_on_request(tmp_path):
+    async def check():
+        backend = ChatBackend(summary="SUMMARY")
+        service = make_service(tmp_path, backend=backend)
+        try:
+            chats = service.conversations
+            chat = (await chats.create({"message": "first"}))["chat_id"]
+            await settle(service, chat)
+            await chats.message(chat, {"message": "second"})
+            detail = await settle(service, chat)
+            result = await service.dispatch("POST", f"/api/chats/{chat}/compact", {})
+            assert result["turns"] == 2 and result["summary"] == "SUMMARY 1"
+            # Nothing new to summarize: the same summary comes back.
+            assert (await chats.compact(chat, {}))["turns"] == 0
+            await chats.message(chat, {"message": "third"})
+            detail = await settle(service, chat)
+            history = service.store.messages(detail["turns"][-1]["run_id"], "root")
+            assert history[1].content.endswith("SUMMARY 1")
+            assert not any(m.content in {"first", "second"} for m in history)
+            # Rewinding past the summarized turn drops its summary with it.
+            await chats.rewind(chat, {"turn_id": detail["turns"][1]["turn_id"]})
+            await chats.message(chat, {"message": "again"})
+            detail = await settle(service, chat)
+            history = service.store.messages(detail["turns"][-1]["run_id"], "root")
+            assert history[1].content == "first"
+            with pytest.raises(ValueError, match="no fields"):
+                await chats.compact(chat, {"force": True})
+        finally:
+            await service.close()
+
+    asyncio.run(check())
+
+
+def test_compact_waits_for_the_reply(tmp_path):
+    async def check():
+        backend = ChatBackend(pause_first=True, summary="SUMMARY")
+        service = make_service(tmp_path, backend=backend)
+        try:
+            chat = (await service.conversations.create({"message": "first"}))["chat_id"]
+            await backend.started.wait()
+            with pytest.raises(ValueError, match="Wait for the reply"):
+                await service.conversations.compact(chat, {})
+            backend.release.set()
+            await settle(service, chat)
         finally:
             await service.close()
 

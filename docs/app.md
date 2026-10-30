@@ -108,7 +108,15 @@ When an agent's context passes 90% of its budget, the agent writes a summary of
 its work so far, and older messages are replaced by that summary. It compacts
 sooner if one more tool result would leave no room to write the summary. The prompt then grows by appending again.
 The full history stays in the journal, and the agent can read it back with
-`journal_read`. A run may take 200 steps per agent, 50M tokens and four hours.
+`journal_read`.
+
+A chat works the same way across replies. Each reply's prompt carries the
+earlier turns, up to about a third of the context. Once they pass 90% of that,
+the model summarizes the older turns before the next reply, keeping the latest
+ones word for word, and later replies start from the summary. Type `/compact`
+to summarize the whole chat yourself. The transcript marks where a summary was
+made and shows what it says. Rewinding past that point drops the summary with
+the messages it covered. A run may take 200 steps per agent, 50M tokens and four hours.
 
 ## Everything else
 
@@ -118,6 +126,7 @@ The full history stays in the journal, and the agent can read it back with
 | Search chats | ⇧⌘F |
 | Rename or delete a chat | Pencil or × on the chat in the sidebar |
 | Stop the reply | Esc, or Stop |
+| Summarize the chat to free context | `/compact` |
 | Context in use | The meter in the top bar; click it for the Performance tab |
 | Workspace panel | ⇧⌘D: Agents, Files, Changes, Activity, Performance, System |
 | Attach images | The paperclip, paste, or drop them on the box (up to 8, 16 MiB) |
