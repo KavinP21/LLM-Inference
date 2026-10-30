@@ -397,3 +397,29 @@ def test_paged_decode_kernel_matches_dense_attention(
         expected = (mx.softmax(scores, axis=-1)[:, None, :] @ v)[:, 0]
         error = float(mx.abs(out[b].astype(mx.float32) - expected).max())
         assert error < 2e-2, error
+
+
+def test_gated_delta_kernel_matches_the_recurrence():
+    from instinct.backends.metal_kernels import gated_delta
+
+    rng = np.random.default_rng(3)
+    batch, steps, k_heads, v_heads, k_dim, v_dim = 2, 7, 2, 4, 32, 16
+    q = rng.normal(size=(batch, steps, k_heads, k_dim)).astype(np.float32) * 0.3
+    k = rng.normal(size=(batch, steps, k_heads, k_dim)).astype(np.float32) * 0.3
+    v = rng.normal(size=(batch, steps, v_heads, v_dim)).astype(np.float32)
+    g = rng.uniform(0.5, 1.0, size=(batch, steps, v_heads)).astype(np.float32)
+    beta = rng.uniform(0.0, 1.0, size=(batch, steps, v_heads)).astype(np.float32)
+    state = rng.normal(size=(batch, v_heads, v_dim, k_dim)).astype(np.float32) * 0.1
+    out, final = gated_delta(mx, *(mx.array(a) for a in (q, k, v, g, beta, state)))
+    expected = np.zeros_like(v)
+    s = state.copy()
+    for t in range(steps):
+        for h in range(v_heads):
+            kh = h // (v_heads // k_heads)
+            s[:, h] *= g[:, t, h, None, None]
+            memory = np.einsum("bvk,bk->bv", s[:, h], k[:, t, kh])
+            delta = (v[:, t, h] - memory) * beta[:, t, h, None]
+            s[:, h] += delta[:, :, None] * k[:, t, kh, None, :]
+            expected[:, t, h] = np.einsum("bvk,bk->bv", s[:, h], q[:, t, kh])
+    np.testing.assert_allclose(np.array(out), expected, atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(np.array(final), s, atol=1e-4, rtol=1e-4)

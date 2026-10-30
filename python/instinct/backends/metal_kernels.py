@@ -233,3 +233,93 @@ def paged_decode_attention(
         output_dtypes=[queries.dtype],
     )
     return out
+
+
+# Gated delta rule (Qwen3.5's linear attention), one recurrence step per
+# token. A threadgroup row of 32 lanes owns one value row of one head's state
+# matrix, D_K / 32 entries per lane, and walks the sequence's tokens in order:
+# decay the row, read the key's memory, correct it toward the value, then read
+# out with the query. Sequences in a batch are independent rows of the grid.
+_GATED_DELTA = r"""
+    const uint n = thread_position_in_grid.z;
+    const uint b = n / HV;
+    const uint hv = n % HV;
+    const uint hk = hv / (HV / HK);
+    const uint dv = thread_position_in_grid.y;
+    const uint lane = thread_position_in_threadgroup.x;
+    constexpr uint E = DK / 32;
+    const uint steps = q_shape[1];
+
+    auto q_ = q + (b * steps * HK + hk) * DK + lane * E;
+    auto k_ = k + (b * steps * HK + hk) * DK + lane * E;
+    auto v_ = v + (b * steps * HV + hv) * DV + dv;
+    auto g_ = g + b * steps * HV + hv;
+    auto beta_ = beta + b * steps * HV + hv;
+    auto y_ = y + (b * steps * HV + hv) * DV + dv;
+    auto s_in = state_in + ((b * HV + hv) * DV + dv) * DK + lane * E;
+    auto s_out = state_out + ((b * HV + hv) * DV + dv) * DK + lane * E;
+
+    float s[E];
+    for (uint i = 0; i < E; ++i) s[i] = float(s_in[i]);
+    for (uint t = 0; t < steps; ++t) {
+        const float decay = float(g_[t * HV]);
+        float memory = 0.0f;
+        for (uint i = 0; i < E; ++i) {
+            s[i] *= decay;
+            memory += s[i] * float(k_[t * HK * DK + i]);
+        }
+        memory = simd_sum(memory);
+        const float delta = (float(v_[t * HV * DV]) - memory) * float(beta_[t * HV]);
+        float out = 0.0f;
+        for (uint i = 0; i < E; ++i) {
+            s[i] += float(k_[t * HK * DK + i]) * delta;
+            out += s[i] * float(q_[t * HK * DK + i]);
+        }
+        out = simd_sum(out);
+        if (lane == 0) y_[t * HV * DV] = T(out);
+    }
+    for (uint i = 0; i < E; ++i) s_out[i] = s[i];
+"""
+
+
+@cache
+def _gated_delta_kernel(mx: Any) -> Any:
+    return mx.fast.metal_kernel(
+        name="instinct_gated_delta",
+        input_names=["q", "k", "v", "g", "beta", "state_in"],
+        output_names=["y", "state_out"],
+        source=_GATED_DELTA,
+    )
+
+
+def gated_delta(
+    mx: Any, q: Any, k: Any, v: Any, g: Any, beta: Any, state: Any
+) -> tuple[Any, Any]:
+    """Run the gated delta rule over ``[batch, steps]`` tokens.
+
+    ``q``/``k`` are ``[batch, steps, k_heads, k_dim]``, ``v`` is
+    ``[batch, steps, v_heads, v_dim]``, ``g`` (decay) and ``beta`` (write
+    strength) are ``[batch, steps, v_heads]`` and ``state`` is the float32
+    ``[batch, v_heads, v_dim, k_dim]`` memory. Returns the outputs, shaped
+    like ``v``, and the new state.
+    """
+    batch, _, k_heads, k_dim = (int(n) for n in q.shape)
+    v_heads, v_dim = int(v.shape[2]), int(v.shape[3])
+    if k_dim % 32 or v_heads % k_heads:
+        raise ValueError(
+            "gated delta needs a key dim divisible by 32 and whole head groups"
+        )
+    return _gated_delta_kernel(mx)(
+        inputs=[q, k, v, g, beta, state],
+        template=[
+            ("T", v.dtype),
+            ("DK", k_dim),
+            ("DV", v_dim),
+            ("HK", k_heads),
+            ("HV", v_heads),
+        ],
+        grid=(32, v_dim, batch * v_heads),
+        threadgroup=(32, 4, 1),
+        output_shapes=[tuple(v.shape), tuple(state.shape)],
+        output_dtypes=[v.dtype, mx.float32],
+    )
