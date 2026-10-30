@@ -27,6 +27,7 @@ from .demo import DemoBackend
 from .extensions import MCPStdioClient
 from .policy import POLICIES, ApprovalGate, workspace_preview
 from .terminal import Terminals
+from .web_tools import WebTools
 
 MUTATING = frozenset(
     {
@@ -40,7 +41,7 @@ MUTATING = frozenset(
         "run_tests",
     }
 )
-SETTINGS = {"command_network": False}
+SETTINGS = {"command_network": False, "web_access": True}
 SETTLED_RUNS = TERMINAL | {"completed_with_failures"}
 
 
@@ -371,6 +372,12 @@ class StudioService:
             descriptions.update(commands.tool_descriptions())
             schemas.update(commands.schemas)
             mutations.add("run_command")
+        if self.settings["web_access"] and not self.demo:
+            web = WebTools()
+            mapping.update(web.mapping())
+            descriptions.update(web.tool_descriptions())
+            schemas.update(web.schemas)
+            safe.update(web.replay_safe_tools)
         if self.skills:
             mapping.update(self.skills.mapping())
             descriptions.update(self.skills.tool_descriptions())
