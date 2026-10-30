@@ -9,14 +9,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..common import strict_json
 from .native_tools import _check_schema, _validate
-from .protocol import _unique_object
 from .store import AgentStore
 from .tools import WorkspaceTools
-
-
-def _reject_constant(value: str):
-    raise ValueError(f"Nonfinite JSON value {value!r} is not permitted")
 
 
 class CompletionProfile:
@@ -94,11 +90,7 @@ class CompletionProfile:
             )
         if "json_schema" in self.criteria:
             try:
-                value = json.loads(
-                    result,
-                    object_pairs_hook=_unique_object,
-                    parse_constant=_reject_constant,
-                )
+                value = strict_json(result)
                 # JSON's exponent syntax can also overflow into infinity.
                 json.dumps(value, allow_nan=False)
                 _validate(value, self.criteria["json_schema"], "final answer")

@@ -23,6 +23,7 @@ from ..agents.protocol import ChatMessage, conservative_input_tokens
 from ..agents.runtime import AgentRuntime, RuntimeConfig
 from ..agents.store import TERMINAL
 from ..chat_formats import EFFORT_BUDGETS
+from ..common import clip, text_field
 from .checkpoints import CheckpointError
 from .policy import POLICIES
 
@@ -41,18 +42,8 @@ RECENT_TURNS = 8
 OLD_TURN_EVENTS = {"tool_result", "generation", "operator_message"}
 
 
-def _clip(value, limit):
-    if isinstance(value, str) and len(value) > limit:
-        return value[:limit] + f"\n… [{len(value) - limit:,} more characters]"
-    if isinstance(value, dict):
-        return {key: _clip(item, limit) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_clip(item, limit) for item in value]
-    return value
-
-
 def _slim(events, limit):
-    return [dict(event, payload=_clip(event["payload"], limit)) for event in events]
+    return [dict(event, payload=clip(event["payload"], limit)) for event in events]
 
 
 def _old_turn_events(events):
@@ -291,9 +282,7 @@ class ConversationController:
 
     @staticmethod
     def _text(value, label="message", limit=12_000):
-        if not isinstance(value, str) or not value.strip() or len(value) > limit:
-            raise ValueError(f"{label} must contain 1 to {limit} characters")
-        return value.strip()
+        return text_field(value, label, limit)
 
     def _chat(self, chat_id):
         row = self.db.execute(

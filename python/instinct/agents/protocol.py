@@ -6,11 +6,12 @@ or expression evaluator behind this protocol.
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+from ..common import strict_json
 
 
 @dataclass(frozen=True)
@@ -43,15 +44,6 @@ class ProtocolError(ValueError):
     """A response was not a single valid bounded action."""
 
 
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ProtocolError(f"duplicate JSON key: {key}")
-        value[key] = item
-    return value
-
-
 def _text(value: Any, field: str, limit: int, *, empty: bool = False) -> str:
     if not isinstance(value, str) or (not empty and not value.strip()):
         raise ProtocolError(
@@ -82,13 +74,7 @@ def parse_action(
     if not isinstance(text, str) or len(text) > max_chars:
         raise ProtocolError(f"response must be text of at most {max_chars} characters")
     try:
-        action = json.loads(
-            text,
-            object_pairs_hook=_unique_object,
-            parse_constant=lambda value: (_ for _ in ()).throw(
-                ProtocolError(f"invalid JSON constant: {value}")
-            ),
-        )
+        action = strict_json(text, ProtocolError)
     except (ValueError, RecursionError) as exc:
         raise ProtocolError(f"invalid JSON: {exc}") from exc
     if not isinstance(action, dict) or not isinstance(action.get("action"), str):

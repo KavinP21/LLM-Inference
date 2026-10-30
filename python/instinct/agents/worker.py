@@ -26,6 +26,7 @@ from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from ..common import strict_json
 from .backends import (
     AuthenticationError,
     BackendError,
@@ -552,21 +553,8 @@ class _Handler(BaseHTTPRequestHandler):
         if len(raw) != length:
             raise ValueError("truncated request body")
 
-        def reject_constant(_: str) -> None:
-            raise ValueError("JSON non-finite values are unsupported")
-
-        def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-            result: dict[str, Any] = {}
-            for key, value in pairs:
-                if key in result:
-                    raise ValueError("duplicate JSON object key")
-                result[key] = value
-            return result
-
         try:
-            return json.loads(
-                raw, parse_constant=reject_constant, object_pairs_hook=unique_object
-            )
+            return strict_json(raw)
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
             raise ValueError("request body must be valid UTF-8 JSON") from exc
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from ..agents.media import MAX_MEDIA_REQUEST_BYTES
+from ..common import strict_json
 from .openai_api import serve
 
 WEB_ROOT = Path(__file__).with_name("web")
@@ -139,21 +140,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if len(data) != size:
             raise ValueError("incomplete request body")
 
-        def unique(pairs):
-            value = {}
-            for key, item in pairs:
-                if key in value:
-                    raise ValueError("duplicate JSON field")
-                value[key] = item
-            return value
-
-        value = json.loads(
-            data,
-            object_pairs_hook=unique,
-            parse_constant=lambda _: (_ for _ in ()).throw(
-                ValueError("nonfinite JSON")
-            ),
-        )
+        value = strict_json(data)
         json.dumps(value, allow_nan=False)
         if not isinstance(value, dict):
             raise ValueError("request must be a JSON object")
