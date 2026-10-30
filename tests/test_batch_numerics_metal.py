@@ -5,30 +5,23 @@ import pytest
 
 mx = pytest.importorskip("mlx.core")
 
+from conftest import tiny_artifact
 from instinct.mlx_engine import MlxEngine
 from instinct.paged_kv import MlxPagedKVStore
-from instinct.quantization import quantize_model
-from test_quantization import tiny_artifact
 
 
 @pytest.mark.parametrize("family", ["qwen2", "gemma3_text"])
-@pytest.mark.parametrize("precision", ["fp16", "metal", "reconstruct", "dequantize"])
 def test_rowwise_decode_has_exact_independent_logits_and_retains_batched_attention(
-    tmp_path, monkeypatch, family, precision
+    tmp_path, monkeypatch, family
 ):
-    source, packed = tmp_path / "fp16.engine", tmp_path / "int8.engine"
+    source = tmp_path / "fp16.engine"
     tiny_artifact(source, family)
-    if precision != "fp16":
-        quantize_model(
-            source, packed, retain_fp16=["model.layers.0.mlp.down_proj.weight"]
-        )
     prompts = [[(i * 7) % 32 for i in range(n)] for n in [15, 16, 17, 31, 32, 33]]
     with MlxEngine(
-        source if precision == "fp16" else packed,
+        source,
         max_model_length=64,
         kv_cache_bytes=1 << 20,
         decode_mode="rowwise",
-        int8_mode="auto" if precision == "fp16" else precision,
     ) as engine:
         model = engine.model
         stores = [

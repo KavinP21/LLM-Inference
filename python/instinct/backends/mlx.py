@@ -15,7 +15,6 @@ import numpy as np
 from ..model_contract import validate_qwen2_weights
 from ..model_file import ModelFile
 from ..paged_kv import MlxPagedKVStore
-from .int8_kernels import Int8LinearKernels
 from .metal_kernels import MetalKernelSuite
 
 if TYPE_CHECKING:
@@ -71,7 +70,6 @@ class MlxQwenModel:
         attention_tile_size: int = 1024,
         custom_metal: bool = True,
         metal_paged_attention: bool = True,
-        int8_mode: str = "auto",
         decode_mode: str = "batched",
         _model_file: ModelFile | None = None,
     ) -> None:
@@ -87,11 +85,10 @@ class MlxQwenModel:
         self.custom_metal = bool(custom_metal)
         self.metal_paged_attention = bool(metal_paged_attention and custom_metal)
         try:
-            if int8_mode not in {"auto", "dequantize", "metal", "reconstruct"}:
+            if self.file.quantization:
                 raise ValueError(
-                    "int8_mode must be auto, dequantize, metal or reconstruct"
+                    "INT8 .engine artifacts aren't supported by the MLX backend"
                 )
-            self.int8_mode = int8_mode
             if decode_mode not in {"batched", "rowwise"}:
                 raise ValueError("decode_mode must be batched or rowwise")
             self.decode_mode = decode_mode
@@ -112,11 +109,6 @@ class MlxQwenModel:
             )
             self.mx.eval(self.rope_frequencies)
             self.metal = MetalKernelSuite(self.mx) if self.custom_metal else None
-            self.int8 = (
-                Int8LinearKernels(self.mx)
-                if self.file.quantization and int8_mode != "dequantize"
-                else None
-            )
         except Exception:
             self.file.close()
             raise
@@ -157,53 +149,14 @@ class MlxQwenModel:
         *,
         rowwise: bool = False,
     ):
-        """Optional single-row reductions, without splitting attention or prefill.
-
-        A reconstructed matrix is shared by all row GEMVs in this call. This
-        policy changes launch/weight-reuse efficiency, not dtype or tie handling.
-        """
-
-        def multiply(weight):
-            if rowwise and x.shape[0] > 1:
-                return self.mx.concatenate(
-                    [x[i : i + 1] @ weight.T for i in range(x.shape[0])], axis=0
-                )
-            return x @ weight.T
-
+        """Optional single-row reductions, without splitting attention or prefill."""
         weight = self.weights[weight_name]
-        spec = self.file.quantization.get(weight_name)
-        if spec is None:
-            output = multiply(weight)
+        if rowwise and x.shape[0] > 1:
+            output = self.mx.concatenate(
+                [x[i : i + 1] @ weight.T for i in range(x.shape[0])], axis=0
+            )
         else:
-            scales = self.weights[spec.scale_name]
-            rows = 1 if rowwise else x.size // x.shape[-1]
-            if (
-                self.int8 is not None
-                and self.int8_mode != "reconstruct"
-                and rows <= self.int8.max_rows
-            ):
-                output = (
-                    self.mx.concatenate(
-                        [
-                            self.int8.linear(x[i : i + 1], weight, scales)
-                            for i in range(x.shape[0])
-                        ],
-                        axis=0,
-                    )
-                    if rowwise and x.shape[0] > 1
-                    else self.int8.linear(x, weight, scales)
-                )
-            else:
-                # Ephemeral FP16 reconstruction feeds MLX's optimized prefill
-                # GEMM. It is never cached as a second resident weight copy.
-                reconstructed = (
-                    self.int8.reconstruct(weight, scales)
-                    if self.int8 is not None
-                    else (weight.astype(self.mx.float32) * scales[:, None]).astype(
-                        self.mx.float16
-                    )
-                )
-                output = multiply(reconstructed)
+            output = x @ weight.T
         if bias_name is not None:
             output = output + self.weights[bias_name]
         return output

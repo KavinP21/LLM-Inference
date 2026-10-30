@@ -32,7 +32,6 @@ class MlxEngine:
         attention_tile_size: int = 1024,
         custom_metal: bool = True,
         metal_paged_attention: bool = True,
-        int8_mode: str = "auto",
         decode_mode: str = "batched",
         prefix_cache_bytes: int = 0,
         prefix_cache_max_entries: int = 64,
@@ -60,7 +59,6 @@ class MlxEngine:
             attention_tile_size=attention_tile_size,
             custom_metal=custom_metal,
             metal_paged_attention=metal_paged_attention,
-            int8_mode=int8_mode,
             decode_mode=decode_mode,
         )
         self.max_num_sequences = max_num_sequences
@@ -75,13 +73,9 @@ class MlxEngine:
             * 2
         )
         self.bytes_per_block = self.bytes_per_token * self.block_tokens
-        if prefix_cache_bytes and (
-            self.model.file.quantization or prefix_cache_bytes < self.bytes_per_block
-        ):
+        if prefix_cache_bytes and prefix_cache_bytes < self.bytes_per_block:
             self.model.close()
-            raise ValueError(
-                "prefix caching requires FP16 and capacity for at least one page"
-            )
+            raise ValueError("prefix caching needs capacity for at least one page")
         self._closed = False
         pool_type = SharedKVBlockPool if prefix_cache_bytes else KVBlockPool
         self.cache_pool = pool_type(
@@ -128,26 +122,6 @@ class MlxEngine:
                 ).hexdigest(),
             )
         self._prefill_offsets: dict[int, int] = {}
-        projections = {
-            name: info
-            for name, info in self.model.file.tensors.items()
-            if name.startswith("model.layers.") and name.endswith("_proj.weight")
-        }
-        original_bytes = sum(
-            info.nbytes * (2 if name in self.model.file.quantization else 1)
-            for name, info in projections.items()
-        )
-        quantized_bytes = sum(
-            projections[name].nbytes * 2 for name in self.model.file.quantization
-        )
-        self._precision_stats = {
-            "retained_fp16_projections": sorted(
-                set(projections) - set(self.model.file.quantization)
-            ),
-            "quantized_projection_fraction": quantized_bytes / original_bytes
-            if original_bytes
-            else 0.0,
-        }
 
     def submit(
         self,
@@ -202,7 +176,6 @@ class MlxEngine:
             self.model.custom_metal,
             self.model.metal_paged_attention,
             self.model.decode_mode,
-            self.model.int8_mode,
         )
 
     def _check_open(self):
@@ -409,18 +382,7 @@ class MlxEngine:
                     for info in self.model.file.tensors.values()
                 }.values()
             ),
-            "quantization": (
-                "symmetric_int8_per_output_channel"
-                if self.model.file.quantization
-                else "fp16"
-            ),
-            "quantized_matrices": len(self.model.file.quantization),
-            "quantization_status": "experimental"
-            if self.model.file.quantization
-            else "not_quantized",
-            "int8_mode": self.model.int8_mode,
             "decode_mode": self.model.decode_mode,
-            **self._precision_stats,
             "kv_device_bytes": self.kv_store.allocated_bytes,
             "kv_capacity_bytes": self.cache_pool.total_blocks * self.bytes_per_block,
             "kv_materialized_blocks": self.kv_store.allocated_blocks,
