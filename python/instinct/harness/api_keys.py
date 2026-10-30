@@ -1,7 +1,9 @@
-"""Bearer keys for the OpenAI-compatible API.
+"""Keys for other apps and devices.
 
 Only SHA-256 hashes are stored (mode 0600); a key's text is shown once, when
-it is made. Keys open ``/v1`` and nothing else.
+it is made. Every key opens the OpenAI-compatible ``/v1`` API. A key with the
+``app`` scope also signs a browser on another device into the app itself,
+with the same access as this Mac's own window.
 """
 
 from __future__ import annotations
@@ -42,10 +44,12 @@ class ApiKeys:
             json.dump(self._keys, stream, indent=2)
         temporary.replace(self.path)
 
-    def create(self, name: str) -> dict[str, Any]:
+    def create(self, name: str, scope: str = "api") -> dict[str, Any]:
         name = name.strip()
         if not name or len(name) > 64:
             raise ValueError("a key needs a name of up to 64 characters")
+        if scope not in {"api", "app"}:
+            raise ValueError("a key's scope is api or app")
         key = PREFIX + secrets.token_urlsafe(32)
         record = {
             "id": secrets.token_hex(6),
@@ -53,6 +57,7 @@ class ApiKeys:
             "sha256": hashlib.sha256(key.encode()).hexdigest(),
             "created": int(time.time()),
             "last_used": None,
+            "scope": scope,
         }
         with self._lock:
             self._keys.append(record)
@@ -63,7 +68,10 @@ class ApiKeys:
         """The key record for an ``Authorization: Bearer ...`` header, if valid."""
         if not authorization or not authorization.startswith("Bearer "):
             return None
-        digest = hashlib.sha256(authorization[7:].strip().encode()).hexdigest()
+        return self.check(authorization[7:].strip())
+
+    def check(self, key: str) -> dict[str, Any] | None:
+        digest = hashlib.sha256(key.encode()).hexdigest()
         with self._lock:
             for record in self._keys:
                 if hmac.compare_digest(record["sha256"], digest):
@@ -88,4 +96,5 @@ class ApiKeys:
 
     @staticmethod
     def _public(record: dict[str, Any]) -> dict[str, Any]:
-        return {k: record.get(k) for k in ("id", "name", "created", "last_used")}
+        public = {k: record.get(k) for k in ("id", "name", "created", "last_used")}
+        return {**public, "scope": record.get("scope", "api")}

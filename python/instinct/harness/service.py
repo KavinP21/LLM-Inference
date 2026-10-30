@@ -119,6 +119,7 @@ class AppService:
         mcp_clients=(),
         hooks=None,
         keys_file: Path | None = None,
+        network_file: Path | None = None,
     ):
         self.workspace = workspace.resolve(strict=True)
         if not self.workspace.is_dir():
@@ -145,6 +146,9 @@ class AppService:
         self.checkpoints = Checkpoints(self.workspace, self.state_dir)
         self.settings_path = self.state_dir / "settings.json"
         self.api_keys = ApiKeys(keys_file or self.state_dir / "api-keys.json")
+        self.network_file = network_file
+        # Set by the launcher while other devices are being served.
+        self.remote_url: str | None = None
         self.openai = OpenAIEndpoint(self)
         try:
             saved = json.loads(self.settings_path.read_text())
@@ -821,10 +825,21 @@ class AppService:
             return self.terminals.dispatch(method, parts, payload)
         if parts[:2] == ["api", "keys"]:
             if method == "POST" and len(parts) == 2:
-                return self.api_keys.create(_text(payload.get("name"), "key name", 64))
+                return self.api_keys.create(
+                    _text(payload.get("name"), "key name", 64),
+                    "app" if payload.get("app") is True else "api",
+                )
             if method == "POST" and len(parts) == 4 and parts[3] == "delete":
                 self.api_keys.revoke(parts[2])
             return {"keys": self.api_keys.list()}
+        if path == "/api/network":
+            if method == "POST":
+                if self.network_file is None:
+                    raise ValueError(
+                        "this server's network settings come from its command line"
+                    )
+                await asyncio.to_thread(save_network, self.network_file, payload)
+            return await asyncio.to_thread(network_status, self)
         if path == "/api/settings":
             if method == "POST":
                 self.update_settings(payload)
@@ -892,3 +907,81 @@ class AppService:
         ]
         if failures:
             raise RuntimeError("shutdown cleanup failed") from failures[0]
+
+
+NETWORK_DEFAULTS = {
+    "enabled": False,
+    "port": 8765,
+    "allow_http": False,
+    "tls_cert": "",
+    "tls_key": "",
+}
+
+
+def save_network(path: Path, payload: dict) -> None:
+    """Validate and store how other devices reach this Mac (applies at restart)."""
+    if not isinstance(payload, dict) or payload.keys() - NETWORK_DEFAULTS.keys():
+        raise ValueError(f"network settings are {sorted(NETWORK_DEFAULTS)}")
+    settings = {**NETWORK_DEFAULTS, **payload}
+    if (
+        type(settings["enabled"]) is not bool
+        or type(settings["allow_http"]) is not bool
+    ):
+        raise ValueError("enabled and allow_http are true or false")
+    if type(settings["port"]) is not int or not 1024 <= settings["port"] <= 65535:
+        raise ValueError("the port must be between 1024 and 65535")
+    for name in ("tls_cert", "tls_key"):
+        value = settings[name]
+        if not isinstance(value, str) or (
+            value and not Path(value).expanduser().is_file()
+        ):
+            raise ValueError(
+                f"{name.replace('_', ' ')} must be the path of an existing file"
+            )
+        settings[name] = str(Path(value).expanduser()) if value else ""
+    if bool(settings["tls_cert"]) != bool(settings["tls_key"]):
+        raise ValueError("TLS needs both a certificate and its key")
+    if settings["enabled"] and not settings["tls_cert"] and not settings["allow_http"]:
+        raise ValueError(
+            "choose a certificate, or allow plain HTTP on a network that already encrypts"
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2))
+    os.chmod(path, 0o600)
+
+
+def network_status(service) -> dict:
+    """The saved settings, whether they're live, and names this Mac answers to."""
+    import socket
+    import subprocess
+
+    saved = dict(NETWORK_DEFAULTS)
+    if service.network_file is not None and service.network_file.is_file():
+        try:
+            saved.update(json.loads(service.network_file.read_text()))
+        except ValueError:
+            pass
+    names = [socket.gethostname()]
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(
+                ("192.0.2.1", 9)
+            )  # No packet is sent; this picks the LAN address.
+            names.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        tailscale = subprocess.run(
+            ["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=2
+        )
+        names += [
+            line.strip() for line in tailscale.stdout.splitlines() if line.strip()
+        ]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return {
+        "settings": saved,
+        "editable": service.network_file is not None,
+        "serving": service.remote_url,
+        "addresses": list(dict.fromkeys(names)),
+    }
