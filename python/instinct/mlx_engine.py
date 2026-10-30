@@ -1,127 +1,166 @@
-"""Public request-oriented Engine implementation for the MLX backend."""
+"""Continuous-batching MLX engine.
+
+Every :meth:`MlxEngine.step` decodes one token for each running request in a
+single batched forward pass, then prefills one chunk of a waiting prompt, so
+a long new prompt delays the others by at most a chunk per step. Requests are
+admitted when a sequence slot and enough K/V pages for their whole budget
+are free, so a request that starts always finishes.
+"""
 
 from __future__ import annotations
 
-import hashlib
-import json
+import math
+import time
+from collections import deque
 from collections.abc import Iterable
-from dataclasses import asdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
-from .backends.factory import create_mlx_model
-from .backends.mlx import mlx_build_info
-from .paged_kv import MlxPagedKVStore
-from .prefix_cache import PrefixCache, SharedKVBlockPool
-from .runtime import IterationScheduler, KVBlockPool, SequenceState, TokenEvent
+import numpy as np
+
+from .backends.base import mlx_build_info
+from .backends.factory import load_model
+from .batches import DecodeBatch, PrefillBatch
+from .paged_kv import KVCache, KVGroup
+from .prefix_cache import PrefixCache
+from .runtime import TERMINAL, SequenceState, TokenEvent
+from .sampling import GREEDY, SamplingParams, sample
+
+PAGE_SIZE = 64
+
+
+@dataclass
+class Request:
+    request_id: int
+    prompt: np.ndarray
+    max_new_tokens: int
+    stop: frozenset[int]
+    sampling: SamplingParams
+    namespace: str
+    checkpoints: tuple[int, ...]
+    state: SequenceState = SequenceState.WAITING
+    output: list[int] = field(default_factory=list)
+    reason: str = ""
+    # Positions whose K/V is written; the next token goes at this position.
+    length: int = 0
+    tables: dict[str, list[int]] = field(default_factory=dict)
+    reserved: dict[str, int] = field(default_factory=dict)
+    slot: int = -1
+    forced: deque[int] = field(default_factory=deque)
+    reused: int = 0
+    submitted: float = field(default_factory=time.perf_counter)
+    first_token: float | None = None
+
+    @property
+    def tokens(self) -> np.ndarray:
+        return np.concatenate([self.prompt, np.asarray(self.output, dtype=np.int32)])
 
 
 class MlxEngine:
-    """Greedy multi-family engine with paged K/V and continuous batching."""
-
     backend = "mlx"
-    block_tokens = 16
 
     def __init__(
         self,
-        model_path: str | Path,
-        max_num_sequences: int = 16,
+        model_path: str | Path | None = None,
+        *,
+        max_num_sequences: int = 8,
         max_model_length: int | None = None,
-        kv_cache_bytes: int = 512 << 20,
+        kv_cache_bytes: int = 4 << 30,
         prefill_chunk_size: int = 512,
-        attention_tile_size: int = 1024,
-        custom_metal: bool = True,
-        metal_paged_attention: bool = True,
-        decode_mode: str = "batched",
+        prefill_burst_size: int = 2048,
         prefix_cache_bytes: int = 0,
-        prefix_cache_max_entries: int = 64,
-        prefix_cache_namespace: str = "",
+        prefix_cache_entries: int = 24,
+        page_size: int = PAGE_SIZE,
+        model: Any = None,
     ) -> None:
-        if max_num_sequences <= 0:
-            raise ValueError("max_num_sequences must be positive")
-        if kv_cache_bytes <= 0:
-            raise ValueError("kv_cache_bytes must be positive")
-        if prefill_chunk_size <= 0:
-            raise ValueError("prefill_chunk_size must be positive")
-        if decode_mode not in {"batched", "rowwise"}:
-            raise ValueError("decode_mode must be batched or rowwise")
-        if (
-            type(prefix_cache_bytes) is not int
-            or not 0 <= prefix_cache_bytes <= kv_cache_bytes
-        ):
-            raise ValueError("prefix_cache_bytes must be between zero and KV capacity")
-        if type(prefix_cache_max_entries) is not int or prefix_cache_max_entries <= 0:
-            raise ValueError("prefix_cache_max_entries must be positive")
-        PrefixCache.validate_namespace(prefix_cache_namespace)
-        self.model = create_mlx_model(
-            str(model_path),
-            max_model_length=max_model_length,
-            attention_tile_size=attention_tile_size,
-            custom_metal=custom_metal,
-            metal_paged_attention=metal_paged_attention,
-            decode_mode=decode_mode,
-        )
-        self.max_num_sequences = max_num_sequences
-        self.max_model_length = self.model.max_model_length
-        self.prefill_chunk_size = prefill_chunk_size
-        config = self.model.config
-        self.bytes_per_token = (
-            config.num_hidden_layers
-            * 2
-            * config.num_key_value_heads
-            * self.model.head_dim
-            * 2
-        )
-        self.bytes_per_block = self.bytes_per_token * self.block_tokens
-        if prefix_cache_bytes and prefix_cache_bytes < self.bytes_per_block:
-            self.model.close()
-            raise ValueError("prefix caching needs capacity for at least one page")
-        self._closed = False
-        pool_type = SharedKVBlockPool if prefix_cache_bytes else KVBlockPool
-        self.cache_pool = pool_type(
-            kv_cache_bytes,
-            self.bytes_per_token,
-            self.block_tokens,
-            layout="paged",
-        )
-        self.scheduler = IterationScheduler(
-            max_num_sequences,
-            self.max_model_length,
-            config.vocab_size,
-            self.cache_pool,
-        )
-        self.kv_store = MlxPagedKVStore(
-            self.model.mx,
-            num_layers=config.num_hidden_layers,
-            num_kv_heads=config.num_key_value_heads,
-            head_dim=self.model.head_dim,
-            block_tokens=self.block_tokens,
-            is_shared=self.cache_pool.is_shared if prefix_cache_bytes else None,
-        )
-        self.prefix_cache = None
-        self._prefix_matches = {}
-        self._request_namespaces: dict[int, str] = {}
-        self._prefix_settings = self._execution_settings()
-        if prefix_cache_bytes:
-            identity = {
-                "schema": "instinct_prefix_fp16_v1",
-                "model_data_sha256": self.model.file.data_sha256,
-                "config": asdict(config),
-                "settings": self._prefix_settings,
-                "namespace": prefix_cache_namespace,
-                "block_tokens": self.block_tokens,
-            }
-            self.prefix_cache = PrefixCache(
-                self.cache_pool,
-                self.kv_store,
-                max_blocks=prefix_cache_bytes // self.bytes_per_block,
-                max_entries=prefix_cache_max_entries,
-                chunk_size=prefill_chunk_size,
-                identity=hashlib.sha256(
-                    json.dumps(identity, sort_keys=True).encode()
-                ).hexdigest(),
+        if max_num_sequences <= 0 or kv_cache_bytes <= 0 or page_size <= 0:
+            raise ValueError("sequences, cache bytes and page size must be positive")
+        if not 0 < prefill_chunk_size <= prefill_burst_size:
+            raise ValueError(
+                "prefill chunk sizes must be positive, the burst no smaller"
             )
-        self._prefill_offsets: dict[int, int] = {}
+        if not 0 <= prefix_cache_bytes <= kv_cache_bytes:
+            raise ValueError(
+                "prefix_cache_bytes must be between zero and kv_cache_bytes"
+            )
+        self.model = model if model is not None else load_model(model_path)
+        self.mx = mx = self.model.mx
+        self.max_num_sequences = max_num_sequences
+        self.max_model_length = min(
+            self.model.max_position_embeddings,
+            max_model_length or self.model.max_position_embeddings,
+        )
+        self.prefill_chunk_size = prefill_chunk_size
+        self.prefill_burst_size = prefill_burst_size
+        self.page_size = page_size
+        groups: list[KVGroup] = list(self.model.kv_groups)
+        itemsize = 2
+        self.page_bytes = {
+            g.name: g.bytes_per_token(itemsize) * page_size for g in groups
+        }
+        state_groups = list(getattr(self.model, "state_groups", ()))
+        snapshot_slots = (
+            prefix_cache_entries if prefix_cache_bytes and state_groups else 0
+        )
+        self.cache = KVCache(
+            mx,
+            groups,
+            page_size=page_size,
+            capacities=self._capacities(groups, kv_cache_bytes),
+            dtype=self.model.dtype,
+            state_groups=state_groups,
+            state_slots=(max_num_sequences + snapshot_slots) if state_groups else 0,
+        )
+        self.prefix_cache = (
+            PrefixCache(
+                self.cache,
+                budget_bytes=prefix_cache_bytes,
+                max_entries=prefix_cache_entries,
+                page_bytes=self.page_bytes,
+                slot_bytes=sum(g.bytes_per_slot() for g in state_groups),
+            )
+            if prefix_cache_bytes
+            else None
+        )
+        self.requests: dict[int, Request] = {}
+        self.waiting: deque[int] = deque()
+        self.running: list[int] = []
+        self._next_id = 1
+        self._closed = False
+        self.totals = {
+            "submitted": 0,
+            "completed": 0,
+            "cancelled": 0,
+            "prompt_tokens": 0,
+            "reused_tokens": 0,
+            "generated_tokens": 0,
+            "steps": 0,
+        }
+
+    def _capacities(self, groups: list[KVGroup], budget: int) -> dict[str, int]:
+        """Split the byte budget into pages per group. A sliding-window group
+        gets room for every sequence's window twice over (the second half for
+        cached prefixes); full-attention groups share the rest by size."""
+        capacities: dict[str, int] = {}
+        remaining = budget
+        for group in groups:
+            if group.window:
+                pages = 2 * self.max_num_sequences * self._window_pages(group)
+                pages = min(pages, max(1, budget // 2 // self.page_bytes[group.name]))
+                capacities[group.name] = pages
+                remaining -= pages * self.page_bytes[group.name]
+        full = [g for g in groups if not g.window]
+        per_token = sum(g.bytes_per_token(2) for g in full)
+        for group in full:
+            share = remaining * group.bytes_per_token(2) / per_token
+            capacities[group.name] = max(1, int(share // self.page_bytes[group.name]))
+        return capacities
+
+    def _window_pages(self, group: KVGroup) -> int:
+        return math.ceil((group.window + self.prefill_burst_size) / self.page_size) + 1
+
+    # --- requests -------------------------------------------------------------
 
     def submit(
         self,
@@ -129,299 +168,427 @@ class MlxEngine:
         max_new_tokens: int,
         eos_token_ids: Iterable[int] = (),
         *,
+        sampling: SamplingParams | None = None,
         cache_namespace: str = "",
+        checkpoints: Iterable[int] = (),
     ) -> int:
+        """Queue a prompt. ``checkpoints`` are prompt lengths to keep in the
+        prefix cache on the way, such as the end of a shared system prompt."""
         self._check_open()
-        PrefixCache.validate_namespace(cache_namespace)
-        prompt, eos = [int(t) for t in input_ids], [int(t) for t in eos_token_ids]
-        match = None
-        valid = (
-            bool(prompt)
-            and max_new_tokens > 0
-            and len(prompt) + max_new_tokens <= self.max_model_length
-            and all(0 <= t < self.model.config.vocab_size for t in prompt + eos)
-            and self.scheduler.stats()["waiting"] + self.scheduler.stats()["running"]
-            < self.max_num_sequences
+        prompt = np.asarray(list(input_ids), dtype=np.int32)
+        stop = frozenset(int(t) for t in eos_token_ids)
+        vocab = self.model.vocab_size
+        if prompt.ndim != 1 or prompt.size == 0:
+            raise ValueError("the prompt must be a non-empty list of token ids")
+        if (
+            int(prompt.min()) < 0
+            or int(prompt.max()) >= vocab
+            or any(not 0 <= t < vocab for t in stop)
+        ):
+            raise ValueError("token id is outside the vocabulary")
+        if type(max_new_tokens) is not int or max_new_tokens <= 0:
+            raise ValueError("max_new_tokens must be a positive integer")
+        if prompt.size + max_new_tokens > self.max_model_length:
+            raise ValueError(
+                f"{prompt.size} prompt tokens plus {max_new_tokens} new ones exceed "
+                f"the {self.max_model_length}-token context"
+            )
+        marks = tuple(sorted({int(c) for c in checkpoints if 0 < int(c) < prompt.size}))
+        request = Request(
+            self._next_id,
+            prompt,
+            max_new_tokens,
+            stop,
+            sampling or GREEDY,
+            cache_namespace,
+            marks,
         )
-        if self.prefix_cache and valid:
-            match = self.prefix_cache.find(prompt, cache_namespace)
-            self.prefix_cache.make_admission_room(
-                len(prompt) + int(max_new_tokens), match
-            )
-        try:
-            request_id = self.scheduler.submit(
-                prompt,
-                max_new_tokens,
-                eos,
-                shared_blocks=match.blocks if match else (),
-                shared_tokens=len(match.tokens) if match else 0,
-            )
-        except ValueError:
-            if self.prefix_cache:
-                self.prefix_cache.counters["admission_rejections"] += 1
-            raise
-        if self.prefix_cache:
-            self.prefix_cache.record_lookup(match)
-            self._request_namespaces[request_id] = cache_namespace
-            if match:
-                self._prefix_matches[request_id] = match
-                self._prefill_offsets[request_id] = len(match.tokens)
-        return request_id
+        needs = self._needs(request, 0)
+        if any(needs[name] > pool.capacity for name, pool in self.cache.pools.items()):
+            raise ValueError("the request needs more K/V memory than the cache has")
+        self._next_id += 1
+        self.requests[request.request_id] = request
+        self.waiting.append(request.request_id)
+        self.totals["submitted"] += 1
+        return request.request_id
 
-    def _execution_settings(self):
-        return (
-            self.prefill_chunk_size,
-            self.max_model_length,
-            self.model.attention_tile_size,
-            self.model.custom_metal,
-            self.model.metal_paged_attention,
-            self.model.decode_mode,
-        )
-
-    def _check_open(self):
-        if self._closed:
-            raise RuntimeError("engine is closed")
-        if self.prefix_cache and self._execution_settings() != self._prefix_settings:
-            raise RuntimeError("prefix execution settings changed; create a new engine")
-
-    def _release_unowned(self, blocks):
-        self.kv_store.release(
-            [b for b in blocks if not self.cache_pool.is_referenced(b)]
-            if self.prefix_cache
-            else blocks
-        )
-
-    def _prepare_write(self, request_id, start, count):
-        if self.prefix_cache:
-            self.cache_pool.make_writable(
-                request_id, start, count, self.kv_store.clone_block
-            )
-        return self.cache_pool.block_table(request_id)
-
-    def _prefill_chunk(self, request_id):
-        request = self.scheduler.request(request_id)
-        offset = self._prefill_offsets.get(request_id, 0)
-        match = self._prefix_matches.pop(request_id, None)
-        if match:
-            self.prefix_cache.counters["reused_tokens"] += len(match.tokens)
-            if offset == len(request.prompt):
-                return self.model.mx.array(match.logits[None, :]), offset
-        end = min(offset + self.prefill_chunk_size, len(request.prompt))
-        table = self._prepare_write(request_id, offset, end - offset)
-        logits = self.model.forward_paged_chunk(
-            request.prompt[offset:end],
-            start_position=offset,
-            block_table=table,
-            store=self.kv_store,
-        )
-        if self.prefix_cache:
-            self.prefix_cache.put(
-                request.prompt[:end],
-                self._request_namespaces[request_id],
-                table,
-                logits[-1],
-            )
-        return logits, end
-
-    def step(self) -> list[TokenEvent]:
-        self._check_open()
-        mx = self.model.mx
-        events: list[TokenEvent] = []
-
-        try:
-            schedule = self.scheduler.next()
-        except Exception:
-            # Admission reserves capacity, so this is an exceptional allocator
-            # failure. The scheduler may already have moved a waiting request
-            # to PREFILLING; reclaim that request without disturbing decodes.
-            if self.scheduler.prefilling is not None:
-                self.cancel(self.scheduler.prefilling)
-            raise
-        page_snapshots = {
-            request_id: self.cache_pool.block_table(request_id)
-            for request_id in schedule.decode
-        }
-        if schedule.prefill is not None:
-            page_snapshots[schedule.prefill] = self.cache_pool.block_table(
-                schedule.prefill
-            )
-        try:
-            if schedule.decode:
-                requests = [
-                    self.scheduler.request(request_id) for request_id in schedule.decode
-                ]
-                for request in requests:
-                    page_snapshots[request.request_id] = self._prepare_write(
-                        request.request_id, request.live_tokens - 1, 1
-                    )
-                logits = self.model.decode_paged_batch(
-                    [request.output[-1] for request in requests],
-                    positions=[request.live_tokens - 1 for request in requests],
-                    block_tables=[
-                        page_snapshots[request_id] for request_id in schedule.decode
-                    ],
-                    store=self.kv_store,
-                )
-                tokens = [int(token) for token in mx.argmax(logits, axis=-1).tolist()]
-                for request_id, token in zip(schedule.decode, tokens):
-                    finished = self.scheduler.append_token(request_id, token)
-                    if finished:
-                        self._release_unowned(page_snapshots[request_id])
-                        self._request_namespaces.pop(request_id, None)
-                    events.append(TokenEvent(request_id, token, finished))
-
-            if schedule.prefill is not None:
-                request_id = schedule.prefill
-                request = self.scheduler.request(request_id)
-                logits, end = self._prefill_chunk(request_id)
-                page_snapshots[request_id] = self.cache_pool.block_table(request_id)
-                if end < len(request.prompt):
-                    self._prefill_offsets[request_id] = end
-                else:
-                    self._prefill_offsets.pop(request_id, None)
-                    token = int(mx.argmax(logits[-1]).item())
-                    self.scheduler.finish_prefill(request_id)
-                    finished = self.scheduler.append_token(request_id, token)
-                    if finished:
-                        self._release_unowned(page_snapshots[request_id])
-                        self._request_namespaces.pop(request_id, None)
-                    events.append(TokenEvent(request_id, token, finished))
-        except Exception:
-            for request_id, physical_ids in page_snapshots.items():
-                current = (
-                    self.cache_pool.block_table(request_id)
-                    if self.cache_pool.contains(request_id)
-                    else ()
-                )
-                self.cancel(request_id)
-                self._release_unowned((*physical_ids, *current))
-            raise
-        return events
+    def force(self, request_id: int, tokens: Iterable[int]) -> None:
+        """Emit ``tokens`` next instead of sampling (e.g. to end a thinking block)."""
+        self.requests[int(request_id)].forced.extend(int(t) for t in tokens)
 
     def cancel(self, request_id: int) -> None:
-        request_id = int(request_id)
-        physical_ids = (
-            self.cache_pool.block_table(request_id)
-            if self.cache_pool.contains(request_id)
-            else ()
-        )
-        self.scheduler.cancel(request_id)
-        self._release_unowned(physical_ids)
-        self._prefill_offsets.pop(request_id, None)
-        self._prefix_matches.pop(request_id, None)
-        self._request_namespaces.pop(request_id, None)
+        request = self.requests.get(int(request_id))
+        if request is None or request.state in TERMINAL:
+            return
+        if request.request_id in self.waiting:
+            self.waiting.remove(request.request_id)
+        self._finish(request, SequenceState.CANCELLED, "cancelled", keep=False)
 
     def forget(self, request_id: int) -> None:
-        """Release completed/cancelled request history in long-lived workers."""
-        self.scheduler.forget(request_id)
+        request = self.requests.get(int(request_id))
+        if request is not None and request.state not in TERMINAL:
+            raise RuntimeError("cannot forget an active request")
+        self.requests.pop(int(request_id), None)
 
-    def clear_prefix_cache(self, cache_namespace: str | None = None) -> None:
-        """Evict cache pins without cancelling or invalidating admitted requests."""
-        if self.prefix_cache:
-            self.prefix_cache.clear(cache_namespace)
+    def request(self, request_id: int) -> Request:
+        return self.requests[int(request_id)]
+
+    def has_work(self) -> bool:
+        return bool(self.running or self.waiting)
+
+    # --- admission and pages --------------------------------------------------
+
+    def _needs(self, request: Request, reused: int) -> dict[str, int]:
+        total = request.prompt.size + request.max_new_tokens
+        needs = {}
+        for name, group in self.cache.groups.items():
+            pages = math.ceil(total / self.page_size) - reused // self.page_size
+            if group.window:
+                pages = min(pages, self._window_pages(group))
+            needs[name] = pages
+        return needs
+
+    def _admit(self) -> None:
+        while self.waiting and len(self.running) < self.max_num_sequences:
+            request = self.requests[self.waiting[0]]
+            entry = None
+            if self.prefix_cache:
+                entry = self.prefix_cache.find(request.namespace, request.prompt)
+            needs = self._needs(request, len(entry.tokens) if entry else 0)
+            slots = 1 if self.cache.state_groups else 0
+            if not self._reserve(needs, slots):
+                if not (
+                    self.prefix_cache
+                    and self.prefix_cache.evict(pages=needs, slots=slots)
+                ):
+                    return
+                if entry is not None and entry not in self.prefix_cache.entries:
+                    continue  # Eviction dropped the entry this request matched.
+                if not self._reserve(needs, slots):
+                    return
+            self.waiting.popleft()
+            request.reserved = needs
+            request.tables = {name: [] for name in self.cache.groups}
+            if slots:
+                request.slot = self.cache.take_slot()
+                self.cache.clear_slot(request.slot)
+            if entry is not None:
+                self._attach(request, entry)
+            request.state = SequenceState.PREFILLING
+            self.running.append(request.request_id)
+            self.totals["prompt_tokens"] += int(request.prompt.size)
+            self.totals["reused_tokens"] += request.reused
+
+    def _reserve(self, needs: dict[str, int], slots: int) -> bool:
+        if slots and len(self.cache.state_slots) < slots:
+            return False
+        if any(self.cache.pools[name].available < n for name, n in needs.items()):
+            return False
+        for name, count in needs.items():
+            self.cache.pools[name].reserve(count)
+        return True
+
+    def _attach(self, request: Request, entry: Any) -> None:
+        length = len(entry.tokens)
+        tail = length % self.page_size
+        last = (length - 1) // self.page_size
+        for name, table in entry.pages.items():
+            pool = self.cache.pools[name]
+            request.tables[name] = list(table)
+            pool.retain(table)
+            if tail:
+                # The partial last page is shared; append to a private copy.
+                fresh = self._take_page(request, name)
+                self.cache.ensure_capacity()
+                self.cache.copy_page(self.cache.groups[name], table[last], fresh, tail)
+                pool.release([table[last]])
+                request.tables[name][last] = fresh
+        if entry.slot >= 0:
+            self.cache.copy_slot(entry.slot, request.slot)
+        request.length = request.reused = length
+
+    def _take_page(self, request: Request, name: str) -> int:
+        pool = self.cache.pools[name]
+        if request.reserved.get(name, 0) > 0:
+            request.reserved[name] -= 1
+            return pool.allocate(reserved=True)
+        if pool.available <= 0 and self.prefix_cache:
+            self.prefix_cache.evict(pages={name: 1})
+        return pool.allocate(reserved=False)
+
+    def _ensure_pages(self, request: Request, end: int) -> None:
+        """Give ``request`` pages for every position below ``end``."""
+        for name, table in request.tables.items():
+            while len(table) * self.page_size < end:
+                table.append(self._take_page(request, name))
+
+    def _trim(self, request: Request) -> None:
+        """Release sliding-window pages that no later position can see."""
+        for name, group in self.cache.groups.items():
+            if not group.window:
+                continue
+            table = request.tables[name]
+            pool = self.cache.pools[name]
+            keep_from = (request.length - group.window + 1) // self.page_size
+            for index in range(min(keep_from, len(table))):
+                page = table[index]
+                if page < 0:
+                    continue
+                shared = pool.shared(page)
+                pool.release([page])
+                table[index] = -1
+                # Keep the quota: the window moves on and will need a page.
+                if not shared and pool.reserve(1):
+                    request.reserved[name] = request.reserved.get(name, 0) + 1
+
+    def _release(self, request: Request) -> None:
+        for name, table in request.tables.items():
+            pool = self.cache.pools[name]
+            pool.release(table)
+            pool.unreserve(request.reserved.get(name, 0))
+        request.tables, request.reserved = {}, {}
+        if request.slot >= 0:
+            self.cache.free_slot(request.slot)
+            request.slot = -1
+
+    def _finish(
+        self, request: Request, state: SequenceState, reason: str, *, keep: bool
+    ) -> None:
+        if keep and self.prefix_cache and request.length:
+            self.prefix_cache.insert(
+                request.namespace,
+                request.tokens[: request.length],
+                request.tables,
+                request.slot,
+            )
+        if request.request_id in self.running:
+            self.running.remove(request.request_id)
+        self._release(request)
+        request.state, request.reason = state, reason
+        key = "completed" if state is SequenceState.COMPLETED else "cancelled"
+        self.totals[key] += 1
+
+    # --- execution ------------------------------------------------------------
+
+    def step(self) -> list[TokenEvent]:
+        """Advance every running request by one token and prefill one chunk."""
+        self._check_open()
+        self._admit()
+        running = [self.requests[i] for i in self.running]
+        decoding = [r for r in running if r.state is SequenceState.RUNNING]
+        prefilling = next(
+            (r for r in running if r.state is SequenceState.PREFILLING), None
+        )
+        events: list[TokenEvent] = []
+        try:
+            if decoding:
+                events += self._decode(decoding)
+            if prefilling is not None:
+                events += self._prefill(prefilling, burst=not decoding)
+        except Exception:
+            for request in running:
+                if request.state not in TERMINAL:
+                    self._finish(request, SequenceState.CANCELLED, "error", keep=False)
+            raise
+        self.totals["steps"] += 1
+        return events
+
+    def _prefill(self, request: Request, *, burst: bool) -> list[TokenEvent]:
+        mx = self.mx
+        start = request.length
+        size = self.prefill_burst_size if burst else self.prefill_chunk_size
+        end = min(request.prompt.size, start + size)
+        end = next((c for c in request.checkpoints if start < c < end), end)
+        self._ensure_pages(request, end)
+        self.cache.ensure_capacity()
+        batch = PrefillBatch(
+            self.cache,
+            mx.array(request.prompt[start:end]),
+            start=start,
+            tables={
+                name: np.asarray(t, dtype=np.int64)
+                for name, t in request.tables.items()
+            },
+            slot=request.slot,
+        )
+        logits = self.model.forward(batch)
+        request.length = end
+        if end < request.prompt.size:
+            mx.eval(logits, *self._arrays())
+            if self.prefix_cache and end in request.checkpoints:
+                self.prefix_cache.insert(
+                    request.namespace,
+                    request.prompt[:end],
+                    request.tables,
+                    request.slot,
+                )
+            self._trim(request)
+            return []
+        request.state = SequenceState.RUNNING
+        token = self._choose([request], logits[-1:])[0]
+        return [self._emit(request, token)]
+
+    def _decode(self, requests: list[Request]) -> list[TokenEvent]:
+        mx = self.mx
+        for request in requests:
+            self._ensure_pages(request, request.length + 1)
+        self.cache.ensure_capacity()
+        batch = DecodeBatch(
+            self.cache,
+            mx.array([r.output[-1] for r in requests], dtype=mx.int32),
+            positions=np.array([r.length for r in requests], dtype=np.int64),
+            tables={
+                name: [np.asarray(r.tables[name], dtype=np.int64) for r in requests]
+                for name in self.cache.groups
+            },
+            slots=np.array([r.slot for r in requests])
+            if self.cache.state_groups
+            else None,
+        )
+        logits = self.model.forward(batch)
+        for request in requests:
+            request.length += 1
+        tokens = self._choose(requests, logits)
+        return [self._emit(r, t) for r, t in zip(requests, tokens)]
+
+    def _choose(self, requests: list[Request], logits: Any) -> list[int]:
+        tokens = sample(
+            self.mx,
+            logits,
+            [r.sampling for r in requests],
+            [len(r.output) for r in requests],
+        )
+        return [r.forced.popleft() if r.forced else t for r, t in zip(requests, tokens)]
+
+    def _arrays(self) -> list[Any]:
+        cache = self.cache
+        states = [a for arrays in cache.states.values() for a in arrays]
+        return [*cache.keys.values(), *cache.values.values(), *states]
+
+    def _emit(self, request: Request, token: int) -> TokenEvent:
+        if request.first_token is None:
+            request.first_token = time.perf_counter()
+        request.output.append(token)
+        self.totals["generated_tokens"] += 1
+        reason = ""
+        if token in request.stop:
+            reason = "stop"
+        elif len(request.output) >= request.max_new_tokens:
+            reason = "length"
+        elif request.length + 1 >= self.max_model_length:
+            reason = "context"
+        if reason:
+            self._finish(request, SequenceState.COMPLETED, reason, keep=True)
+        else:
+            self._trim(request)
+        return TokenEvent(request.request_id, token, bool(reason), reason)
 
     def generate(
         self,
         input_ids: Iterable[int],
         max_new_tokens: int,
         eos_token_ids: Iterable[int] = (),
-        *,
-        cache_namespace: str = "",
+        **options: Any,
     ) -> list[int]:
-        request_id = self.submit(
-            input_ids, max_new_tokens, eos_token_ids, cache_namespace=cache_namespace
-        )
-        while True:
+        request_id = self.submit(input_ids, max_new_tokens, eos_token_ids, **options)
+        while self.requests[request_id].state not in TERMINAL:
             self.step()
-            request = self.scheduler.request(request_id)
-            if request.state is SequenceState.COMPLETED:
-                return list(request.output)
-            if request.state in {SequenceState.CANCELLED, SequenceState.REJECTED}:
-                raise RuntimeError("generation terminated without output")
+        request = self.requests.pop(request_id)
+        if request.state is not SequenceState.COMPLETED:
+            raise RuntimeError("generation ended without completing")
+        return list(request.output)
 
-    def debug_prefill_logits(self, input_ids: Iterable[int]) -> list[float]:
-        tokens = [int(token) for token in input_ids]
-        if not tokens or len(tokens) > self.max_model_length:
-            raise ValueError(
-                "debug prompt length is outside the configured context limit"
-            )
-        block_count = (len(tokens) + self.block_tokens - 1) // self.block_tokens
-        temporary = MlxPagedKVStore(
-            self.model.mx,
-            num_layers=self.model.config.num_hidden_layers,
-            num_kv_heads=self.model.config.num_key_value_heads,
-            head_dim=self.model.head_dim,
-            block_tokens=self.block_tokens,
+    def prefill_logits(self, input_ids: Iterable[int]) -> np.ndarray:
+        """Last-position logits of a prompt, outside the scheduler (for checks)."""
+        self._check_open()
+        request = Request(
+            0,
+            np.asarray(list(input_ids), dtype=np.int32),
+            1,
+            frozenset(),
+            GREEDY,
+            "",
+            (),
         )
-        table = tuple(range(block_count))
-        logits = None
+        if not 0 < request.prompt.size < self.max_model_length:
+            raise ValueError("the prompt length is outside the context limit")
+        needs = self._needs(request, 0)
+        slots = 1 if self.cache.state_groups else 0
+        if not self._reserve(needs, slots):
+            raise RuntimeError("no K/V room for the prompt")
+        request.reserved = needs
+        request.tables = {name: [] for name in self.cache.groups}
+        if slots:
+            request.slot = self.cache.take_slot()
+            self.cache.clear_slot(request.slot)
         try:
-            for start in range(0, len(tokens), self.prefill_chunk_size):
-                logits = self.model.forward_paged_chunk(
-                    tokens[start : start + self.prefill_chunk_size],
-                    start_position=start,
-                    block_table=table,
-                    store=temporary,
+            for start in range(0, request.prompt.size, self.prefill_chunk_size):
+                end = min(request.prompt.size, start + self.prefill_chunk_size)
+                self._ensure_pages(request, end)
+                self.cache.ensure_capacity()
+                batch = PrefillBatch(
+                    self.cache,
+                    self.mx.array(request.prompt[start:end]),
+                    start=start,
+                    tables={
+                        n: np.asarray(t, dtype=np.int64)
+                        for n, t in request.tables.items()
+                    },
+                    slot=request.slot,
                 )
-            if logits is None:
-                raise RuntimeError("debug prefill produced no logits")
-            return logits[-1].tolist()
+                logits = self.model.forward(batch)
+                self.mx.eval(logits, *self._arrays())
+                request.length = end
+                self._trim(request)
+            return np.array(logits[-1])
         finally:
-            temporary.clear()
+            self._release(request)
 
-    def stats(self) -> dict[str, object]:
+    # --- housekeeping ---------------------------------------------------------
+
+    def clear_prefix_cache(self, cache_namespace: str | None = None) -> None:
+        if self.prefix_cache:
+            self.prefix_cache.clear(cache_namespace)
+
+    def stats(self) -> dict[str, Any]:
+        pools = {
+            name: {
+                "capacity_pages": pool.capacity,
+                "used_pages": pool.used,
+                "reserved_pages": pool.reserved,
+                "page_bytes": self.page_bytes[name],
+            }
+            for name, pool in self.cache.pools.items()
+        }
         return {
             "backend": "mlx",
-            "model_type": self.model.config.model_type,
-            "scheduler": self.scheduler.stats(),
-            "kv_cache": self.cache_pool.stats(),
-            "model_bytes": self.model.file.data_size,
-            "weight_storage_bytes": sum(
-                {
-                    info.offset: info.nbytes
-                    for info in self.model.file.tensors.values()
-                }.values()
-            ),
-            "decode_mode": self.model.decode_mode,
-            "kv_device_bytes": self.kv_store.allocated_bytes,
-            "kv_capacity_bytes": self.cache_pool.total_blocks * self.bytes_per_block,
-            "kv_materialized_blocks": self.kv_store.allocated_blocks,
-            "kv_peak_materialized_blocks": self.kv_store.peak_allocated_blocks,
-            "kv_peak_device_bytes": (
-                self.kv_store.peak_allocated_blocks * self.kv_store.bytes_per_block
-            ),
-            "prefill_chunk_size": self.prefill_chunk_size,
-            "attention_tile_size": self.model.attention_tile_size,
-            "custom_metal": self.model.custom_metal,
-            "metal_paged_attention": self.model.metal_paged_attention,
-            "prefix_cache": {
-                **(
-                    self.prefix_cache.stats()
-                    if self.prefix_cache
-                    else {"enabled": False, "entries": 0, "cached_blocks": 0}
-                ),
-                "pending_match_logits_bytes": sum(
-                    e.logits.nbytes for e in self._prefix_matches.values()
-                ),
-            },
+            "model_type": self.model.model_type,
+            "running": len(self.running),
+            "waiting": len(self.waiting),
+            "max_num_sequences": self.max_num_sequences,
+            "max_model_length": self.max_model_length,
+            "kv_pools": pools,
+            "kv_device_bytes": self.cache.device_bytes,
+            "prefix_cache": self.prefix_cache.stats() if self.prefix_cache else None,
+            **self.totals,
         }
 
     def build_info(self) -> dict[str, object]:
         return mlx_build_info()
 
+    def _check_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("engine is closed")
+
     def close(self) -> None:
         if self._closed:
             return
-        for request in self.scheduler.requests.values():
-            if request.state in {
-                SequenceState.WAITING,
-                SequenceState.PREFILLING,
-                SequenceState.RUNNING,
-            }:
-                self.cancel(request.request_id)
+        for request_id in list(self.running) + list(self.waiting):
+            self.cancel(request_id)
         self.clear_prefix_cache()
-        self._prefill_offsets.clear()
-        self.kv_store.clear()
+        self.cache.keys.clear()
+        self.cache.values.clear()
+        self.cache.states.clear()
         self.model.close()
         self._closed = True
 

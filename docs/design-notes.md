@@ -4,11 +4,11 @@
 
 An admitted request can grow well beyond its prompt. Allocating only current tokens
 can exhaust the pool halfway through generation. The allocator reserves maximum
-request length at admission, then materializes 16-token pages as needed.
+request length at admission, then takes pages as the sequence grows.
 
 Prefix reuse counts shared pages once and reserves a private copy for partial-tail
 append. Cache pins and requests own separate references; clearing pins must not
-invalidate active readers. See [runtime.py](../python/instinct/runtime.py),
+invalidate active readers. See [mlx_engine.py](../python/instinct/mlx_engine.py),
 [prefix_cache.py](../python/instinct/prefix_cache.py), and their
 [ownership tests](../tests/test_prefix_cache.py).
 
@@ -25,11 +25,9 @@ Batched and single-row native projections can reduce values differently. Small
 logit differences can change greedy decisions near a tie, then change the rest of
 a continuation. Cosine similarity alone does not establish token parity.
 
-The optional `rowwise` policy evaluates projection rows independently while keeping
-attention batched, with a measured dispatch/weight-reuse cost. Prefix snapshots
-preserve original prefill chunk boundaries to avoid changing reduction shapes.
-These rules address execution consistency, not lossy quantization error. See
-[decode-numerics.md](decode-numerics.md) for the measurements.
+So a request decoded alone and the same request decoded next to others can, rarely,
+pick different tokens at an FP16 near-tie. The engine tests compare whole batched
+runs with running each prompt alone on the tiny models, where no ties occur.
 
 ## Check fused-kernel eligibility
 

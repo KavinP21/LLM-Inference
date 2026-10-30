@@ -82,7 +82,7 @@ def compare(
                 input_ids, max_new_tokens, eos_token_ids=eos_token_ids
             )
             instinct_logits = np.asarray(
-                engine.debug_prefill_logits(input_ids), dtype=np.float32
+                engine.prefill_logits(input_ids), dtype=np.float32
             )
             cosine = float(
                 np.dot(reference_logits, instinct_logits)
@@ -98,7 +98,7 @@ def compare(
             if matching_prefix < common:
                 reference_divergence_top_two = generation_top_two[matching_prefix]
                 recomputed = np.asarray(
-                    engine.debug_prefill_logits(input_ids + expected[:matching_prefix]),
+                    engine.prefill_logits(input_ids + expected[:matching_prefix]),
                     dtype=np.float32,
                 )
                 indices = np.argpartition(recomputed, -2)[-2:]
