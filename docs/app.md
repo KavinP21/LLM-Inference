@@ -128,19 +128,19 @@ The workspace panel's tabs:
   time and speed.
 - **System:** each model worker's memory and state.
 
-## Running in a browser
+## Running the server on its own
 
-The app is a native window around a local server, which also runs on its own:
+The app is a native window around a local server, which also runs headless,
+for example on a Mac mini that other devices use:
 
 ```bash
-.venv/bin/python tools/instinct.py                 # this repo as the workspace
-.venv/bin/python tools/instinct.py --demo          # no models needed
-instinct --workspace ~/code/project --config examples/instinct.json
+instinct-server --workspace ~/code/project --config examples/instinct.json \
+  --remote-host 0.0.0.0 --tls-cert cert.pem --tls-key key.pem
+instinct-server --workspace ~/code/project --create-key phone --app-key   # prints a key once
 ```
 
-It opens your browser with a one-time link and serves only on 127.0.0.1. Ctrl-C
-or SIGTERM stops it and its model workers, and the workers also exit if the
-server is killed.
+Ctrl-C or SIGTERM stops it and its model workers, and the workers also exit if
+the server is killed.
 
 ## OpenAI-compatible API
 
@@ -167,6 +167,25 @@ curl http://127.0.0.1:PORT/v1/chat/completions \
 
 A standalone `instinct-worker` answers the same two routes with its worker token.
 Keys only open `/v1`; they can't reach chats, files or the terminal.
+
+## Other devices
+
+A phone, a tablet or another computer can use Instinct too, in a browser or
+through the API above. Turn on **Settings > Other devices**, pick a port and
+restart Instinct; the section then lists the addresses to open.
+
+- **Sign-in.** Make a key under **Settings > API** with **Can also open the
+  app** on, and paste it on the other device (it can remember it). That key
+  gives full access to the workspace, so keep it to your own devices. Keys
+  without it only open `/v1`.
+- **Encryption.** Give it a TLS certificate and key, for example from
+  `tailscale cert`, or allow plain HTTP only on a network that already
+  encrypts, like Tailscale. Over Tailscale the phone works away from home too.
+- The Mac's own window keeps using its private loopback server; other devices
+  get a second listener that only accepts key sign-ins.
+
+From the command line: `--remote-host 0.0.0.0 --remote-port 8765` with
+`--tls-cert/--tls-key` or `--allow-http`.
 
 ## Optional extensions
 
@@ -195,9 +214,10 @@ reviewed, and they don't inherit credentials from the environment.
 
 Chats, images, the agent journal, checkpoints and artifacts live in the state
 folder: Application Support for the app, `.instinct/` in the workspace
-for the command line. The file tools can't read it. The server binds to
-127.0.0.1 and checks the Host and Origin of every request. It authenticates the
-page with an HttpOnly cookie and serves a strict content security policy.
+for the command line. The file tools can't read it. The app's own server binds
+to 127.0.0.1 and checks the Host and Origin of every request; the listener for
+other devices checks the Origin and requires a key. Both authenticate the page
+with an HttpOnly cookie and serve a strict content security policy.
 
 The sandbox confines writes and network, not reads: a command can read anything
 your user account can. On Linux there is no sandbox, and results say so. Remote

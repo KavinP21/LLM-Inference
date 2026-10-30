@@ -667,14 +667,30 @@
     try {
       const { keys } = await api("/api/keys");
       const used = (time) => (time ? `used ${new Date(time * 1000).toLocaleDateString()}` : "not used yet");
-      patch($("key-list"), keys.length ? keys.map((key) => `<div class="key-row"><span><strong>${escape(key.name)}</strong><small>${used(key.last_used)}</small></span><button type="button" class="icon-button" data-revoke-key="${escape(key.id)}" aria-label="Revoke ${escape(key.name)}">×</button></div>`).join("") : `<p class="settings-note">No keys yet.</p>`);
+      patch($("key-list"), keys.length ? keys.map((key) => `<div class="key-row"><span><strong>${escape(key.name)}</strong><small>${key.scope === "app" ? "API and app · " : ""}${used(key.last_used)}</small></span><button type="button" class="icon-button" data-revoke-key="${escape(key.id)}" aria-label="Revoke ${escape(key.name)}">×</button></div>`).join("") : `<p class="settings-note">No keys yet.</p>`);
     } catch (error) {
       patch($("key-list"), `<p class="settings-note">${escape(error.message)}</p>`);
     }
   }
+  async function renderNetwork() {
+    try {
+      const network = await api("/api/network");
+      const saved = network.settings;
+      $("network-section").hidden = !network.editable;
+      $("network-enabled").checked = saved.enabled;
+      $("network-port").value = saved.port;
+      $("network-cert").value = saved.tls_cert;
+      $("network-key").value = saved.tls_key;
+      $("network-http").checked = saved.allow_http;
+      const scheme = saved.tls_cert ? "https" : "http";
+      $("network-status").textContent = network.serving ? `Serving now on port ${saved.port}.` : "Takes effect when Instinct restarts.";
+      $("network-addresses").textContent = saved.enabled ? `Open ${network.addresses.map((name) => `${scheme}://${name}:${saved.port}`).join(" or ")} on the other device.` : "";
+    } catch { $("network-section").hidden = true; }
+  }
   function renderSettings() {
     $("new-key").hidden = true;
     renderKeys();
+    renderNetwork();
     const existingPolicy = state.detail?.chat?.policy;
     $("policy-note").textContent = existingPolicy ? `This chat uses ${policyNames[existingPolicy] || policyNames.review}. Changes here apply to new chats.` : "Applies to new chats.";
     $("command-network").checked = Boolean(state.settings?.command_network);
@@ -1600,12 +1616,38 @@
     const name = $("key-name").value.trim();
     if (!name) return;
     try {
-      const created = await api("/api/keys", { name });
+      const created = await api("/api/keys", { name, app: $("key-app").checked });
       $("key-name").value = "";
       $("new-key-value").textContent = created.key;
       $("new-key").hidden = false;
       renderKeys();
     } catch (error) { toast(error.message, true); }
+  });
+  $("network-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api("/api/network", {
+        enabled: $("network-enabled").checked,
+        port: Number($("network-port").value),
+        tls_cert: $("network-cert").value.trim(),
+        tls_key: $("network-key").value.trim(),
+        allow_http: $("network-http").checked,
+      });
+      toast("Saved. Restart Instinct to apply.");
+      renderNetwork();
+    } catch (error) { toast(error.message, true); }
+  });
+  $("sign-in-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const key = $("sign-in-key").value.trim();
+    try {
+      await api("/api/auth", { key });
+      try { if ($("sign-in-remember").checked) localStorage.setItem("instinct-key", key); } catch {}
+      location.reload();
+    } catch {
+      $("sign-in-error").textContent = "That key doesn't open the app. Make one under Settings > API on your Mac, with “Can also open the app” on.";
+      $("sign-in-error").hidden = false;
+    }
   });
   $("copy-key").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText($("new-key-value").textContent); toast("Key copied"); } catch { toast("Couldn't copy the key", true); }
@@ -1766,6 +1808,19 @@
     }
   });
 
+  // Another device's browser signs in with an app key (remembered if asked).
+  async function signedIn() {
+    const probe = await fetch("/api/settings", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
+    if (!probe || probe.status !== 401) return true;
+    let saved = null;
+    try { saved = localStorage.getItem("instinct-key"); } catch {}
+    if (saved) {
+      try { await api("/api/auth", { key: saved }); return true; } catch { try { localStorage.removeItem("instinct-key"); } catch {} }
+    }
+    $("sign-in").showModal();
+    $("sign-in-key").focus();
+    return false;
+  }
   async function boot() {
     const selected = new URLSearchParams(location.search).get("chat");
     if (selected) { state.selected = selected; state.loading = true; $("welcome").hidden = true; $("view-loading").hidden = false; }
@@ -1776,6 +1831,8 @@
       history.replaceState(null, "", location.pathname + location.search);
       try { await api("/api/auth", { token }); }
       catch { setConnection("This session could not be authenticated. Reopen the Instinct link from the local launcher."); return; }
+    } else if (!(await signedIn())) {
+      return;
     }
     try { Object.assign(state.newChat, JSON.parse(localStorage.getItem("instinct-new-chat") || "{}")); } catch {}
     try { state.models = (await api("/api/models")).models || []; } catch {}
