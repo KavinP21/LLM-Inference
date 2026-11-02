@@ -6,7 +6,7 @@ It works in a folder of its own, where it can read, create, change and delete
 files and run commands. Commands run in a sandbox that can't write anywhere
 else.
 
-![Instinct conversation with sub-agents, thinking and a table answer](images/app-chat.jpg)
+![Instinct answering a question about a folder of scripts with a table](images/app-chat.jpg)
 
 ## Install
 
@@ -47,7 +47,8 @@ same list has a folder browser for your home folder.
 
 ## Permission modes
 
-Pick a mode in Settings. It applies to new chats.
+Pick a mode from the shield under the message box. It applies to the chat you
+start next; a chat keeps the mode it started with.
 
 | Mode | What happens |
 | --- | --- |
@@ -127,21 +128,21 @@ the messages it covered. A run may take 200 steps per agent, 50M tokens and four
 | Rename or delete a chat | Pencil or × on the chat in the sidebar |
 | Stop the reply | Esc, or Stop |
 | Summarize the chat to free context | `/compact` |
-| Context in use | The meter in the top bar; click it for the Performance tab |
-| Workspace panel | ⇧⌘D: Agents, Files, Changes, Activity, Performance, System |
+| Context in use | The meter in the top bar; click it to see how full it is or summarize the chat |
+| Workspace panel | ⇧⌘D: Agents, Files, Changes, Activity, Speed, Models |
 | Attach images | The paperclip, paste, or drop them on the box (up to 8, 16 MiB) |
 | Show the workspace | ⇧⌘R reveals it in Finder |
 
-![Workspace panel on the Performance tab](images/app-developer.jpg)
+![Workspace panel on the Speed tab](images/app-developer.jpg)
 
 The workspace panel's tabs:
 - **Agents:** each agent's task, tools and results; you can direct or stop one.
 - **Files:** what the agents created or edited, plus a browser for the folder.
 - **Changes:** exact diffs, and the folder's own git changes.
 - **Activity:** commands, tests and their output.
-- **Performance:** every model call's prompt size, cache reuse, first-token
-  time and speed.
-- **System:** each model worker's memory and state.
+- **Speed:** every model call's prompt size, cache reuse, first-token time and
+  speed.
+- **Models:** each model worker's memory and state.
 
 ## Running the server on its own
 
@@ -161,7 +162,7 @@ the server is killed.
 
 Other apps can use Instinct's models through the same server: `GET /v1/models`
 and `POST /v1/chat/completions`, streaming or not. Their requests join the
-batches the app's own agents run in. Create a key under **Settings > API** (it's
+batches the app's own agents run in. Create a key under **Settings > API keys** (it's
 shown once) and point any OpenAI client at the address shown there:
 
 ```bash
@@ -189,7 +190,7 @@ A phone, a tablet or another computer can use Instinct too, in a browser or
 through the API above. Turn on **Settings > Other devices**, pick a port and
 restart Instinct; the section then lists the addresses to open.
 
-- **Sign-in.** Make a key under **Settings > API** with **Can also open the
+- **Sign-in.** Make a key under **Settings > API keys** with **Can also open the
   app** on, and paste it on the other device (it can remember it). That key
   gives full access to the workspace, so keep it to your own devices. Keys
   without it only open `/v1`.

@@ -24,12 +24,13 @@ await check("header buttons get clicks under the title bar", async () => {
   }
 });
 
-await check("switches new chats to Work freely", async () => {
-  $("open-settings").click();
-  await until(() => $("settings").open);
+await check("switches new chats to Work freely from the message box", async () => {
+  $("permission-shortcut").click();
+  await until(() => $("permission-popover").open);
+  await sleep(300);  // Let it finish fading in.
+  await snapshot("1b-permissions");
   document.querySelector('input[name="policy"][value="auto"]').click();
-  $("close-settings").click();
-  await until(() => $("permission-label").textContent === "Work freely");
+  await until(() => $("permission-label").textContent === "Work freely" && !$("permission-popover").open);
 });
 
 await check("sends a message and shows the reply", async () => {
@@ -40,6 +41,16 @@ await check("sends a message and shows the reply", async () => {
   await until(() => document.querySelector(".turn-output .markdown")?.textContent.trim(), 60000);
 });
 await snapshot("2-reply");
+
+await check("shows the context window next to its meter", async () => {
+  await until(() => !$("context-meter").hidden);
+  $("context-meter").click();
+  await until(() => $("context-popover").open && $("context-text").textContent);
+  await sleep(300);
+  await snapshot("2a-context");
+  press(document.body, "Escape");
+  await until(() => !$("context-popover").open);
+});
 
 await check("summarizes the chat with /compact", async () => {
   $("message").value = "/compact";
@@ -93,6 +104,8 @@ await check("opens settings", async () => {
 await check("creates and revokes an API key", async () => {
   $("open-settings").click();
   await until(() => $("settings").open);
+  document.querySelector('[data-settings-tab="api"]').click();
+  await until(() => visible($("key-form")));
   $("key-name").value = "UI test";
   $("key-form").requestSubmit();
   await until(() => !$("new-key").hidden && $("new-key-value").textContent.startsWith("sk-instinct-"));

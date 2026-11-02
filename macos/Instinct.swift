@@ -12,8 +12,8 @@ import WebKit
 // The page's background in each appearance (--page in app.css).
 let background = NSColor(name: nil) { appearance in
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        ? NSColor(srgbRed: 0x13 / 255, green: 0x12 / 255, blue: 0x19 / 255, alpha: 1)
-        : NSColor(srgbRed: 0xf8 / 255, green: 0xf7 / 255, blue: 0xfc / 255, alpha: 1)
+        ? NSColor(srgbRed: 0x16 / 255, green: 0x15 / 255, blue: 0x14 / 255, alpha: 1)
+        : NSColor(srgbRed: 0xfa / 255, green: 0xf9 / 255, blue: 0xf6 / 255, alpha: 1)
 }
 
 // MARK: - Backend process
