@@ -410,7 +410,7 @@
     const node = document.createElement("article");
     node.className = "turn";
     node.dataset.turn = key;
-    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg viewBox="0 0 30 49" aria-hidden="true"><use href="#instinct-mark"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div><div class="turn-summary"></div>';
+    node.innerHTML = '<div class="user-messages"></div><div class="assistant-turn"><div class="assistant-label"><span class="assistant-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><use href="#instinct-mark"/></svg></span>Instinct</div><div class="turn-activity"></div><div class="turn-agents"></div><div class="turn-approvals"></div><div class="turn-directions user-messages"></div><div class="turn-progress" role="status"></div><div class="turn-live" aria-live="off"></div><div class="turn-output"></div><div class="turn-error"></div><div class="turn-artifacts"></div></div><div class="turn-summary"></div>';
     state.turns.set(key, node);
     return node;
   }
@@ -528,10 +528,20 @@
       $("context-label").textContent = `${compact(usage.used)} / ${compact(usage.limit)}`;
       $("context-meter").title = `Context window: ${usage.used.toLocaleString()} of ${usage.limit.toLocaleString()} tokens used by the last reply`;
     }
+    if ($("context-popover").open) usage ? renderContext() : $("context-popover").close();
     const busy = (state.live?.generations || []).filter((entry) => entry.text);
     const workers = (state.live?.workers || []).filter((worker) => worker.state === "busy");
     $("live-speed").hidden = !busy.length;
     $("live-speed").textContent = busy.length ? `${workers.length || busy.length} generating` : "";
+  }
+  function renderContext() {
+    const usage = contextUsage();
+    if (!usage) return;
+    const share = Math.min(1, usage.used / usage.limit);
+    $("context-share").textContent = `${Math.round(share * 100)}% full`;
+    $("context-bar-fill").style.width = `${Math.max(1, share * 100)}%`;
+    $("context-bar-fill").className = share > 0.85 ? "high" : share > 0.6 ? "mid" : "";
+    $("context-text").textContent = `${usage.used.toLocaleString()} of ${usage.limit.toLocaleString()} tokens after the last reply. When earlier turns fill their share, Instinct summarizes them before the next reply. You can also summarize now.`;
   }
   const EFFORTS = [
     ["off", "Fast", "Answers right away without thinking first. Best for quick questions and simple edits."],
@@ -570,7 +580,30 @@
     $("effort-help").textContent = EFFORTS[level][2];
     document.querySelectorAll(".effort-ticks span").forEach((tick, index) => tick.classList.toggle("active", index === level));
   }
+  // Popovers open next to the control that opens them and close on a click
+  // elsewhere, on Escape, or when another one opens.
+  function openPopover(panel, anchor, { above = false } = {}) {
+    closePopovers(panel);
+    toggleModePanel(false);
+    if (!panel.open) panel.show();
+    panel.classList.toggle("above", above);
+    const box = anchor.getBoundingClientRect();
+    const width = panel.offsetWidth, height = panel.offsetHeight;
+    panel.style.left = `${Math.max(12, Math.min(box.left, innerWidth - width - 12))}px`;
+    panel.style.top = `${Math.max(12, above ? box.top - height - 8 : Math.min(box.bottom + 6, innerHeight - height - 12))}px`;
+    panel.anchor = anchor;
+    anchor.setAttribute("aria-expanded", "true");
+    panel.querySelector("input:checked:not(:disabled), .button-primary, button.project-open")?.focus({ preventScroll: true });
+  }
+  function closePopovers(except) {
+    document.querySelectorAll("dialog.popover[open]").forEach((panel) => { if (panel !== except) panel.close(); });
+  }
+  function togglePopover(panel, anchor, options) {
+    if (panel.open && panel.anchor === anchor) panel.close();
+    else openPopover(panel, anchor, options);
+  }
   function toggleModePanel(open = $("mode-panel").hidden) {
+    if (open) closePopovers();
     $("mode-panel").hidden = !open;
     $("mode-button").setAttribute("aria-expanded", String(open));
     if (open) (document.querySelector('.mode-model-option[aria-checked="true"]') || $("effort-slider")).focus();
@@ -677,7 +710,8 @@
     try {
       const network = await api("/api/network");
       const saved = network.settings;
-      $("network-section").hidden = !network.editable;
+      $("settings-tab-devices").hidden = !network.editable;
+      if (!network.editable && state.settingsTab === "devices") selectSettingsTab("sandbox");
       $("network-enabled").checked = saved.enabled;
       $("network-port").value = saved.port;
       $("network-cert").value = saved.tls_cert;
@@ -686,17 +720,38 @@
       const scheme = saved.tls_cert ? "https" : "http";
       $("network-status").textContent = network.serving ? `Serving now on port ${saved.port}.` : "Takes effect when Instinct restarts.";
       $("network-addresses").textContent = saved.enabled ? `Open ${network.addresses.map((name) => `${scheme}://${name}:${saved.port}`).join(" or ")} on the other device.` : "";
-    } catch { $("network-section").hidden = true; }
+    } catch { $("settings-tab-devices").hidden = true; }
+  }
+  function renderPolicy() {
+    // A chat keeps the permissions it started with; new chats take the choice.
+    const existing = state.detail?.chat?.policy;
+    $("policy-note").textContent = existing ? "Set when this chat started. Start a new chat to work with different permissions." : "Applies to the chat you start next.";
+    document.querySelectorAll('input[name="policy"]').forEach((input) => {
+      input.checked = input.value === (existing || state.policy);
+      input.disabled = Boolean(existing);
+    });
+  }
+  function selectSettingsTab(name) {
+    if ($(`settings-tab-${name}`)?.hidden) name = "sandbox";
+    state.settingsTab = name;
+    document.querySelectorAll("[data-settings-tab]").forEach((button) => {
+      if (button.dataset.settingsTab === name) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
+    document.querySelectorAll("[data-settings-pane]").forEach((pane) => { pane.hidden = pane.dataset.settingsPane !== name; });
+  }
+  function openSettings(tab = state.settingsTab || "sandbox") {
+    closePopovers();
+    renderSettings();
+    selectSettingsTab(tab);
+    if (!$("settings").open) $("settings").showModal();
   }
   function renderSettings() {
     $("new-key").hidden = true;
     renderKeys();
     renderNetwork();
-    const existingPolicy = state.detail?.chat?.policy;
-    $("policy-note").textContent = existingPolicy ? `This chat uses ${policyNames[existingPolicy] || policyNames.review}. Changes here apply to new chats.` : "Applies to new chats.";
     $("command-network").checked = Boolean(state.settings?.command_network);
     $("web-access").checked = state.settings?.web_access !== false;
-    document.querySelectorAll('input[name="policy"]').forEach((input) => { input.checked = input.value === state.policy; });
     const turns = (state.detail?.turns || []).filter((turn) => turn.run_id);
     $("trace-section").hidden = !turns.length;
     patch($("trace-list"), turns.map((turn, index) => `<a href="/api/runs/${encodeURIComponent(turn.run_id)}/export" download="instinct-trace-${index + 1}.json">Download response ${index + 1} trace ↓</a>`).join(""));
@@ -1489,7 +1544,7 @@
     { name: "/files", description: "Browse workspace files", run: () => toggleDeveloper(true, "files") },
     { name: "/diff", description: "Review recorded changes", run: () => toggleDeveloper(true, "changes") },
     { name: "/activity", description: "Commands, tests and tool output", run: () => toggleDeveloper(true, "activity") },
-    { name: "/settings", description: "Permissions and workspace", run: () => $("settings").showModal() },
+    { name: "/settings", description: "Sandbox, API keys and devices", run: () => openSettings() },
     { name: "/status", description: "Model and chat status", run: () => toast(`${modelLabel()} · ${statusLabel((state.detail?.backend || state.overview?.backend)?.status)} · ${currentPolicy() === "read_only" ? "Read only" : "Review changes"}`, false, 5500) },
     { name: "/help", description: "Keyboard shortcuts", run: () => toast("Enter sends · Shift + Enter adds a line · Esc stops · ⌘ K starts a new chat", false, 6500) },
   ];
@@ -1614,14 +1669,19 @@
   $("mode-panel").addEventListener("keydown", (event) => { if (event.key === "Escape") { event.stopPropagation(); toggleModePanel(false); $("mode-button").focus(); } });
   document.addEventListener("pointerdown", (event) => { if (!$("mode-panel").hidden && !$("mode-picker").contains(event.target)) toggleModePanel(false); });
   $("chat-search").addEventListener("input", (event) => { state.chatQuery = event.target.value; renderOverview(); });
-  $("context-meter").addEventListener("click", () => toggleDeveloper(true, "performance"));
+  $("context-meter").addEventListener("click", () => { renderContext(); togglePopover($("context-popover"), $("context-meter")); });
+  $("context-details").addEventListener("click", () => { closePopovers(); toggleDeveloper(true, "performance"); });
+  $("context-compact").addEventListener("click", () => { closePopovers(); compactChat(); });
+  document.querySelectorAll("dialog.popover").forEach((panel) => panel.addEventListener("close", () => panel.anchor?.setAttribute("aria-expanded", "false")));
+  document.addEventListener("pointerdown", (event) => { if (!event.target.closest("dialog.popover, [aria-haspopup=dialog]")) closePopovers(); });
   $("live-speed").addEventListener("click", () => toggleDeveloper(true, "system"));
   $("toggle-sidebar").addEventListener("click", () => toggleSidebar());
   $("close-sidebar").addEventListener("click", () => { toggleSidebar(false); $("toggle-sidebar").focus(); });
   $("new-chat").addEventListener("click", () => selectChat(null));
   $("home").addEventListener("click", () => selectChat(null));
-  $("open-settings").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
-  $("permission-shortcut").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
+  $("open-settings").addEventListener("click", () => openSettings());
+  $("permission-shortcut").addEventListener("click", () => { renderPolicy(); togglePopover($("permission-popover"), $("permission-shortcut"), { above: true }); });
+  document.querySelectorAll("[data-settings-tab]").forEach((button) => button.addEventListener("click", () => selectSettingsTab(button.dataset.settingsTab)));
   $("close-settings").addEventListener("click", () => $("settings").close());
   $("key-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1673,7 +1733,7 @@
     const bounds = $("settings").getBoundingClientRect();
     if (event.target === $("settings") && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) $("settings").close();
   });
-  document.querySelectorAll('input[name="policy"]').forEach((input) => input.addEventListener("change", () => { state.policy = input.value; state.policyTouched = true; persistDrafts(); renderComposer(); renderSettings(); }));
+  document.querySelectorAll('input[name="policy"]').forEach((input) => input.addEventListener("change", () => { state.policy = input.value; state.policyTouched = true; persistDrafts(); renderComposer(); renderPolicy(); setTimeout(() => $("permission-popover").close(), 120); }));
   $("stop-draft").addEventListener("click", cancelResponse);
   $("retry").addEventListener("click", refresh);
   $("jump-bottom").addEventListener("click", scrollBottom);
@@ -1700,6 +1760,10 @@
       if ($("image-viewer").open) $("image-viewer").close();
       selectChat(null); return;
     }
+    const popover = document.querySelector("dialog.popover[open]");
+    if (event.key === "Escape" && popover) {
+      popover.close(); popover.anchor?.focus(); event.preventDefault(); return;
+    }
     if (event.key === "Escape" && !$("settings").open && !$("image-viewer").open) {
       if (!$("command-menu").hidden) { $("command-menu").hidden = true; event.preventDefault(); }
       else if (state.sidebar) { toggleSidebar(false); event.preventDefault(); }
@@ -1708,7 +1772,7 @@
       else if (state.dev.open) { toggleDeveloper(false); event.preventDefault(); }
     }
   });
-  window.addEventListener("resize", () => { if (state.sidebar) toggleSidebar(true); if (state.dev.open) { updateSurfaceInert(); if (matchMedia("(max-width:1100px)").matches && !$("developer-pane").contains(document.activeElement)) $(`dev-tab-${state.dev.tab}`).focus(); } resizeComposer(); });
+  window.addEventListener("resize", () => { closePopovers(); if (state.sidebar) toggleSidebar(true); if (state.dev.open) { updateSurfaceInert(); if (matchMedia("(max-width:1100px)").matches && !$("developer-pane").contains(document.activeElement)) $(`dev-tab-${state.dev.tab}`).focus(); } resizeComposer(); });
   window.addEventListener("focus", () => refresh());
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   $("toggle-developer").addEventListener("click", () => toggleDeveloper());
@@ -1836,7 +1900,7 @@
   }
   function renderProjects() {
     const projects = state.projects || [];
-    patch($("project-list"), projects.length ? projects.map((project) => `<div class="project-row${project.id === state.project?.id ? " current" : ""}${project.missing ? " missing" : ""}" data-project="${escape(project.id)}"><button type="button" class="project-open" data-open-project="${escape(project.id)}"${project.missing ? " disabled" : ""}><strong>${escape(project.title)}</strong><small>${escape(project.missing ? "Folder not found" : project.path)}</small></button><button type="button" class="icon-button" data-rename-project="${escape(project.id)}" aria-label="Rename ${escape(project.title)}">✎</button><button type="button" class="icon-button${project.pinned ? " pinned" : ""}" data-pin-project="${escape(project.id)}" aria-label="${project.pinned ? "Unpin" : "Pin"} ${escape(project.title)}" aria-pressed="${project.pinned}">${project.pinned ? "★" : "☆"}</button>${project.id === state.project?.id ? "" : `<button type="button" class="icon-button" data-remove-project="${escape(project.id)}" aria-label="Remove ${escape(project.title)} from the list">×</button>`}</div>`).join("") : `<p class="settings-note">No projects yet.</p>`);
+    patch($("project-list"), projects.length ? projects.map((project) => `<div class="project-row${project.id === state.project?.id ? " current" : ""}${project.missing ? " missing" : ""}" data-project="${escape(project.id)}"><button type="button" class="project-open" data-open-project="${escape(project.id)}"${project.missing ? " disabled" : ""}><strong>${escape(project.title)}</strong><small>${escape(project.missing ? "Folder not found" : project.path.replace(/^\/Users\/[^/]+/, "~"))}</small></button><button type="button" class="icon-button" data-rename-project="${escape(project.id)}" aria-label="Rename ${escape(project.title)}">✎</button><button type="button" class="icon-button${project.pinned ? " pinned" : ""}" data-pin-project="${escape(project.id)}" aria-label="${project.pinned ? "Unpin" : "Pin"} ${escape(project.title)}" aria-pressed="${project.pinned}">${project.pinned ? "★" : "☆"}</button>${project.id === state.project?.id ? "" : `<button type="button" class="icon-button" data-remove-project="${escape(project.id)}" aria-label="Remove ${escape(project.title)} from the list">×</button>`}</div>`).join("") : `<p class="settings-note">No projects yet.</p>`);
   }
   async function openProjects() {
     await loadProjects();
@@ -1844,7 +1908,7 @@
     $("folder-view").hidden = true;
     $("project-view").hidden = false;
     renderProjects();
-    if (!$("projects").open) $("projects").showModal();
+    openPopover($("projects"), $("project-button"));
   }
   async function openProject(target) {
     try {
@@ -1868,7 +1932,7 @@
       $("folder-view").hidden = false;
     } catch (error) { toast(error.message, true); }
   }
-  $("workspace-name").addEventListener("click", openProjects);
+  $("project-button").addEventListener("click", () => ($("projects").open ? $("projects").close() : openProjects()));
   $("close-projects").addEventListener("click", () => $("projects").close());
   $("choose-folder").addEventListener("click", () => {
     if (isMac) window.webkit?.messageHandlers?.instinct?.postMessage({ type: "openFolder" });
@@ -1929,7 +1993,41 @@
     $("sign-in-key").focus();
     return false;
   }
+  // The welcome screen's mark in 3D: slices of the mark stacked in depth give
+  // it thickness, and it turns a little toward the pointer, easing back to a
+  // resting angle when the pointer leaves.
+  function buildWelcomeMark() {
+    const host = $("welcome-object");
+    const depth = 12;
+    host.innerHTML = `<div class="mark3d">${Array.from({ length: depth }, (_, index) => `<svg class="${index === depth - 1 ? "face" : "side"}" viewBox="0 0 32 32" style="transform: translateZ(${((index - depth + 1) * 0.75).toFixed(2)}px)"><use href="#instinct-mark"/></svg>`).join("")}</div>`;
+    const mark = host.firstElementChild;
+    const rest = { x: 10, y: -22 };
+    const pose = { ...rest };
+    let target = rest, frame = 0, settle;
+    const apply = () => { mark.style.transform = `rotateX(${pose.x.toFixed(2)}deg) rotateY(${pose.y.toFixed(2)}deg)`; };
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { Object.assign(pose, rest); apply(); return; }
+    const step = () => {
+      pose.x += (target.x - pose.x) * 0.08;
+      pose.y += (target.y - pose.y) * 0.08;
+      apply();
+      frame = Math.abs(target.x - pose.x) + Math.abs(target.y - pose.y) > 0.05 ? requestAnimationFrame(step) : 0;
+    };
+    const aim = (next) => { target = next; if (!frame) frame = requestAnimationFrame(step); };
+    document.addEventListener("pointermove", (event) => {
+      if ($("welcome").hidden) return;
+      const box = host.getBoundingClientRect();
+      const dx = (event.clientX - box.left - box.width / 2) / 420;
+      const dy = (event.clientY - box.top - box.height / 2) / 420;
+      const clamp = (value) => Math.max(-1, Math.min(1, value));
+      aim({ x: rest.x - clamp(dy) * 18, y: clamp(dx) * 34 });
+      clearTimeout(settle);
+      settle = setTimeout(() => aim(rest), 2500);
+    });
+    document.documentElement.addEventListener("pointerleave", () => aim(rest));
+    aim(rest);
+  }
   async function boot() {
+    buildWelcomeMark();
     const selected = new URLSearchParams(location.search).get("chat");
     if (selected) { state.selected = selected; state.loading = true; $("welcome").hidden = true; $("view-loading").hidden = false; }
     renderComposer();
@@ -1957,7 +2055,7 @@
       const result = await api("/api/settings");
       state.settings = result.settings;
       $("sandbox-help").textContent = result.sandbox
-        ? "Commands and the terminal can read your files but only write inside the workspace."
+        ? "Commands and the terminal can read your files but only write inside the workspace. Each chat's permissions are under the message box."
         : "This system has no sandbox: commands and the terminal run with your own permissions.";
       $("terminal-badge").hidden = !result.sandbox;
     } catch {}
@@ -2021,7 +2119,7 @@
       term.xterm = new window.Terminal({
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000,
         // The terminal stays dark in both themes.
-        theme: { background: getComputedStyle(document.documentElement).getPropertyValue("--terminal-bg").trim(), foreground: "#ecebf4", cursor: "#ff9cc1", selectionBackground: "rgba(185, 166, 255, 0.3)" },
+        theme: { background: getComputedStyle(document.documentElement).getPropertyValue("--terminal-bg").trim(), foreground: "#e8e4dc", cursor: "#ff7a45", cursorAccent: "#1a0f08", selectionBackground: "rgba(255, 122, 69, 0.28)" },
       });
       term.fit = new window.FitAddon.FitAddon();
       term.xterm.loadAddon(term.fit);
@@ -2063,7 +2161,7 @@
     command(name) {
       const commands = {
         newChat: () => { selectChat(null); $("message").focus(); },
-        settings: () => { renderSettings(); $("settings").showModal(); },
+        settings: () => openSettings(),
         toggleSidebar: () => toggleSidebar(),
         toggleWorkspace: () => toggleDeveloper(),
         searchChats: () => { toggleSidebar(true); $("chat-search").focus(); },
