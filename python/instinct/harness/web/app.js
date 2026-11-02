@@ -503,6 +503,7 @@
   }
   function shortModel(id) {
     const name = String(id || "").split(/[\\/]/).at(-1).replace(/-mlx$/, "");
+    if (/^gemma-4.*abliterated/i.test(name)) return "Gemma 4 abliterated";
     if (/^gemma-4/i.test(name)) return "Gemma 4";
     if (/^qwen3\.5/i.test(name)) return "Qwen3.5";
     return name;
@@ -549,8 +550,9 @@
     ["medium", "Medium", "Thinks things through, up to about four thousand tokens. A good default for real work."],
     ["high", "High", "Thinks for as long as it needs. Best for hard bugs and design questions; slowest."],
   ];
-  const MODEL_NOTES = { driver: "Strongest. Hands work to sub-agents.", subagent: "Fastest and lightest." };
-  function shortLabel(label) { return String(label || "").replace(/\s+\d+B.*$/, "").replace(/-\d+B$/, ""); }
+  const MODEL_NOTES = { driver: "Strongest. Hands work to sub-agents.", subagent: "Fastest and lightest.", abliterated: "Gemma 4 with its refusals removed. Loads when a chat picks it." };
+  // "Gemma 4 26B A4B abliterated" -> "Gemma 4 abliterated", "Qwen3.5-4B" -> "Qwen3.5".
+  function shortLabel(label) { return String(label || "").replace(/\s+\d+B(\s+A\d+B)?/g, "").replace(/-\d+B$/, ""); }
   function currentMode() {
     const chat = state.detail?.chat;
     return {

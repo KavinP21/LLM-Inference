@@ -69,6 +69,24 @@ rounding alone carries it. Qwen decodes at the same speed; Gemma is about 10%
 slower at that length, from quantizing on 30 layers each step. The app's
 profile uses it for the Qwen sub-agents, so 8 GiB holds two full 256K contexts.
 
+**Abliterated Gemma 4.** huihui-ai's abliterated Gemma 4 26B A4B, with its
+refusals removed, can drive chats too. The 4-bit MLX conversion
+(`vanch007/Huihui-gemma-4-26B-A4B-it-abliterated-mlx-4bit`, pinned) has the
+same tensors, quantization settings and vocabulary as the QAT checkpoint, so
+the Gemma 4 adapter loads it unchanged, including the vision tower. Its chat
+template is an older one that formats tool schemas badly, so the app's profile
+reads the tokenizer and template from the QAT folder instead. It isn't
+downloaded by default:
+
+```bash
+python -m instinct.prepare_models gemma-4-26b-a4b-abliterated   # ~16 GB
+```
+
+Once the folder exists, "Gemma 4 26B A4B abliterated" appears in the model
+picker. Its worker is optional and lazy: nothing starts until a chat picks it,
+and it stops after ten idle minutes. Both Gemmas loaded at once take about
+30 GB for weights. It hasn't been run here yet.
+
 The engine also runs FP16 Qwen2 and Gemma 3 `.engine` files.
 
 ## Limits

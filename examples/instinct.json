@@ -15,6 +15,23 @@
     },
     {
       "type": "process",
+      "name": "gemma-4-abliterated",
+      "group": "abliterated",
+      "optional": true,
+      "lazy": true,
+      "prestart": false,
+      "idle_seconds": 600,
+      "model": "models/gemma-4-26b-a4b-abliterated-mlx",
+      "tokenizer": "models/gemma-4-26b-a4b-mlx",
+      "backend": "mlx",
+      "max_model_length": 262144,
+      "kv_cache_bytes": 25769803776,
+      "request_timeout": 600,
+      "native_tool_calls": true,
+      "max_pending": 4
+    },
+    {
+      "type": "process",
       "name": "qwen",
       "group": "subagent",
       "lazy": true,

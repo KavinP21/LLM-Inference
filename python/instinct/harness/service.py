@@ -79,6 +79,7 @@ def _digest(value: Any) -> str:
 
 MODEL_NAMES = {
     "gemma-4-26b-a4b-mlx": "Gemma 4 26B A4B",
+    "gemma-4-26b-a4b-abliterated-mlx": "Gemma 4 26B A4B abliterated",
     "qwen3.5-4b-mlx": "Qwen3.5-4B",
     "qwen3-30b-a3b-mlx": "Qwen3-30B-A3B",
     "qwen2.5-7b-mlx": "Qwen2.5-7B",

@@ -22,6 +22,16 @@ MODELS = {
         "cda74908f1dbe7d3dbd3030e66576a7d4094144f",
         "models/gemma-4-26b-a4b-assistant",
     ),
+    # huihui-ai's abliterated Gemma 4 (refusals removed), quantized with the
+    # same settings and tensor layout as the QAT checkpoint above. Its chat
+    # template is an older one with tool-schema bugs, so the app reads the
+    # tokenizer and template from the QAT folder (the vocabularies are the
+    # same file). Fetched only by name.
+    "gemma-4-26b-a4b-abliterated": (
+        "vanch007/Huihui-gemma-4-26B-A4B-it-abliterated-mlx-4bit",
+        "e91e91b5edab55f1c423223f01c9d3704b70e913",
+        "models/gemma-4-26b-a4b-abliterated-mlx",
+    ),
     "qwen3.5-4b": (
         "mlx-community/Qwen3.5-4B-4bit",
         "0e7ffd5c629ef7719d4cbc04069232580bfa9d9c",
@@ -29,7 +39,7 @@ MODELS = {
     ),
 }
 # The assistant (Gemma 4's MTP drafter) is only fetched by name until the
-# engine drafts with it.
+# engine drafts with it; so is the abliterated Gemma.
 DEFAULT = ("gemma-4-26b-a4b", "qwen3.5-4b")
 
 
