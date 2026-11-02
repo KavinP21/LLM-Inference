@@ -4,7 +4,7 @@ A coding agent for the Mac that runs entirely on your machine. Gemma 4 26B A4B
 does the work and hands parts of it to Qwen3.5-4B sub-agents, all on Apple
 silicon with nothing sent to an API.
 
-![Instinct working with two sub-agents](docs/images/app-chat.jpg)
+![Instinct answering a question about a folder of scripts with a table](docs/images/app-chat.jpg)
 
 - **Its own workspace.** The agent reads, writes, moves and deletes files in a
   folder you choose. Its commands run under the macOS sandbox, so they can't
