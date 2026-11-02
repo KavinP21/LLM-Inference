@@ -893,7 +893,9 @@ def test_live_http_response_size_bound():
 
 def test_history_retention_is_bounded_and_expiry_is_advertised():
     model = AsyncModel(delay=0)
-    service = WorkerService(model, max_history=2, history_ttl=0.02)
+    # The expiry is long enough that nothing ages out while the jobs run, even
+    # on a slow CI runner; expiry itself is checked by backdating the jobs.
+    service = WorkerService(model, max_history=2, history_ttl=60)
     service.start()
     try:
         for number in range(3):
@@ -905,8 +907,10 @@ def test_history_retention_is_bounded_and_expiry_is_advertised():
         with pytest.raises(ValueError, match="unknown"):
             service.get("h-0")
         assert len(service._jobs) == 2
-        assert service.health()["history_ttl"] == 0.02
-        time.sleep(0.025)
+        assert service.health()["history_ttl"] == 60
+        with service._lock:
+            for job in service._jobs.values():
+                job.completed -= 61
         with pytest.raises(ValueError, match="unknown"):
             service.get("h-2")
     finally:
