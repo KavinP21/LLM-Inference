@@ -49,6 +49,18 @@ def load_config(path: str | Path) -> dict:
     if not isinstance(config.get("runtime", {}), dict):
         raise TypeError("runtime must be an object")
     RuntimeConfig(**config.get("runtime", {}))
+    # An optional worker whose model hasn't been downloaded is left out, so its
+    # group doesn't show up as a model a chat can pick.
+    for worker in workers:
+        if type(worker.get("optional", False)) is not bool:
+            raise ValueError("optional must be true or false")
+    config["workers"] = [
+        worker
+        for worker in workers
+        if not (worker.get("optional") and not Path(worker.get("model", "")).exists())
+    ]
+    if not config["workers"]:
+        raise ValueError("every worker is optional and none of their models exist")
     return config
 
 
@@ -67,10 +79,16 @@ async def create_pool(config: dict) -> WorkerPool:
                 if not isinstance(group, str) or not group:
                     raise ValueError("worker group must be a nonempty string")
                 groups[name] = group
+            worker.pop("optional", None)  # Settled by load_config.
             lazy = worker.pop("lazy", False)
             idle_seconds = worker.pop("idle_seconds", 600.0)
+            # A lazy worker's process starts with the app unless prestart is
+            # false; then nothing runs until a request needs it.
+            prestart = worker.pop("prestart", True)
             if type(lazy) is not bool or (lazy and kind != "process"):
                 raise ValueError("lazy applies only to process workers")
+            if type(prestart) is not bool:
+                raise ValueError("prestart must be true or false")
             if idle_seconds is not None and (
                 isinstance(idle_seconds, bool)
                 or not isinstance(idle_seconds, (int, float))
@@ -87,7 +105,7 @@ async def create_pool(config: dict) -> WorkerPool:
                             definition, defer_load=True
                         ),
                         idle_seconds=idle_seconds,
-                        prestart=True,
+                        prestart=prestart,
                     )
                 elif kind == "process":
                     backend = await LocalProcessBackend.start(definition)
