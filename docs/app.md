@@ -73,6 +73,11 @@ Sub-agents stream into their own cards. One Qwen worker runs up to eight
 sub-agents at once in shared batches; it starts when a sub-agent first needs it
 and stops after ten idle minutes.
 
+The picker also offers an abliterated Gemma 4 (refusals removed) once it has
+been downloaded with `python -m instinct.prepare_models
+gemma-4-26b-a4b-abliterated`; see [Models](models.md). It loads when a chat
+first picks it.
+
 ## Rewind and edit
 
 Hover over one of your messages to see **Edit** and **Rewind**.

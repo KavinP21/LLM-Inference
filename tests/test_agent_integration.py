@@ -1109,6 +1109,54 @@ def test_cli_config_size_limit_applies_before_json_parse(tmp_path):
         cli.load_config(path)
 
 
+def test_cli_leaves_out_optional_workers_whose_model_is_missing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "models" / "present").mkdir(parents=True)
+    base = {"type": "process", "tokenizer": "models/present"}
+    path = tmp_path / "config.json"
+
+    def load(*workers):
+        path.write_text(json.dumps({"workers": list(workers)}))
+        return cli.load_config(path)
+
+    loaded = load(
+        {**base, "name": "main", "model": "models/present"},
+        {**base, "name": "extra", "optional": True, "model": "models/absent"},
+        {**base, "name": "kept", "optional": True, "model": "models/present"},
+    )
+    assert [worker["name"] for worker in loaded["workers"]] == ["main", "kept"]
+    with pytest.raises(ValueError, match="optional"):
+        load({**base, "optional": "yes", "model": "models/present"})
+    with pytest.raises(ValueError, match="none of their models"):
+        load({**base, "optional": True, "model": "models/absent"})
+
+
+def test_cli_lazy_worker_can_wait_for_its_first_request(monkeypatch):
+    seen = {}
+
+    class Recorder:
+        def __init__(self, config, start, **options):
+            seen.update(options, config=config)
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(cli, "LazyBackend", Recorder)
+    monkeypatch.setattr(cli, "WorkerPool", lambda replicas, **options: replicas)
+    worker = {
+        "type": "process",
+        "model": "fixture.engine",
+        "tokenizer": "fixture",
+        "lazy": True,
+        "prestart": False,
+        "optional": True,
+    }
+    asyncio.run(cli.create_pool({"workers": [worker]}))
+    assert seen["prestart"] is False and seen["config"].model == "fixture.engine"
+    with pytest.raises(ValueError, match="prestart"):
+        asyncio.run(cli.create_pool({"workers": [{**worker, "prestart": "no"}]}))
+
+
 @pytest.mark.parametrize("kind", ["local", "remote"])
 def test_cli_failed_backend_readiness_closes_new_backend(monkeypatch, kind):
     created = []
