@@ -43,10 +43,21 @@ for the final position, so a prefix can't be resumed from the middle.
 ## Limits
 
 `cache_namespace` keeps entries apart (all namespaces share one budget); it's
-not an access-control mechanism. When admission needs pages, or the cache is
-over `prefix_cache_bytes` or `prefix_cache_entries`, the least recently used
-entries are dropped. Dropping an entry only releases its references, so a
-running request that attached it keeps its pages.
+not an access-control mechanism. Entries from one conversation share most of
+their pages, and `prefix_cache_bytes` counts each page once.
+
+When admission needs pages, or the cache is over `prefix_cache_bytes` or
+`prefix_cache_entries`, entries are dropped in this order:
+
+1. Replies that a later reply of the same conversation extends. Each step of an
+   agent loop supersedes the one before it.
+2. Everything else, least recently used first.
+
+Checkpoints are where the next chat turn or a sibling sub-agent branches off. A
+long tool loop therefore no longer pushes them out. If dropping every entry
+still wouldn't free enough pages, the pages belong to running requests, so
+nothing is dropped and the new request waits. Dropping an entry only releases
+its references, so a running request that attached it keeps its pages.
 
 The engine isn't thread-safe; callers serialize access. Nothing is shared
 across engines or kept on disk, and the CUDA engine has no prefix cache.

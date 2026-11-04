@@ -439,6 +439,7 @@ class MlxEngine:
                     request.prompt[:end],
                     request.tables,
                     request.slot,
+                    checkpoint=True,
                 )
             self._trim(request)
             return []
