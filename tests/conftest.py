@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
 from instinct.format import ModelConfig, write_engine
+
+if os.environ.get("INSTINCT_TEST_DEVICE") == "cpu":
+    # MLX's CPU backend: no Metal kernels, like MLX on CUDA.
+    import mlx.core as mx
+
+    mx.set_default_device(mx.cpu)
 
 
 def tiny_artifact(path: Path, family: str = "qwen2") -> None:

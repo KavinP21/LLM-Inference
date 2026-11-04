@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import platform
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -180,8 +179,9 @@ class WorkerConfig:
     local_files_only: bool = True
     native_tool_calls: bool = False
     # "chat": ChatRunner, many requests at once (MLX checkpoints and .engine
-    # files on Apple silicon). "engine": one request at a time through an
-    # engine's submit/step API (CUDA). "auto" picks chat on Apple silicon.
+    # files, on MLX's Metal or CUDA backend). "engine": one request at a time
+    # through an engine's submit/step API (the C++ CUDA engine). "auto" picks
+    # chat wherever MLX has a GPU.
     runner: str = "auto"
     enable_thinking: bool = False
     # Set only in independently launched processes; never mutate the parent's GPU.
@@ -191,11 +191,11 @@ class WorkerConfig:
     def chat_runner(self) -> bool:
         if self.runner != "auto":
             return self.runner == "chat"
-        return (
-            self.backend != "cuda"
-            and platform.system() == "Darwin"
-            and platform.machine() == "arm64"
-        )
+        if self.backend == "cuda":
+            return False
+        from ...backends.base import mlx_gpu_available
+
+        return mlx_gpu_available()
 
     @property
     def takes_media(self) -> bool:
@@ -221,10 +221,10 @@ class WorkerConfig:
             raise ValueError("runner must be auto, chat or engine")
         if type(self.enable_thinking) is not bool:
             raise TypeError("enable_thinking must be a boolean")
-        if self.runner == "chat" and (
-            self.backend == "cuda" or self.cuda_visible_devices is not None
-        ):
-            raise ValueError("the chat runner needs Apple MLX execution")
+        if self.runner == "chat" and self.backend == "cuda":
+            raise ValueError(
+                'the chat runner runs on MLX; use backend "mlx" or "auto" with it'
+            )
         for name in ("max_model_length", "kv_cache_bytes", "max_pending"):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be a positive integer")
