@@ -298,6 +298,71 @@ def test_prefix_cache_eviction_makes_room_for_new_work(tmp_path):
         assert _drained(engine)
 
 
+def test_checkpoints_outlast_a_long_tool_loop(tmp_path):
+    """Each step of an agent loop leaves a reply entry. They used to push the
+    conversation's checkpoint out of the cache, so the next turn, which
+    branches from it, started from scratch."""
+    path = tmp_path / "tiny.engine"
+    tiny_artifact(path)
+    system = [(i * 3 + 1) % 32 for i in range(18)]
+    with (
+        _engine(
+            path,
+            kv_cache_bytes=1 << 18,
+            prefix_cache_bytes=1 << 18,
+            prefix_cache_entries=3,
+            max_model_length=256,
+        ) as cached,
+        _engine(path, max_model_length=256) as plain,
+    ):
+        prompt = system + [5, 6]
+        out = cached.generate(prompt, 3, checkpoints=[len(system)])
+        for step in range(8):
+            prompt = prompt + out + [7 + step % 5, 9]
+            out = cached.generate(prompt, 3)
+            assert cached.stats()["reused_tokens"] > 0
+        stats = cached.stats()["prefix_cache"]
+        assert stats["entries"] <= 3 and stats["checkpoints"] == 1
+        before = cached.stats()["reused_tokens"]
+        branch = system + [11, 12, 13]
+        assert cached.generate(branch, 4) == plain.generate(branch, 4)
+        assert cached.stats()["reused_tokens"] - before == len(system)
+
+
+def test_prefix_cache_counts_shared_pages_once(tmp_path):
+    path = tmp_path / "tiny.engine"
+    tiny_artifact(path)
+    page_bytes = 128  # 4 rows of tiny K/V
+    system = [(i * 3 + 1) % 32 for i in range(16)]
+    # Room for the reply's 6 pages and the checkpoint's 4, if shared pages
+    # count once; counted twice they'd need 10 and one would be dropped.
+    with _engine(path, prefix_cache_bytes=7 * page_bytes) as engine:
+        engine.generate(system + [5, 6, 7, 8], 5, checkpoints=[len(system)])
+        stats = engine.stats()["prefix_cache"]
+        assert stats["entries"] == 2 and stats["evicted"] == 0
+        assert stats["bytes"] == 6 * page_bytes
+
+
+def test_eviction_keeps_entries_it_cannot_make_room_with(tmp_path):
+    path = tmp_path / "tiny.engine"
+    tiny_artifact(path)
+    with _engine(path, kv_cache_bytes=14 * 128, prefix_cache_bytes=14 * 128) as engine:
+        engine.generate(list(range(1, 11)), 2)  # Leaves an entry of 3 pages.
+        long = engine.submit([(i * 5) % 32 for i in range(20)], 20)  # 10 pages
+        engine.step()
+        # Needs 6 pages: 1 is free and dropping the entry would free 3 more,
+        # so it waits for the long request and the entry stays meanwhile.
+        engine.submit([(i * 7) % 32 for i in range(20)], 4)
+        engine.step()
+        assert engine.stats()["prefix_cache"]["entries"] == 1
+        assert engine.stats()["waiting"] == 1
+        while engine.has_work():
+            engine.step()
+        assert engine.request(long).state is SequenceState.COMPLETED
+        engine.clear_prefix_cache()
+        assert _drained(engine)
+
+
 def test_cancel_and_errors_release_pages(tmp_path):
     path = tmp_path / "tiny.engine"
     tiny_artifact(path)
