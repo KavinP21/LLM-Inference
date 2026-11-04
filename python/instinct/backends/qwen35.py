@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from ..paged_kv import KVGroup, StateGroup
+from . import portable
 from .base import load_checkpoint, mlx, text_config
-from .metal_kernels import gated_delta
+from .portable import gated_delta
 
 
 class Qwen35Model:
@@ -87,7 +88,7 @@ class Qwen35Model:
 
     def _norm(self, x: Any, name: str | None, eps: float | None = None) -> Any:
         weight = None if name is None else self.weights[name]
-        return self.mx.fast.rms_norm(x, weight, self.eps if eps is None else eps)
+        return portable.rms_norm(self.mx, x, weight, self.eps if eps is None else eps)
 
     def _attention(self, batch: Any, i: int, h: Any) -> Any:
         mx, w, n = self.mx, self.weights, batch.count
@@ -132,8 +133,8 @@ class Qwen35Model:
             rows, steps, self.k_heads, self.k_dim
         )
         v = conv[..., 2 * key_width :].reshape(rows, steps, self.v_heads, self.v_dim)
-        q = self.k_dim**-1.0 * mx.fast.rms_norm(q, None, 1e-6)
-        k = self.k_dim**-0.5 * mx.fast.rms_norm(k, None, 1e-6)
+        q = self.k_dim**-1.0 * portable.rms_norm(mx, q, None, 1e-6)
+        k = self.k_dim**-0.5 * portable.rms_norm(mx, k, None, 1e-6)
         decay = mx.exp(
             -self.decay_rate[i]
             * nn.softplus(a.astype(mx.float32) + w[p + "dt_bias"].astype(mx.float32))

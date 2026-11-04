@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import platform
 from pathlib import Path
 
 try:
@@ -16,7 +15,7 @@ except (
     CudaSequenceState = None
     cuda_build_info = None
 
-from .backends.base import mlx_build_info
+from .backends.base import mlx_build_info, mlx_gpu_available
 from .mlx_engine import MlxEngine
 from .runtime import SequenceState as MlxSequenceState
 
@@ -38,8 +37,11 @@ def create_engine(
             raise ValueError("the CUDA backend needs an exported .engine model path")
         return CudaEngine(model_path, **kwargs)
     if selected == "mlx":
-        if platform.system() != "Darwin" or platform.machine() != "arm64":
-            raise RuntimeError("the MLX backend requires Apple Silicon")
+        if not mlx_gpu_available():
+            raise RuntimeError(
+                "the MLX backend needs an Apple GPU, or MLX's CUDA build on an "
+                "NVIDIA GPU (pip install 'mlx[cuda12]')"
+            )
         return MlxEngine(
             DEFAULT_MODEL_PATH if model_path is None else model_path, **kwargs
         )

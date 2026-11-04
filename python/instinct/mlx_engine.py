@@ -19,6 +19,7 @@ from typing import Any, Self
 
 import numpy as np
 
+from .backends import portable
 from .backends.base import mlx_build_info
 from .backends.factory import load_model
 from .batches import DecodeBatch, PrefillBatch
@@ -89,6 +90,8 @@ class MlxEngine:
             )
         self.model = model if model is not None else load_model(model_path)
         self.mx = mx = self.model.mx
+        # Off Metal this also tries each fused op once (see backends/portable).
+        self.kernels = portable.report(mx)
         self.max_num_sequences = max_num_sequences
         self.max_model_length = min(
             self.model.max_position_embeddings,
@@ -587,6 +590,7 @@ class MlxEngine:
             "max_num_sequences": self.max_num_sequences,
             "max_model_length": self.max_model_length,
             "kv_bits": self.kv_bits,
+            "kernels": self.kernels,
             "kv_pools": pools,
             "kv_device_bytes": self.cache.device_bytes,
             "prefix_cache": self.prefix_cache.stats() if self.prefix_cache else None,

@@ -45,6 +45,20 @@ jobs:
           INSTINCT_INSPECT_MODEL: build/instinct-inspect-model
       - run: bash -n tools/*.sh
 
+  mlx-linux:
+    # The MLX engine on Linux without Metal, through the same portable kernels
+    # it uses on NVIDIA with MLX's CUDA build. Here MLX runs on the CPU.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install "mlx[cpu]==0.32.4" numpy pytest safetensors
+      - run: python -m pytest -q tests/test_mlx_engine.py tests/test_portable_kernels.py
+        env:
+          PYTHONPATH: python
+
   sanitizers:
     runs-on: ubuntu-24.04
     steps:

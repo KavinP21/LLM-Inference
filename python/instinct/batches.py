@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from .backends import portable
 from .backends.metal_kernels import paged_decode_attention
 from .paged_kv import KVCache
 
@@ -70,15 +71,13 @@ class PrefillBatch:
         self, x: Any, dims: int, *, base: float | None = None, freqs: Any = None
     ) -> Any:
         """Rotate ``[tokens, heads, head_dim]`` at this chunk's positions."""
-        mx = self.mx
-        rotated = mx.fast.rope(
+        rotated = portable.rope(
+            self.mx,
             x.transpose(1, 0, 2)[None],
             dims,
-            traditional=False,
             base=base,
-            scale=1.0,
-            offset=self.start,
             freqs=freqs,
+            offset=self.start,
         )
         return rotated[0].transpose(1, 0, 2)
 
@@ -178,6 +177,16 @@ class DecodeBatch:
                 (pages * page + positions % page).astype(np.int32)
             )
             self._tables[name] = mx.array(packed)
+        # Without the Metal kernel, each group's keys are gathered into a
+        # dense block (the last ``span`` of each sequence) for plain attention.
+        self._metal = portable.metal_kernels(mx)
+        self._dense: dict[str, tuple[Any, Any]] = {}
+        if not self._metal:
+            for name, group in cache.groups.items():
+                span = min(self.longest, group.window or self.longest)
+                self._dense[name] = portable.decode_rows(
+                    mx, self._tables[name], self.lengths, page_size=page, span=span
+                )
 
     @property
     def positions(self) -> Any:
@@ -186,14 +195,8 @@ class DecodeBatch:
     def rope(
         self, x: Any, dims: int, *, base: float | None = None, freqs: Any = None
     ) -> Any:
-        rotated = self.mx.fast.rope(
-            x[:, :, None, :],
-            dims,
-            traditional=False,
-            base=base,
-            scale=1.0,
-            offset=self.offsets,
-            freqs=freqs,
+        rotated = portable.rope(
+            self.mx, x[:, :, None, :], dims, base=base, freqs=freqs, offset=self.offsets
         )
         return rotated[:, :, 0, :]
 
@@ -202,6 +205,8 @@ class DecodeBatch:
     ) -> Any:
         group = self.cache.layer_group[layer]
         self.cache.write(layer, self._write[group.name], k, v)
+        if not self._metal:
+            return self._attend_dense(layer, group.name, q, scale, softcap)
         out = paged_decode_attention(
             self.mx,
             q,
@@ -220,6 +225,26 @@ class DecodeBatch:
         )
         return out.reshape(self.count, -1)
 
+    def _attend_dense(
+        self, layer: int, name: str, q: Any, scale: float, softcap: float
+    ) -> Any:
+        rows, valid = self._dense[name]
+        batch, span = int(rows.shape[0]), int(rows.shape[1])
+        keys, values = self.cache.gather(layer, rows.reshape(-1))
+        heads, dim = int(keys.shape[1]), int(keys.shape[2])
+        keys = keys.reshape(batch, span, heads, dim).transpose(0, 2, 1, 3)
+        values = values.reshape(batch, span, heads, dim).transpose(0, 2, 1, 3)
+        out = portable.attention(
+            self.mx,
+            q[:, :, None, :],
+            keys,
+            values,
+            scale=scale,
+            mask=valid[:, None, None, :],
+            softcap=softcap,
+        )
+        return out.reshape(self.count, -1)
+
     def state(self, layer: int) -> list[Any]:
         return [array[self.slots] for array in self.cache.states[layer]]
 
@@ -231,13 +256,4 @@ class DecodeBatch:
 def _attention(
     mx: Any, q: Any, k: Any, v: Any, *, scale: float, mask: Any, softcap: float
 ) -> Any:
-    if not softcap:
-        return mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
-    groups = q.shape[1] // k.shape[1]
-    if groups > 1:
-        k = mx.repeat(k, groups, axis=1)
-        v = mx.repeat(v, groups, axis=1)
-    scores = (q.astype(mx.float32) * scale) @ k.astype(mx.float32).transpose(0, 1, 3, 2)
-    scores = mx.tanh(scores / softcap) * softcap
-    scores = mx.where(mask, scores, -mx.inf)
-    return (mx.softmax(scores, axis=-1) @ v.astype(mx.float32)).astype(q.dtype)
+    return portable.attention(mx, q, k, v, scale=scale, mask=mask, softcap=softcap)
