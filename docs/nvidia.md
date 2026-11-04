@@ -9,8 +9,8 @@ hasn't run on a GPU.
 
 You need Linux with glibc 2.35 or newer, an NVIDIA driver of 550.54 or newer,
 and a GPU of compute capability 7.5 or newer. MLX's Linux wheels need that
-glibc, so on RHEL 9 (glibc 2.34) run inside a container with a newer one,
-such as `python:3.12-slim-bookworm` under Apptainer.
+glibc, so on RHEL 9 (glibc 2.34) run inside a container with a newer one.
+[pace.md](pace.md) does that with Apptainer on Georgia Tech's cluster.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
