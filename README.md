@@ -121,7 +121,8 @@ with create_engine(
 For several concurrent requests, use `submit()`, then call `step()` until they
 finish. `cancel()` and `stats()` are also available. [docs/setup-mlx.md](docs/setup-mlx.md)
 covers Gemma export and the correctness tools, and [docs/setup-wsl.md](docs/setup-wsl.md)
-covers building the CUDA backend under WSL2.
+covers building the CUDA backend under WSL2, and [docs/pace.md](docs/pace.md)
+benchmarking on an H100 on Georgia Tech's PACE ICE cluster.
 
 ## Also in this repo
 
