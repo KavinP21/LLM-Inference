@@ -70,12 +70,18 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("names", nargs="*", help=f"any of: {', '.join(MODELS)}")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path("."),
+        help="folder to put models/ in (default: the current one)",
+    )
     args = parser.parse_args()
     unknown = set(args.names) - set(MODELS)
     if unknown:
         parser.error(f"unknown model(s): {', '.join(sorted(unknown))}")
     for name in args.names or DEFAULT:
-        print(json.dumps(prepare(name)), flush=True)
+        print(json.dumps(prepare(name, args.root)), flush=True)
 
 
 if __name__ == "__main__":

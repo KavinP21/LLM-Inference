@@ -43,7 +43,7 @@ jobs:
         env:
           PYTHONPATH: python
           INSTINCT_INSPECT_MODEL: build/instinct-inspect-model
-      - run: bash -n tools/*.sh
+      - run: bash -n tools/*.sh tools/pace/*.sh tools/pace/*.sbatch
 
   mlx-linux:
     # The MLX engine on Linux without Metal, through the same portable kernels
