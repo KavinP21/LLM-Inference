@@ -19,9 +19,30 @@ def mlx() -> Any:
         import mlx.core as mx
     except ImportError as exc:
         raise RuntimeError(
-            "the MLX engine needs Apple silicon and the 'mlx' extra: pip install 'instinct[mlx]'"
+            "the MLX engine needs MLX: pip install 'instinct[mlx]' on Apple silicon, "
+            "or 'mlx[cuda12]' on Linux with an NVIDIA GPU"
         ) from exc
     return mx
+
+
+def gpu_backend(mx: Any) -> str | None:
+    """The GPU backend MLX was built with and can reach: metal, cuda or None."""
+    for name in ("metal", "cuda"):
+        module = getattr(mx, name, None)
+        try:
+            if module is not None and module.is_available():
+                return name
+        except RuntimeError:
+            continue
+    return None
+
+
+def mlx_gpu_available() -> bool:
+    try:
+        import mlx.core as mx
+    except ImportError:
+        return False
+    return gpu_backend(mx) is not None
 
 
 def mlx_build_info() -> dict[str, object]:
@@ -31,8 +52,9 @@ def mlx_build_info() -> dict[str, object]:
     device = mx.device_info()
     return {
         "backend": "mlx",
+        "gpu_backend": gpu_backend(mx) or "cpu",
         "mlx_version": version("mlx"),
-        "device": device.get("device_name", "Apple GPU"),
+        "device": device.get("device_name", "unknown"),
         "architecture": device.get("architecture", "unknown"),
     }
 

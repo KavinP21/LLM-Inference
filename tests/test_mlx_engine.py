@@ -11,6 +11,7 @@ import pytest
 mx = pytest.importorskip("mlx.core")
 
 from conftest import tiny_artifact
+from instinct.backends import portable
 from instinct.backends.metal_kernels import paged_decode_attention
 from instinct.format import ModelConfig, write_engine
 from instinct.mlx_engine import MlxEngine
@@ -431,6 +432,8 @@ def test_sampling_settings_per_request(tmp_path):
 def test_paged_decode_kernel_matches_dense_attention(
     q_heads, kv_heads, head_dim, lengths, window, softcap, bits
 ):
+    if not portable.metal_kernels(mx):
+        pytest.skip("the Metal kernel needs an Apple GPU")
     page = 16
     mx.random.seed(0)
     pages = [math.ceil(n / page) for n in lengths]
@@ -490,6 +493,8 @@ def test_paged_decode_kernel_matches_dense_attention(
 
 
 def test_gated_delta_kernel_matches_the_recurrence():
+    if not portable.metal_kernels(mx):
+        pytest.skip("the Metal kernel needs an Apple GPU")
     from instinct.backends.metal_kernels import gated_delta
 
     rng = np.random.default_rng(3)

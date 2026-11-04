@@ -9,6 +9,7 @@ from typing import Any
 from ..model_contract import validate_gemma3_weights, validate_qwen2_weights
 from ..model_file import ModelFile
 from ..paged_kv import KVGroup
+from . import portable
 from .base import Weights, mlx
 
 
@@ -72,7 +73,9 @@ class DenseModel:
             raise
 
     def _norm(self, x: Any, name: str) -> Any:
-        return self.mx.fast.rms_norm(x, self.weights[name], self.config.rms_norm_eps)
+        return portable.rms_norm(
+            self.mx, x, self.weights[name], self.config.rms_norm_eps
+        )
 
     def forward(self, batch: Any) -> Any:
         mx, w, config = self.mx, self.weights, self.config

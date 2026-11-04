@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..paged_kv import KVGroup
+from . import portable
 from .base import load_checkpoint, mlx, text_config
 
 
@@ -97,7 +98,7 @@ class Gemma4Model:
 
     def _norm(self, x: Any, name: str | None) -> Any:
         weight = None if name is None else self.weights[name]
-        return self.mx.fast.rms_norm(x, weight, self.eps)
+        return portable.rms_norm(self.mx, x, weight, self.eps)
 
     def _experts(self, p: str, x: Any, indices: Any, weights: Any) -> Any:
         mx, w = self.mx, self.weights
@@ -175,7 +176,7 @@ class Gemma4Model:
                 ),
             )
             dense = self._norm(dense, p + "post_feedforward_layernorm_1.weight")
-            routed = mx.fast.rms_norm(x, self.router_scales[i], self.eps)
+            routed = portable.rms_norm(mx, x, self.router_scales[i], self.eps)
             scores = w.linear(p + "router.proj", routed)
             top = mx.argpartition(scores, kth=-self.top_k, axis=-1)[..., -self.top_k :]
             gates = mx.softmax(mx.take_along_axis(scores, top, axis=-1), axis=-1)
