@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from . import portable
 from .base import Weights
 
 
@@ -73,7 +74,7 @@ class Gemma4Vision:
 
     def _norm(self, x: Any, name: str | None) -> Any:
         weight = None if name is None else self.w[name]
-        return self.mx.fast.rms_norm(x, weight, self.eps)
+        return portable.rms_norm(self.mx, x, weight, self.eps)
 
     def _rope(self, x: Any, cos: Any, sin: Any) -> Any:
         """Rotate the x half and the y half of each head independently."""
@@ -136,7 +137,8 @@ class Gemma4Vision:
             q = self._rope(self._norm(q, pre + "self_attn.q_norm.weight"), cos, sin)
             k = self._rope(self._norm(k, pre + "self_attn.k_norm.weight"), cos, sin)
             v = self._norm(v, None)
-            out = mx.fast.scaled_dot_product_attention(
+            out = portable.attention(
+                mx,
                 q.transpose(1, 0, 2)[None],
                 k.transpose(1, 0, 2)[None],
                 v.transpose(1, 0, 2)[None],
