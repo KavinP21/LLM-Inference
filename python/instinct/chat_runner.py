@@ -11,8 +11,13 @@ what a chat needs on top of token generation:
   the next request is the same conversation plus new messages, only the new
   messages are rendered and appended, so the prompt starts with exactly the
   tokens the engine's prefix cache holds and only the new part is prefilled.
-  For other prompts the boundary before the final message is checkpointed,
-  which is what a sibling sub-agent or the next chat turn will share.
+  When the user's message ends a prompt, the engine checkpoints the spot
+  where it ends, just before the generation prompt. A later request that
+  keeps those messages but replaces what came after them branches from
+  there. A chat does that on the turn after the agent used tools: it keeps
+  the final answer and drops the tool calls. Cold prompts also checkpoint
+  the boundary before their final message, for siblings that share
+  everything before it.
 * Thinking budgets, streaming text and per-request metrics.
 """
 
@@ -28,6 +33,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from .chat_formats import (
     ChatFamily,
@@ -59,10 +66,17 @@ class RunnerResult:
 
 @dataclass
 class _Session:
-    messages: list[dict]
+    """A finished request: its messages, the reply as callers send it back,
+    and the token stream the engine cached for both."""
+
+    prompt: list[dict]
+    reply: dict
     render_key: str
-    tokens: list[int]
+    tokens: np.ndarray
     stop_text: str
+    # Where the prompt's final user message ends, before the generation
+    # prompt; the engine holds a checkpoint there. 0 when there isn't one.
+    cut: int = 0
 
 
 @dataclass
@@ -131,6 +145,13 @@ def checkpoint_fingerprint(path: str | Path) -> dict[str, str]:
         "model_config_sha256": digest(["config.json"]),
         "tokenizer_signature": digest(tokenizer),
     }
+
+
+def _render_key(tools: Any, thinking: bool) -> str:
+    """Requests render alike, and can share sessions, when these match."""
+    return hashlib.sha256(
+        json.dumps([tools, thinking], sort_keys=True, default=str).encode()
+    ).hexdigest()
 
 
 def _identity(message: dict) -> dict:
@@ -208,8 +229,7 @@ class ChatRunner:
         self.load_seconds = time.perf_counter() - started
         self.weight_bytes = self.mx.get_active_memory()
         self.max_sessions = max_sessions
-        self._sessions: OrderedDict[int, _Session] = OrderedDict()
-        self._session_key = 0
+        self._setup_prompts()
         self._image_cache: OrderedDict[str, Any] = OrderedDict()
         self.totals = {
             "requests": 0,
@@ -344,6 +364,19 @@ class ChatRunner:
 
     # --- prompts --------------------------------------------------------------
 
+    def _setup_prompts(self) -> None:
+        self._sessions: OrderedDict[int, _Session] = OrderedDict()
+        self._session_key = 0
+        self._generation_texts: dict[bool, str] = {}
+        # Template turns open with one of these. The tokenizer splits them
+        # out before anything else, so text can be cut at one and encoded
+        # in two parts with the same tokens as encoding it whole.
+        self._special_texts = tuple(
+            token.content
+            for token in self.tokenizer.added_tokens_decoder.values()
+            if token.special and token.content
+        )
+
     def _template_messages(self, messages: Sequence[dict]) -> list[dict]:
         converted = []
         for m in messages:
@@ -401,32 +434,46 @@ class ChatRunner:
     def _prompt(
         self, messages: list[dict], tools: Any, thinking: bool, render_key: str
     ):
+        """Token ids for ``messages``, the text they came from (the newly
+        rendered part when reusing a session), where they came from, and
+        checkpoints worth keeping on the way."""
         identity = [_identity(m) for m in messages]
         with self._lock:
-            candidates = list(reversed(self._sessions.items()))
-        for key, session in candidates:
-            n = len(session.messages)
-            if (
-                session.render_key != render_key
-                or n >= len(identity)
-                or identity[:n] != session.messages
-            ):
+            sessions = list(reversed(self._sessions.items()))
+        # Continue a reply (it and everything before it are unchanged), or
+        # branch from the end of an earlier prompt. The one that keeps more
+        # messages wins; continuing wins a tie, since it keeps the reply too.
+        candidates = []
+        for key, session in sessions:
+            if session.render_key != render_key:
                 continue
-            if any(m.get("media") for m in messages[n:]):
+            n = len(session.prompt)
+            if n >= len(identity) or identity[:n] != session.prompt:
+                continue
+            if n + 1 < len(identity) and identity[n] == session.reply:
+                candidates.append((n + 1, 1, key, session))
+            elif session.cut:
+                candidates.append((n, 0, key, session))
+        candidates.sort(key=lambda item: item[:2], reverse=True)
+        for kept, continued, key, session in candidates[:4]:
+            if any(m.get("media") for m in messages[kept:]):
                 break  # New images need their tokens expanded; render it all.
-            previous = [dict(m) for m in messages[:n]]
-            previous[-1] = {**previous[-1], "content": session.messages[-1]["content"]}
-            suffix = incremental_suffix(
-                lambda ms, gp: self.render(ms, tools, thinking, gp),
-                previous,
-                messages,
-                session.stop_text,
+            found = (
+                self._continue(messages, tools, thinking, session)
+                if continued
+                else self._branch(messages, tools, thinking, session)
             )
-            if suffix is None:
-                break
+            if found is None:
+                continue
             with self._lock:
-                self._sessions.pop(key, None)
-            return session.tokens + self._encode(suffix), suffix, "session", []
+                if key in self._sessions:
+                    if continued and not session.cut:
+                        # The new request's own session holds all of this.
+                        del self._sessions[key]
+                    else:
+                        self._sessions.move_to_end(key)
+            ids, suffix = found
+            return ids, suffix, "session" if continued else "branch", []
         text = self.render(messages, tools, thinking)
         if any(m.get("media") for m in messages):
             return self._encode(self._expand_images(text, messages)), text, "cold", []
@@ -438,6 +485,81 @@ class ChatRunner:
             "cold",
             [boundary] if boundary >= MIN_CHECKPOINT_TOKENS else [],
         )
+
+    def _prepare(
+        self, messages: list[dict], tools: Any, thinking: bool, render_key: str
+    ):
+        """``_prompt`` plus the cut after the user's message, checkpointed too."""
+        ids, text, source, checkpoints = self._prompt(
+            messages, tools, thinking, render_key
+        )
+        cut = self._cut(messages, thinking, ids, text)
+        if cut and cut not in checkpoints:
+            checkpoints = sorted([*checkpoints, cut])
+        return ids, text, source, checkpoints, cut
+
+    def _continue(self, messages, tools, thinking, session: _Session):
+        """The session's tokens through its reply, plus the new messages."""
+        n = len(session.prompt) + 1
+        previous = [dict(m) for m in messages[:n]]
+        previous[-1] = {**previous[-1], "content": session.reply["content"]}
+        suffix = incremental_suffix(
+            lambda ms, gp: self.render(ms, tools, thinking, gp),
+            previous,
+            messages,
+            session.stop_text,
+        )
+        if suffix is None:
+            return None
+        return session.tokens.tolist() + self._encode(suffix), suffix
+
+    def _branch(self, messages, tools, thinking, session: _Session):
+        """The session's tokens through its prompt's last message, then
+        everything after that message rendered fresh."""
+        head = self.render(messages[: len(session.prompt)], tools, thinking, False)
+        full = self.render(messages, tools, thinking)
+        suffix = full[len(head) :]
+        if not full.startswith(head) or not suffix.startswith(self._special_texts):
+            return None
+        return session.tokens[: session.cut].tolist() + self._encode(suffix), suffix
+
+    def _generation_text(self, thinking: bool) -> str:
+        """What the template appends to open the model's turn."""
+        if thinking not in self._generation_texts:
+            probe = [{"role": "user", "content": "\x00\x01"}]
+            opened = self.render(probe, None, thinking, True)
+            closed = self.render(probe, None, thinking, False)
+            self._generation_texts[thinking] = (
+                opened[len(closed) :] if opened.startswith(closed) else ""
+            )
+        return self._generation_texts[thinking]
+
+    def _cut(self, messages, thinking: bool, ids: list[int], text: str) -> int:
+        """Where the final message ends in ``ids`` if the user sent it, so a
+        later request can swap out whatever followed it; 0 otherwise."""
+        if messages[-1]["role"] != "user":
+            return 0
+        opening = self._generation_text(thinking)
+        if not opening or not text.endswith(opening):
+            return 0
+        tail = self._encode(opening)
+        if not tail or ids[-len(tail) :] != tail:
+            return 0
+        cut = len(ids) - len(tail)
+        return cut if cut >= MIN_CHECKPOINT_TOKENS else 0
+
+    def _remember(self, session: _Session) -> None:
+        with self._lock:
+            self._session_key += 1
+            self._sessions[self._session_key] = session
+            while len(self._sessions) > self.max_sessions:
+                # Sessions with a checkpoint are where later turns branch;
+                # the rest are only ever continued, so they go first.
+                victim = next(
+                    (k for k, s in self._sessions.items() if not s.cut),
+                    next(iter(self._sessions)),
+                )
+                del self._sessions[victim]
 
     def _images(self, messages: Sequence[dict]) -> list[tuple[str, Any]]:
         """(key, pixels) for every image in the conversation, in order."""
@@ -507,10 +629,8 @@ class ChatRunner:
             top_k=family.top_k if top_k is None else top_k,
             seed=seed,
         )
-        render_key = hashlib.sha256(
-            json.dumps([tools, thinking], sort_keys=True, default=str).encode()
-        ).hexdigest()
-        ids, text, source, checkpoints = self._prompt(
+        render_key = _render_key(tools, thinking)
+        ids, text, source, checkpoints, cut = self._prepare(
             messages, tools, thinking, render_key
         )
         limit = min(
@@ -604,19 +724,16 @@ class ChatRunner:
             # Cut off: close the turn the way the template would.
             stop_text = family.turn_end
             tokens = ids + output + self._encode(stop_text)
-        with self._lock:
-            self._session_key += 1
-            self._sessions[self._session_key] = _Session(
-                [
-                    _identity(m)
-                    for m in messages + [{"role": "assistant", "content": answer}]
-                ],
+        self._remember(
+            _Session(
+                [_identity(m) for m in messages],
+                _identity({"role": "assistant", "content": answer}),
                 render_key,
-                tokens,
+                np.asarray(tokens, dtype=np.int32),
                 stop_text,
+                cut,
             )
-            while len(self._sessions) > self.max_sessions:
-                self._sessions.popitem(last=False)
+        )
         prefilled = len(ids) - job.reused
         ttft = (first_token_at or finished) - started
         decode_seconds = max(finished - (first_token_at or finished), 1e-9)
@@ -626,6 +743,7 @@ class ChatRunner:
             else "prefix"
             if job.reused
             else "cold",
+            "prompt_source": source,
             "prompt_tokens": len(ids),
             "reused_tokens": job.reused,
             "prefilled_tokens": prefilled,

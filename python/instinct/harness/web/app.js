@@ -1423,7 +1423,7 @@
     patch($("dev-activity-viewer"), record ? `<div class="developer-detail"><h3>${escape(record.name === "run_tests" ? "Test output" : record.name === "run_command" ? "Command output" : ["failed", "denied", "cancelled", "expired", "stale", "interrupted"].includes(record.status) ? failedToolLabel(record.name, record.args, record.status) : toolLabel(record.name, record.args))}</h3><p>${escape(agentStatus(record.status))}${record.exit_code != null ? ` · exit ${escape(record.exit_code)}` : ""}${record.agent_id ? ` · ${escape(record.agent_id === "root" ? "Main agent" : record.agent_id)}` : ""}</p><pre class="activity-output">${escape(readableOutput(record.result) || (record.status === "proposed" ? "Waiting for approval before execution." : record.status === "running" ? "Command is running…" : "No output was recorded."))}</pre>${record.output_truncated ? '<p class="developer-footnote">Showing an output excerpt.</p>' : ""}<details class="tool-detail" data-key="activity-request-${escape(record.key)}">${disclosureSummary("Exact request")}<pre>${escape(pretty(record.args || {}))}</pre></details></div>` : "");
   }
   function cacheBadge(source) {
-    return `<span class="cache-badge ${escape(source || "none")}">${escape(({ session: "cached", snapshot: "snapshot", cold: "cold" })[source] || "–")}</span>`;
+    return `<span class="cache-badge ${escape(source || "none")}">${escape(({ session: "cached", prefix: "cached", snapshot: "snapshot", cold: "cold" })[source] || "–")}</span>`;
   }
   function agentLabel(id) { return id === "root" ? "Main" : id.replace(/^agent-0*/, "Sub-agent "); }
   function renderDeveloperPerformance() {

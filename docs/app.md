@@ -116,8 +116,13 @@ sooner if one more tool result would leave no room to write the summary. The pro
 The full history stays in the journal, and the agent can read it back with
 `journal_read`.
 
-A chat works the same way across replies. Each reply's prompt carries the
-earlier turns, up to about a third of the context. Once they pass 90% of that,
+A chat works the same way across replies. A plain reply continues the cached
+token stream, so the next message only processes itself. When the agent used
+tools, the chat keeps the final answer and drops the tool calls. The next reply
+then reuses everything up to the end of your previous message and processes
+only the answer and your new message. Neither case processes the whole history
+again. Each reply's prompt carries the earlier turns, up to about a third of
+the context. Once they pass 90% of that,
 the model summarizes the older turns before the next reply, keeping the latest
 ones word for word, and later replies start from the summary. Type `/compact`
 to summarize the whole chat yourself. The transcript marks where a summary was
