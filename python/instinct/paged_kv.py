@@ -147,6 +147,11 @@ class PagePool:
     def shared(self, page: int) -> bool:
         return self._refs[page] > 1
 
+    def held_only_by(self, counts: np.ndarray) -> int:
+        """How many pages would come free if ``counts[page]`` references to
+        each page were released: those with no other holder."""
+        return int(np.count_nonzero((counts > 0) & (self._refs == counts)))
+
 
 class KVCache:
     """Device arrays for every K/V group and recurrent-state group."""

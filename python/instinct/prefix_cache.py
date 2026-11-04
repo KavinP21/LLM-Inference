@@ -11,11 +11,18 @@ everything before their last window and recurrent state exists only for the
 final position, so a prefix can't be resumed from the middle. Entries are
 made when a request finishes (its prompt and reply) and at checkpoints the
 caller asks for, such as the end of a shared system prompt.
+
+Entries from one conversation share nearly all their pages, so the budget
+counts each page once. A reply that a later reply extends is superseded and
+is the first to go when room is needed. Checkpoints are the places a
+conversation branches from (the next chat turn, a sibling sub-agent), and
+they outlast replies: before this, a long tool loop's replies pushed out the
+checkpoint the following turn needed, and that turn prefilled from scratch.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -23,15 +30,16 @@ import numpy as np
 from .paged_kv import KVCache
 
 
-@dataclass
+@dataclass(eq=False)  # Entries compare by identity, not by token arrays.
 class Entry:
     namespace: str
     tokens: np.ndarray
     pages: dict[str, list[int]]
     slot: int
-    nbytes: int
+    checkpoint: bool
     used: int = 0
-    hits: int = field(default=0)
+    hits: int = 0
+    superseded: bool = False
 
 
 class PrefixCache:
@@ -61,7 +69,25 @@ class PrefixCache:
 
     @property
     def nbytes(self) -> int:
-        return sum(entry.nbytes for entry in self.entries)
+        """Bytes the entries hold, with a page shared by several counted once."""
+        total = self.slot_bytes * sum(entry.slot >= 0 for entry in self.entries)
+        for name, size in self.page_bytes.items():
+            total += size * int(np.count_nonzero(self._references(name)))
+        return total
+
+    def _references(self, name: str) -> np.ndarray:
+        """How many entries hold each page of group ``name``."""
+        tables = [
+            np.asarray(entry.pages[name], dtype=np.int64)
+            for entry in self.entries
+            if name in entry.pages
+        ]
+        pages = np.concatenate(tables) if tables else np.zeros(0, dtype=np.int64)
+        return np.bincount(pages[pages >= 0], minlength=self.cache.pools[name].capacity)
+
+    def _touch(self, entry: Entry) -> None:
+        self._clock += 1
+        entry.used = self._clock
 
     def find(self, namespace: str, prompt: np.ndarray) -> Entry | None:
         """The longest entry that is a proper prefix of ``prompt``."""
@@ -77,28 +103,35 @@ class PrefixCache:
             ):
                 best = entry
         if best is not None:
-            self._clock += 1
-            best.used = self._clock
+            self._touch(best)
             best.hits += 1
             self.counters["hits"] += 1
             self.counters["reused_tokens"] += len(best.tokens)
         return best
 
     def insert(
-        self, namespace: str, tokens: np.ndarray, pages: dict[str, list[int]], slot: int
+        self,
+        namespace: str,
+        tokens: np.ndarray,
+        pages: dict[str, list[int]],
+        slot: int,
+        *,
+        checkpoint: bool = False,
     ) -> None:
+        """Keep ``tokens``. ``checkpoint`` marks a branch point the caller
+        asked for; otherwise it's a finished request's prompt and reply."""
         if self.budget_bytes <= 0 or len(tokens) == 0:
             return
         for entry in self.entries:
             if entry.namespace == namespace and np.array_equal(entry.tokens, tokens):
-                self._clock += 1
-                entry.used = self._clock
+                entry.checkpoint = entry.checkpoint or checkpoint
+                self._touch(entry)
                 return
-        nbytes = sum(
+        size = sum(
             self.page_bytes[name] * sum(page >= 0 for page in table)
             for name, table in pages.items()
         ) + (self.slot_bytes if slot >= 0 else 0)
-        if nbytes > self.budget_bytes:
+        if size > self.budget_bytes:
             return
         snapshot = -1
         if slot >= 0:
@@ -111,28 +144,56 @@ class PrefixCache:
         kept = {name: list(table) for name, table in pages.items()}
         for name, table in kept.items():
             self.cache.pools[name].retain(table)
-        self._clock += 1
-        self.entries.append(
-            Entry(namespace, tokens.copy(), kept, snapshot, nbytes, self._clock)
-        )
+        entry = Entry(namespace, tokens.copy(), kept, snapshot, checkpoint)
+        self._touch(entry)
+        if not checkpoint:
+            for other in self.entries:
+                n = len(other.tokens)
+                if (
+                    not other.checkpoint
+                    and other.namespace == namespace
+                    and n < len(tokens)
+                    and np.array_equal(tokens[:n], other.tokens)
+                ):
+                    other.superseded = True
+        self.entries.append(entry)
         self.counters["inserted"] += 1
         while len(self.entries) > self.max_entries or self.nbytes > self.budget_bytes:
-            self._drop(min(self.entries, key=lambda e: e.used))
+            self._drop(self._victim(keep=entry))
+
+    def _victim(self, keep: Entry | None = None) -> Entry:
+        """Superseded replies go first, then the least recently used."""
+        return min(
+            (entry for entry in self.entries if entry is not keep),
+            key=lambda entry: (not entry.superseded, entry.used),
+        )
 
     def evict(self, *, pages: dict[str, int] | None = None, slots: int = 0) -> bool:
-        """Drop least-recently-used entries until the pools can supply ``pages``
-        (and ``slots`` state slots). Returns whether they now can."""
+        """Drop entries until the pools can supply ``pages`` (and ``slots``
+        state slots), and say whether they now can. When even dropping every
+        entry wouldn't free enough, running requests hold the pages, so
+        nothing is dropped."""
+        pages = pages or {}
 
         def short() -> bool:
             if slots and len(self.cache.state_slots) < slots:
                 return True
             return any(
                 self.cache.pools[name].available < count
-                for name, count in (pages or {}).items()
+                for name, count in pages.items()
             )
 
+        if not short():
+            return True
+        held_slots = sum(entry.slot >= 0 for entry in self.entries)
+        if slots and len(self.cache.state_slots) + held_slots < slots:
+            return False
+        for name, count in pages.items():
+            pool = self.cache.pools[name]
+            if pool.available + pool.held_only_by(self._references(name)) < count:
+                return False
         while short() and self.entries:
-            self._drop(min(self.entries, key=lambda e: e.used))
+            self._drop(self._victim())
         return not short()
 
     def clear(self, namespace: str | None = None) -> None:
@@ -151,6 +212,8 @@ class PrefixCache:
     def stats(self) -> dict[str, Any]:
         return {
             "entries": len(self.entries),
+            "checkpoints": sum(entry.checkpoint for entry in self.entries),
+            "superseded": sum(entry.superseded for entry in self.entries),
             "bytes": self.nbytes,
             "budget_bytes": self.budget_bytes,
             **self.counters,
