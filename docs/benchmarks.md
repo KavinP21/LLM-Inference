@@ -63,6 +63,35 @@ prompt's wait (128 tokens: 200 ms gaps, 12.7 s to first token; 64 tokens:
 PYTHONPATH=python python benchmarks/multi_user.py models/gemma-4-26b-a4b-mlx
 ```
 
+### Over HTTP
+
+`benchmarks/serve_load.py` measures what a client of the `/v1` API sees. Each
+simulated user holds a three-turn chat:
+
+- The first message carries that user's own document (400 words here).
+- Every turn resends the whole history and streams a reply of up to 64
+  tokens at temperature 0.7.
+
+All users at a given level start at once. Later turns should find almost
+their whole prompt in the prefix cache.
+
+Results for Qwen3.5-4B on one worker (`--max-pending 8`), on an M3 Max:
+
+| Users | Total tok/s | Each user's decode tok/s (p50 / min) | First token, turn 1 (p50 / p95) | First token, later turns (p50 / p95) | Later turns' prompt from cache |
+| ---: | ---: | --- | --- | --- | ---: |
+| 1 | 56.3 | 71.2 / 70.7 | 0.57 / 0.57 s | 0.11 / 0.11 s | 96.6% |
+| 2 | 82.2 | 57.4 / 41.3 | 0.57 / 1.15 s | 0.16 / 0.16 s | 96.5% |
+| 4 | 107.2 | 39.2 / 22.1 | 1.71 / 2.29 s | 0.16 / 0.21 s | 96.5% |
+
+The rest of each later prompt is the new question and the generation prompt.
+
+```bash
+INSTINCT_WORKER_TOKEN=... python -m instinct.agents.worker --runner chat \
+  --model models/qwen3.5-4b-mlx --tokenizer models/qwen3.5-4b-mlx \
+  --max-model-length 32768 --kv-cache-bytes $((4 << 30)) --max-pending 8 &
+INSTINCT_WORKER_TOKEN=... python benchmarks/serve_load.py --users 1,2,4
+```
+
 ## 256K context
 
 Gemma 4 read a 261,840-token prompt (the repository's source, repeated) and
