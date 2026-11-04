@@ -631,7 +631,7 @@ dialog::backdrop { background: var(--scrim); }
 .perf-table td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .perf-table small { color: var(--faint); }
 .cache-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--raised); color: var(--muted); }
-.cache-badge.session { background: var(--ok-soft); color: var(--ok); }
+.cache-badge.session, .cache-badge.prefix { background: var(--ok-soft); color: var(--ok); }
 .cache-badge.snapshot { background: var(--ok-soft); color: var(--ok); }
 .cache-badge.cold { background: var(--warn-soft); color: var(--warn); }
 .worker-card { padding: 12px; margin-bottom: 8px; }
