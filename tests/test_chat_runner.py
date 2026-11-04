@@ -49,6 +49,31 @@ def test_follow_up_turn_continues_the_session(runner):
     assert second.cached_tokens >= first.input_tokens
 
 
+def test_the_turn_after_a_tool_loop_reuses_the_users_message(runner):
+    system = {"role": "system", "content": "You are a careful, brief assistant. " * 40}
+    ask = {
+        "role": "user",
+        "content": "Here are my notes: "
+        + "The deploy script copies files, then restarts the server. " * 20
+        + "What is 7 times 6? Number only.",
+    }
+    first = runner.generate([system, ask], max_tokens=16)
+    loop = [system, ask, {"role": "assistant", "content": first.text}]
+    step = runner.generate(
+        loop + [{"role": "tool", "content": "calculator: 42"}], max_tokens=16
+    )
+    assert step.metrics["cache_source"] == "session"
+    # A chat keeps the final answer but not the tool loop behind it.
+    turn = [system, ask, {"role": "assistant", "content": "7 times 6 is 42."}]
+    turn.append({"role": "user", "content": "Add one. Number only."})
+    second = runner.generate(turn, max_tokens=16)
+    assert "43" in second.text
+    assert second.metrics["prompt_source"] == "branch"
+    # Everything through the notes came from the cache, not just the system
+    # prompt: only the generation prompt after them is recomputed.
+    assert second.cached_tokens >= first.input_tokens - 12
+
+
 def test_thinking_budget_closes_the_thought(runner):
     result = runner.generate(
         [
