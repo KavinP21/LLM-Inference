@@ -39,6 +39,11 @@ PYBIND11_MODULE(_instinct, module) {
       .def_readonly("request_id", &instinct::TokenEvent::request_id)
       .def_readonly("token", &instinct::TokenEvent::token)
       .def_readonly("finished", &instinct::TokenEvent::finished);
+  const auto prefill_logits = [](instinct::Engine& engine,
+                                 const std::vector<std::int32_t>& tokens) {
+    py::gil_scoped_release release;
+    return engine.debug_prefill_logits(tokens);
+  };
   py::class_<instinct::Engine>(module, "Engine")
       .def(py::init<const std::filesystem::path&, std::uint32_t, std::uint32_t, std::uint64_t>(),
            py::arg("model_path"), py::arg("max_num_sequences") = 16,
@@ -81,9 +86,6 @@ PYBIND11_MODULE(_instinct, module) {
         py::gil_scoped_release release;
         return engine.generate(tokens, maximum, eos);
       }, py::arg("input_ids"), py::arg("max_new_tokens"), py::arg("eos_token_ids"))
-      .def("debug_prefill_logits", [](instinct::Engine& engine,
-                                       const std::vector<std::int32_t>& tokens) {
-        py::gil_scoped_release release;
-        return engine.debug_prefill_logits(tokens);
-      }, py::arg("input_ids"));
+      .def("prefill_logits", prefill_logits, py::arg("input_ids"))
+      .def("debug_prefill_logits", prefill_logits, py::arg("input_ids"));
 }

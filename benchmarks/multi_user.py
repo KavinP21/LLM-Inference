@@ -37,6 +37,8 @@ def percentile(values: list[float], q: float) -> float:
 
 
 def run(model: Path, *, users: int, tokens: int, late_prompt: int, **options) -> dict:
+    if min(users, tokens, late_prompt) <= 0:
+        raise ValueError("users, tokens and late prompt length must be positive")
     engine = MlxEngine(
         model,
         max_num_sequences=users + 1,
@@ -63,7 +65,7 @@ def run(model: Path, *, users: int, tokens: int, late_prompt: int, **options) ->
             elif event.request_id == late and late_first is None:
                 late_first = now
         # The late user arrives once everyone has a quarter of their reply.
-        if late is None and all(len(s) >= tokens // 4 for s in stamps.values()):
+        if late is None and all(len(s) >= max(1, tokens // 4) for s in stamps.values()):
             late = engine.submit(prompt(late_prompt, 77), 16)
             late_started = now
     elapsed = time.perf_counter() - started
@@ -79,9 +81,13 @@ def run(model: Path, *, users: int, tokens: int, late_prompt: int, **options) ->
                 "sampling": SETTINGS[index % len(SETTINGS)].__dict__,
                 "prompt_tokens": lengths[index],
                 "tokens": len(times),
-                "tok_per_s": round(decode / (times[-1] - times[0]), 1),
-                "gap_p50_ms": round(statistics.median(gaps) * 1000, 1),
-                "gap_p99_ms": round(percentile(gaps, 0.99) * 1000, 1),
+                "tok_per_s": round(decode / (times[-1] - times[0]), 1)
+                if gaps
+                else None,
+                "gap_p50_ms": round(statistics.median(gaps) * 1000, 1)
+                if gaps
+                else None,
+                "gap_p99_ms": round(percentile(gaps, 0.99) * 1000, 1) if gaps else None,
             }
         )
         gaps_during_prefill += [

@@ -106,7 +106,7 @@ instinct-bench \
 ```
 
 This only checks the end-to-end API and result schema. Do not publish a one-warmup/one-trial smoke
-run as a performance result; use the controlled matrix in `docs/benchmarking.md`.
+run as a performance result. Use the [benchmark matrix](benchmarks.md#fp16-throughput).
 
 Use `--mlx-kernel-mode baseline`, `fused`, or `full` for kernel ablations. Capture one end-to-end
 measured repetition with:

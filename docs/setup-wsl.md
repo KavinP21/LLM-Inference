@@ -78,10 +78,11 @@ nsys profile --trace=cuda,nvtx,cublas --sample=none \
   -o profiles/instinct-p128-o32-c1 \
   python -m instinct.benchmark \
     --model models/qwen2.5-0.5b.engine \
-    --prompts benchmark-results/workloads/p128-c1.json \
+    --prompts benchmarks/results/fp16-m3-max-2026-09-23/workloads/p128-c1.json \
     --output benchmark-results/instinct-p128-o32-c1.json
 ```
 
-Run a short matrix first (`--prompt-lengths 32 128 --output-lengths 32 --concurrencies 1 4`) before
-committing a full weekend to the canonical grid.
+For a short matrix, run `python benchmarks/run_matrix.py --backend cuda
+--model models/qwen2.5-0.5b.engine --prompt-lengths 32 128 --output-lengths 32
+--concurrencies 1 4`.
 

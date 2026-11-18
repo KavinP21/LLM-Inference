@@ -288,8 +288,7 @@ class ContextMixin:
         history = self._history(run_id, agent_id, config)
         if self.native_mode:
             history = self._compacted(run_id, agent_id, history)
-        # Native agents get state through persisted notes (see _note_state), so
-        # their prompt only ever grows by appending.
+        # Persisted notes let native prompts grow by appending between compactions.
         menu = "" if self.native_mode else self._legal_menu(run_id, agent_id, config)
 
         def with_menu(messages: list[ChatMessage]) -> list[ChatMessage]:

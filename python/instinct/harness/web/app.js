@@ -1,4 +1,3 @@
-/* Instinct: a conversation surface over the durable local harness. */
 "use strict";
 
 (() => {

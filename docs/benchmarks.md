@@ -36,6 +36,11 @@ PYTHONPATH=python python benchmarks/run_matrix.py \
 PYTHONPATH=python python benchmarks/summarize.py benchmark-results/paged
 ```
 
+The native chat cache can also be measured with `benchmarks/bench_runner.py`.
+The earlier MLX-VLM draft comparison lives in
+[its last supported checkout](https://github.com/KavinP21/LLM-Inference/tree/50e4739dd3c2ae36af19efaf161e1f1acfeb56d2).
+Use that checkout's `mlx` and `vlm` extras for the historical `--draft` run.
+
 ## Several users at once
 
 `benchmarks/multi_user.py` runs three users on one engine with different

@@ -115,6 +115,16 @@ def test_tool_calls_come_back_in_openai_shape(dialect, text):
     assert json.loads(calls[0]["function"]["arguments"]) == {"path": "a.py", "n": 2}
 
 
+def test_qwen_xml_uses_declared_parameter_types():
+    _, calls = tool_calls(
+        "<tool_call><function=lookup><parameter=code>123</parameter>"
+        "</function></tool_call>",
+        "qwen3_coder_xml",
+        tool_schemas={"lookup": {"properties": {"code": {"type": "string"}}}},
+    )
+    assert json.loads(calls[0]["function"]["arguments"]) == {"code": "123"}
+
+
 def test_streaming_separates_reasoning_from_the_answer():
     request = parse_request(
         {"messages": [{"role": "user", "content": "hi"}], "reasoning_effort": "low"},

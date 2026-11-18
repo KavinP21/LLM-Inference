@@ -7,7 +7,6 @@ import math
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -16,13 +15,6 @@ from ..media import MAX_TOTAL_MEDIA_BYTES, validate_media
 from ..protocol import ChatMessage
 
 DIALECTS = frozenset({"json", "qwen3_coder_xml", "gemma4"})
-
-
-def _installed_version(package: str) -> str | None:
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return None
 
 
 SAMPLING_OPTIONS = {"temperature", "top_p", "top_k", "seed"}

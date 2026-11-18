@@ -1,9 +1,8 @@
 # Running on NVIDIA GPUs
 
-The MLX engine, with Gemma 4, Qwen3.5, `ChatRunner` and the `/v1` API, also runs
-on NVIDIA GPUs through MLX's CUDA backend. This is separate from the C++ CUDA
-engine in [cuda/](../cuda/), which only reads exported Qwen2 `.engine` files and
-hasn't run on a GPU.
+The MLX engine has a portable path for Gemma 4, Qwen3.5, `ChatRunner` and the
+`/v1` API on MLX's CUDA backend. NVIDIA hardware validation is pending. The
+separate [C++ CUDA engine](../cuda/) reads exported Qwen2 `.engine` files.
 
 ## Install
 
@@ -17,7 +16,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install "mlx[cuda12]==0.32.4" "nvidia-cuda-runtime-cu12==12.9.*" \
   "transformers>=5.14,<6" "safetensors>=0.8" "huggingface-hub>=1.0" Pillow
 export PYTHONPATH=$PWD/python
-python -m instinct.prepare_models          # Gemma 4 and Qwen3.5, about 19 GB
+python -m instinct.prepare_models          # Gemma 4 and Qwen3.5
 ```
 
 The pip packages bring the CUDA libraries, so no CUDA toolkit is required. The
@@ -62,7 +61,7 @@ version. The ops checked are:
 
 ## How it was checked
 
-There's no NVIDIA GPU here, so the portable path is checked three ways:
+The portable path has three checks so far:
 
 - **Against the Metal path on an M3 Max**, with real checkpoints and a 3,000-token
   prompt:
@@ -82,5 +81,5 @@ There's no NVIDIA GPU here, so the portable path is checked three ways:
   near-full write strength, where a naive chunk solve overflows. Each plain op
   matches its fused op.
 
-Speed on NVIDIA is unmeasured. Decode attention reads every cached key twice
-(gather, then attend), which matters only at long contexts.
+Decode attention first gathers keys into a dense block. The extra memory
+traffic grows with the visible context.

@@ -17,6 +17,10 @@ from pathlib import Path
 
 from instinct.chat_runner import ChatRunner
 
+FIRST_QUESTION = "How many lines above have status retry? Estimate."
+FOLLOW_UP = "Which worker number appears most? One line."
+REPLY_TOKENS = 128
+
 
 def filler(tokenizer, tokens: int) -> str:
     """Text of about ``tokens`` tokens: numbered log lines a question can
@@ -38,34 +42,57 @@ def filler(tokenizer, tokens: int) -> str:
     return tokenizer.decode(ids)
 
 
+def log_token_budget(runner: ChatRunner, requested: int) -> int:
+    framing = runner.render(
+        [
+            {"role": "user", "content": FIRST_QUESTION},
+            {"role": "assistant", "content": ""},
+            {"role": "user", "content": FOLLOW_UP},
+        ],
+        tools=None,
+        thinking=False,
+    )
+    framing_tokens = len(runner.tokenizer.encode(framing, add_special_tokens=False))
+    # Leave room for both replies and for tokenization at the text boundaries.
+    available = runner.max_context_tokens - framing_tokens - 2 * REPLY_TOKENS - 32
+    if available < 1:
+        raise ValueError("model context is too small for the two-turn benchmark")
+    return min(requested, available)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("model")
-    parser.add_argument("--tokens", type=int, default=131072)
+    parser.add_argument("--tokens", type=int, default=131072, help="target log length")
     parser.add_argument("--kv-cache-gb", type=int, default=24)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.tokens <= 0:
+        parser.error("--tokens must be positive")
     with ChatRunner(
         args.model,
         max_num_sequences=2,
         max_context_tokens=args.tokens + 8192,
         kv_cache_bytes=args.kv_cache_gb << 30,
     ) as runner:
-        log = filler(runner.tokenizer, args.tokens)
+        log_tokens = log_token_budget(runner, args.tokens)
+        log = filler(runner.tokenizer, log_tokens)
         convo = [
             {
                 "role": "user",
-                "content": log + "\nHow many lines above have status retry? Estimate.",
+                "content": f"{log}\n{FIRST_QUESTION}",
             }
         ]
-        first = runner.generate(convo, max_tokens=128)
+        first = runner.generate(convo, max_tokens=REPLY_TOKENS)
         convo += [
             {"role": "assistant", "content": first.text},
-            {"role": "user", "content": "Which worker number appears most? One line."},
+            {"role": "user", "content": FOLLOW_UP},
         ]
-        second = runner.generate(convo, max_tokens=128)
+        second = runner.generate(convo, max_tokens=REPLY_TOKENS)
     report = {
         "model": args.model,
+        "requested_log_tokens": args.tokens,
+        "log_token_budget": log_tokens,
         "context_tokens": first.input_tokens,
         "first_turn": first.metrics,
         "follow_up": second.metrics,

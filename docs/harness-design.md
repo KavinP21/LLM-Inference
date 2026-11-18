@@ -1,28 +1,14 @@
 # Instinct internals
 
-Instinct puts a chat interface on top of the existing task-agent runtime.
-The inference engine still runs the model; Studio handles conversations, tool
-approvals and the browser UI. Better scheduling on its own doesn't make a model
-reason any better.
+The app handles conversations, tool approvals and the browser UI. The agent
+runtime schedules work and the inference engine runs the model.
 
 ## Experience
 
-The normal path is open, type, Enter, read the reply, and type a follow-up in
-the same composer. Backend loading happens automatically. User messages, answers,
-tool activity, child-agent progress and approval prompts share one transcript.
-Technical controls are secondary settings rather than required task setup.
-The custom palette and styling do not introduce another workflow to learn.
-
-Enter sends, Shift+Enter inserts a newline, and Escape/Stop interrupts active
-work. Accepted messages are durable before model startup. Request IDs prevent
-an uncertain browser retry from creating duplicate work. Follow-ups preserve
-conversation roles and context rather than asking the user to branch a mission.
-A collapsed Chats rail supplies history and a New chat action.
-An optional Workspace panel exposes assigned agent scopes/current operations,
-created and current files, exact change receipts and command output. It can be
-opened beside chat and hidden without changing the conversation workflow.
-Image attachments are validated and stored privately; model history and child
-delegation carry their actual bytes within per-request limits.
+The transcript shows replies, tool activity, child agents and approval
+requests. The Workspace panel shows agent tasks, file changes and command
+output. Accepted messages are saved even while models are loading. Request IDs
+prevent a browser retry from submitting the same message twice.
 
 ## Components and boundaries
 
@@ -36,7 +22,7 @@ delegation carry their actual bytes within per-request limits.
 | `harness.commands` | Reviewed argv commands, bounded output and owned process-group cancellation |
 | `harness.policy` | Exact-invocation approval, expiry, cancellation, read-only mode and lifecycle hooks |
 | `harness.extensions` | Selected local skills and explicitly configured MCP processes |
-| `harness.server` | Loopback HTTP, authenticated mutations, static UI and trace export |
+| `harness.server` | App HTTP, authenticated requests, static UI and trace export |
 | `harness.web` | Persistent composer, transcript, inline activity/review, chat history and secondary settings |
 
 One asyncio loop owns the journal, policies, runtime tasks and model pool.
@@ -60,9 +46,8 @@ Cancellation propagates through runtime and worker cancellation.
 Interrupted runs retain remaining budgets and deadline; recovery is explicit.
 Terminal agent runs remain immutable. A conversation links ordered runs while
 preserving prior user and assistant roles in bounded model context. Current
-requests stay pinned if older history is compacted. Internal run IDs and lineage
-do not require the user to learn a separate branching workflow. The legacy
-mission endpoints remain available for programmatic integrations.
+requests stay pinned when older history is compacted. The app also exposes the
+run API separately from chats.
 
 ## Tool policy
 
@@ -75,13 +60,13 @@ executes trusted repository Python and is not an operating-system sandbox.
 Children receive read tools by default and cannot escalate beyond their parent's
 tool set. Uncertain side effects are not automatically replayed after a crash.
 
-The server binds only to loopback. A randomly generated browser bootstrap token
-is exchanged for an HttpOnly SameSite cookie; the UI removes the token fragment.
-Mutations require JSON, the expected Host, and a same-origin Origin if supplied.
-There is no automatic shell expansion or plugin installation. Model-proposed
-commands require approval of their exact argv, cwd and timeout; executables run
-with the operator's OS privileges. MCP commands come from an operator-selected local configuration.
-MCP tool annotations are descriptive, never an authority to bypass review.
+The app listens on loopback by default. A separate listener for other devices
+requires an app key and can use TLS. See [device setup](app.md#other-devices).
+The local browser exchanges a bootstrap token for a session cookie.
+
+In review mode, command approval covers the exact arguments, working directory
+and timeout. App commands run under the macOS sandbox. MCP processes come from
+the operator's configuration and use the same review policy for tool calls.
 
 ## Extensions and tracing
 
@@ -103,11 +88,9 @@ path confinement, stdio protocol negotiation, cancellation and HTTP authorizatio
 Browser QA covers empty, live, review, error and narrow layouts. A small local
 model smoke run checks integration separately from deterministic tests.
 
-This initial release does not claim frontier model capability, broad task
-reliability, full OS/container isolation, remote public serving, collaboration
-between human accounts, arbitrary computer use or hosted automation. The design
-keeps those separate from working local orchestration. Model execution is shown
-at action boundaries; token-by-token streaming is a separate worker capability.
+The transcript streams partial model output when the worker supports it.
+[Agent evaluations](agent-runtime.md#how-real-models-did) describe the tasks
+used to check model behavior.
 
 ## Public design references
 

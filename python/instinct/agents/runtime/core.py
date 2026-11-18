@@ -1040,7 +1040,7 @@ class AgentRuntime(PromptMixin, ContextMixin, ActionMixin):
                     ]
                 if len(actions) > 1:
                     self._validate_batch(run_id, agent_id, actions, config)
-                    action = {"action": "batch", "items": actions, "next_index": 0}
+                    action = {"action": "batch", "items": actions}
                 else:
                     action = actions[0]
             else:

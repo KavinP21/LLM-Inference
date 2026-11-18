@@ -8,8 +8,8 @@ from pathlib import Path
 
 from gpu_guard import exclusive_gpu_workflow
 from instinct.benchmark import (
+    latency_percentiles,
     model_provenance,
-    percentile,
     run_once,
     source_provenance,
 )
@@ -87,16 +87,13 @@ def measure(model, mode, length, concurrency, warmups=5, repetitions=3):
         "aggregate": {
             "generated_tokens_per_second": concurrency * repetitions * 32 / elapsed,
             **{
-                name: {
-                    f"p{int(q * 100)}": percentile([r[name] for r in requests], q)
-                    for q in (0.5, 0.95, 0.99)
-                }
+                name: latency_percentiles([r[name] for r in requests])
                 for name in ("ttft_ms", "tpot_ms", "e2e_ms")
             },
         },
         "retained_cache_stats": retained,
         "cleared_stats": cleared,
-        "scope": "Same deterministic full prompts reused, 5 warmups/3 trials, raw queue-inclusive request times. Priming excluded, cold insertion included. Rowwise contract only; no semantic quality, universal speedup, GPU utilization/power or hardware-counter claim.",
+        "scope": "Fixed prompts. Latency includes queueing and cold insertion. Priming is outside the timed interval.",
     }
 
 

@@ -7,7 +7,7 @@ import platform
 import time
 from pathlib import Path
 
-from .benchmark import command_output, percentile
+from .benchmark import command_output, latency_percentiles
 
 
 def one_trial(model: object, encoded: dict, output_length: int) -> dict[str, float]:
@@ -137,21 +137,9 @@ def benchmark_reference(
             * output_length
             * repetitions
             / (sum(e2e) / 1000),
-            "ttft_ms": {
-                "p50": percentile(ttft, 0.5),
-                "p95": percentile(ttft, 0.95),
-                "p99": percentile(ttft, 0.99),
-            },
-            "tpot_ms": {
-                "p50": percentile(tpot, 0.5),
-                "p95": percentile(tpot, 0.95),
-                "p99": percentile(tpot, 0.99),
-            },
-            "e2e_ms": {
-                "p50": percentile(e2e, 0.5),
-                "p95": percentile(e2e, 0.95),
-                "p99": percentile(e2e, 0.99),
-            },
+            "ttft_ms": latency_percentiles(ttft),
+            "tpot_ms": latency_percentiles(tpot),
+            "e2e_ms": latency_percentiles(e2e),
         },
         "trials": trials,
     }

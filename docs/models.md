@@ -14,7 +14,7 @@ Instinct uses two models, both run by its own MLX engine:
 
 ```bash
 pip install -e '.[mlx,agents]'
-python -m instinct.prepare_models    # ~17 GB into models/, pinned revisions
+python -m instinct.prepare_models    # pinned checkpoints into models/
 ```
 
 The adapters (`backends/gemma4.py`, `backends/qwen35.py`) load the checkpoints'
@@ -100,4 +100,4 @@ The engine also runs FP16 Qwen2 and Gemma 3 `.engine` files.
   prompt is slow: 29 minutes for 262K tokens on Gemma (see
   [benchmarks](benchmarks.md#256k-context)). Gemma 4's audio input hasn't been
   tried here.
-- On NVIDIA GPUs both models run through MLX's CUDA backend, untested on real hardware so far. See [nvidia.md](nvidia.md).
+- Both models have a portable path for MLX's CUDA backend. See [NVIDIA setup](nvidia.md) for validation status.
