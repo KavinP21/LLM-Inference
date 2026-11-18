@@ -11,8 +11,10 @@ else.
 ## Install
 
 ```bash
-pip install -e '.[mlx,agents]'      # into .venv
-python -m instinct.prepare_models       # ~18 GB of models into models/
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[mlx,agents]'
+python -m instinct.prepare_models
 macos/build.sh --install                # builds ~/Applications/Instinct.app
 ```
 
@@ -107,9 +109,9 @@ offline.
 
 ## Long tasks
 
-Every agent step sends the whole conversation, so long tasks depend on the
-prompt cache. The model only processes what is new since its last step; a
-follow-up typically starts in under 100 ms. Agents have a 250K-token context.
+Each model call includes the conversation history. When a cached prefix still
+matches, the engine only prefills the remaining tokens. The default app
+configuration allows up to 250,000 tokens per agent.
 When an agent's context passes 90% of its budget, the agent writes a summary of
 its work so far, and older messages are replaced by that summary. It compacts
 sooner if one more tool result would leave no room to write the summary. The prompt then grows by appending again.

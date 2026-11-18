@@ -77,6 +77,13 @@ def parse_action(
         action = strict_json(text, ProtocolError)
     except (ValueError, RecursionError) as exc:
         raise ProtocolError(f"invalid JSON: {exc}") from exc
+    return validate_action(action, allowed_tools=allowed_tools)
+
+
+def validate_action(
+    action: Any, *, allowed_tools: Collection[str] = ()
+) -> dict[str, Any]:
+    """Validate an action that has already been decoded."""
     if not isinstance(action, dict) or not isinstance(action.get("action"), str):
         raise ProtocolError('response must be an object with string field "action"')
     stack = [action]

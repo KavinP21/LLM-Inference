@@ -187,9 +187,6 @@ class KVCache:
         for group in groups:
             self._grow(group, min(INITIAL_PAGES, capacities[group.name]))
         self.state_groups = {group.name: group for group in state_groups}
-        self.layer_state = {
-            layer: group for group in state_groups for layer in group.layers
-        }
         self.states: dict[int, list[Any]] = {
             layer: [
                 mx.zeros((state_slots, *shape), dtype)
@@ -204,7 +201,7 @@ class KVCache:
             *[a for arrays in self.states.values() for a in arrays],
         )
 
-    # --- capacity -------------------------------------------------------------
+    # capacity
 
     @property
     def _stores(self) -> tuple[dict[int, Any], ...]:
@@ -212,6 +209,11 @@ class KVCache:
         if self.bits == 8:
             return self.keys, self.values, self.key_scales, self.value_scales
         return self.keys, self.values
+
+    def clear(self) -> None:
+        for store in self._stores:
+            store.clear()
+        self.states.clear()
 
     def _grow(self, group: KVGroup, pages: int) -> None:
         mx = self.mx
@@ -252,7 +254,7 @@ class KVCache:
         total = sum(array.nbytes for store in self._stores for array in store.values())
         return total + sum(a.nbytes for arrays in self.states.values() for a in arrays)
 
-    # --- pages ----------------------------------------------------------------
+    # pages
 
     def rows(self, table: np.ndarray, start: int, end: int) -> np.ndarray:
         """Physical rows of logical positions ``[start, end)``."""
@@ -271,7 +273,7 @@ class KVCache:
             for store in self._stores:
                 store[layer][dst] = store[layer][src]
 
-    # --- writes and reads -----------------------------------------------------
+    # writes and reads
 
     def write(self, layer: int, rows: Any, keys: Any, values: Any) -> None:
         if self.bits == 8:
@@ -289,7 +291,7 @@ class KVCache:
             keys, values = keys.astype(self.dtype), values.astype(self.dtype)
         return keys, values
 
-    # --- recurrent state slots ------------------------------------------------
+    # recurrent state slots
 
     def take_slot(self) -> int:
         if not self.state_slots:

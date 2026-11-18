@@ -247,6 +247,7 @@ def test_eight_bit_kv_stays_close_to_sixteen(tmp_path):
         prompts = [prompt[:n] for n in (3, 11, 23)]
         assert _run(small, prompts, 8) == [small.generate(p, 8) for p in prompts]
         assert _drained(small)
+    assert not small.cache.key_scales and not small.cache.value_scales
 
 
 def test_sliding_window_pages_are_released_as_the_window_moves(tmp_path):

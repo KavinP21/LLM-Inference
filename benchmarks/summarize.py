@@ -27,14 +27,15 @@ def main() -> None:
         if "aggregate" not in payload:
             continue
         config = payload["configuration"]
+        lengths = config.get("prompt_token_lengths")
+        prompt_length = config.get("prompt_length", "unknown")
+        if isinstance(lengths, list) and lengths:
+            low, high = min(lengths), max(lengths)
+            prompt_length = low if low == high else f"{low}–{high}"
         rows.append(
             (
                 payload.get("implementation", "unknown"),
-                config.get(
-                    "prompt_token_lengths", [config.get("prompt_length", "mixed")]
-                )[0]
-                if isinstance(config.get("prompt_token_lengths", []), list)
-                else "mixed",
+                prompt_length,
                 config["output_length"],
                 config["concurrency"],
                 metric(payload, "aggregate.generated_tokens_per_second"),

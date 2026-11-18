@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..agents.media import MAX_MEDIA_ITEMS, validate_media
+from ..agents.native_tools import parse_xml_call
 from ..agents.protocol import ChatMessage, Generation
 from ..chat_formats import (
     GEMMA_STRING,
@@ -247,7 +248,9 @@ def parse_request(body: Any, *, dialect: str, default_model: str) -> ChatRequest
     )
 
 
-def tool_calls(text: str, dialect: str) -> tuple[str, list[dict]]:
+def tool_calls(
+    text: str, dialect: str, *, tool_schemas: dict[str, dict] | None = None
+) -> tuple[str, list[dict]]:
     """Split a reply into its text and OpenAI-shaped tool calls."""
     found: list[tuple[str, dict]] = []
     rest = text
@@ -259,36 +262,24 @@ def tool_calls(text: str, dialect: str) -> tuple[str, list[dict]]:
             return text, []
     else:
         pieces = []
+        position = 0
         for match in re.finditer(
             r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL
         ):
             body = match.group(1)
-            function = re.fullmatch(
-                r"<function=([A-Za-z_][\w\-]*)>(.*)</function>", body, re.DOTALL
-            )
-            if function:
-                arguments = {}
-                for parameter in re.finditer(
-                    r"<parameter=([\w\-]+)>\n?(.*?)\n?</parameter>",
-                    function.group(2),
-                    re.DOTALL,
-                ):
-                    raw = parameter.group(2)
-                    try:
-                        arguments[parameter.group(1)] = json.loads(raw)
-                    except ValueError:
-                        arguments[parameter.group(1)] = raw
-                found.append((function.group(1), arguments))
-            else:
-                try:
-                    call = json.loads(body)
-                    found.append((call["name"], call.get("arguments") or {}))
-                except (ValueError, KeyError, TypeError):
-                    continue
-            pieces.append(match.group(0))
-        for piece in pieces:
-            rest = rest.replace(piece, "")
-        rest = rest.strip()
+            try:
+                call = (
+                    parse_xml_call(body, tool_schemas)
+                    if body.startswith("<function=")
+                    else json.loads(body)
+                )
+                found.append((call["name"], call.get("arguments") or {}))
+            except (ValueError, KeyError, TypeError):
+                continue
+            pieces.append(text[position : match.start()])
+            position = match.end()
+        pieces.append(text[position:])
+        rest = "".join(pieces).strip()
     return rest, [
         {
             "id": "call_" + secrets.token_hex(12),
@@ -317,8 +308,23 @@ def usage(generation: Generation) -> dict[str, Any]:
 class Completion:
     """One chat completion: drives the generation and shapes the replies."""
 
-    def __init__(self, request: ChatRequest, *, model: str, family: ChatFamily) -> None:
+    def __init__(
+        self,
+        request: ChatRequest,
+        *,
+        model: str,
+        family: ChatFamily,
+        tool_specs: list[dict] | None = None,
+    ) -> None:
         self.request, self.model, self.family = request, model, family
+        self._tool_schemas = (
+            {
+                spec["function"]["name"]: spec["function"]["parameters"]
+                for spec in tool_specs
+            }
+            if tool_specs is not None
+            else None
+        )
         self.id = "chatcmpl-" + secrets.token_hex(12)
         self.created = int(time.time())
         self._sent_answer = self._sent_reasoning = 0
@@ -355,11 +361,7 @@ class Completion:
                 self._chunk({"reasoning_content": reasoning[self._sent_reasoning :]})
             )
             self._sent_reasoning = len(reasoning)
-        if (
-            not self.request.tools
-            and len(answer) > self._sent_answer
-            and answer.startswith(answer[: self._sent_answer])
-        ):
+        if not self.request.tools and len(answer) > self._sent_answer:
             chunks.append(self._chunk({"content": answer[self._sent_answer :]}))
             self._sent_answer = len(answer)
         return chunks
@@ -368,7 +370,9 @@ class Completion:
         text, calls = generation.text, []
         if self.request.tools:
             text, calls = tool_calls(
-                generation.text, generation.dialect or self.family.dialect
+                generation.text,
+                generation.dialect or self.family.dialect,
+                tool_schemas=self._tool_schemas,
             )
         finish = (
             "tool_calls"
@@ -598,7 +602,9 @@ async def chat_completion(
     partial = getattr(backend, "partial", None)
     if isinstance(partial, dict):
         partial = partial.get
-    completion = Completion(request, model=request.model, family=family_from(identity))
+    completion = Completion(
+        request, model=request.model, family=family_from(identity), tool_specs=tools
+    )
     generation = await run_completion(
         completion,
         generate,

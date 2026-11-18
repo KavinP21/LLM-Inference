@@ -103,6 +103,10 @@ def percentile(values: list[float], q: float) -> float:
     return ordered[lower] * (upper - position) + ordered[upper] * (position - lower)
 
 
+def latency_percentiles(values: list[float]) -> dict[str, float]:
+    return {f"p{p}": percentile(values, p / 100) for p in (50, 95, 99)}
+
+
 def command_output(command: list[str]) -> str | None:
     try:
         return (
@@ -119,8 +123,12 @@ def source_provenance() -> dict[str, object]:
     """Fingerprint runtime sources, including uncommitted/new implementation files."""
     root = Path(__file__).resolve().parents[2]
     digest = hashlib.sha256()
-    paths = []
-    for directory in ["python", "include", "src"]:
+    paths = [
+        path
+        for path in (root / "CMakeLists.txt", root / "pyproject.toml")
+        if path.is_file()
+    ]
+    for directory in ("python", "include", "src", "cuda"):
         paths.extend(
             path
             for path in (root / directory).rglob("*")
@@ -195,6 +203,9 @@ def run_once(
         for key, peak in peak_cache.items():
             peak_cache[key] = max(peak, cache[key])
     wall_ms = (time.perf_counter_ns() - start) / 1e6
+    if hasattr(engine, "forget"):
+        for request_id in finished:
+            engine.forget(request_id)
     metrics = []
     for request_id, submitted_at in submitted.items():
         ttft = (first_token[request_id] - submitted_at) / 1e6
@@ -234,10 +245,12 @@ def benchmark(
     payload = json.loads(prompt_file.read_text())
     if not isinstance(payload, list):
         raise TypeError("prompt file must be a JSON array")
-    if all(isinstance(item, str) for item in payload):
+    text_prompts = all(isinstance(item, str) for item in payload)
+    if text_prompts or stop_on_eos:
         from transformers import AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    if text_prompts:
         prompts = [
             tokenizer(text, add_special_tokens=True).input_ids for text in payload
         ]
@@ -262,10 +275,6 @@ def benchmark(
         "kv_cache_bytes": kv_cache_mib << 20,
     }
     engine = create_engine(model_path, backend=backend, **engine_options)
-    if stop_on_eos:
-        from transformers import AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     eos = [int(tokenizer.eos_token_id)] if stop_on_eos else []
     for _ in range(warmups):
         run_once(engine, prompts, output_length, eos)
@@ -366,21 +375,9 @@ def benchmark(
         "aggregate": {
             "generated_tokens_per_second": output_tokens / total_seconds,
             "prompt_tokens_per_second": prompt_tokens / total_seconds,
-            "ttft_ms": {
-                "p50": percentile(ttft, 0.5),
-                "p95": percentile(ttft, 0.95),
-                "p99": percentile(ttft, 0.99),
-            },
-            "tpot_ms": {
-                "p50": percentile(tpot, 0.5),
-                "p95": percentile(tpot, 0.95),
-                "p99": percentile(tpot, 0.99),
-            },
-            "e2e_ms": {
-                "p50": percentile(e2e, 0.5),
-                "p95": percentile(e2e, 0.95),
-                "p99": percentile(e2e, 0.99),
-            },
+            "ttft_ms": latency_percentiles(ttft),
+            "tpot_ms": latency_percentiles(tpot),
+            "e2e_ms": latency_percentiles(e2e),
         },
         "gpu_samples": gpu_metrics,
         "peak_kv_cache": {

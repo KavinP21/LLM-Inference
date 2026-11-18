@@ -49,8 +49,12 @@ Copy them back with `scp` or Globus. Two knobs:
 
 ```bash
 sbatch --export=ALL,USERS=1,4,16 tools/pace/bench.sbatch           # concurrency levels
-sbatch --export=ALL,LONG_CONTEXT=262144 tools/pace/bench.sbatch     # the full context
+sbatch --export=ALL,LONG_CONTEXT=262144 tools/pace/bench.sbatch     # near the context limit
 ```
+
+The long-context script leaves room for the chat template and both replies. Its
+report includes the requested log length, the log token budget and the actual
+first prompt length.
 
 ## What the benchmarks measure
 
