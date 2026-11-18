@@ -754,17 +754,7 @@ class WorkspaceTools(Toolset):
     async def write_file(self, args: dict) -> str:
         return await self._write(args, artifact=False)
 
-    async def replace_text(self, args: dict) -> str:
-        _arguments(
-            args, {"path", "old_text", "new_text"}, {"expected_sha256", "read_receipt"}
-        )
-        if not self.allow_write:
-            raise PermissionError("workspace writes are disabled")
-        old, new = args["old_text"], args["new_text"]
-        if not isinstance(old, str) or not old or not isinstance(new, str):
-            raise ToolValidationError(
-                "old_text must be nonempty text and new_text must be text"
-            )
+    async def _read_for_edit(self, args: dict) -> tuple[bytes, str]:
         path = self._path(args["path"])
         self._assert_mutable(path, self.workspace / args["path"])
         if not path.is_file() or path.stat().st_size > self.max_file_bytes:
@@ -777,6 +767,20 @@ class WorkspaceTools(Toolset):
             raise ToolValidationError(
                 "file version changed; read it again before editing"
             )
+        return data, expected
+
+    async def replace_text(self, args: dict) -> str:
+        _arguments(
+            args, {"path", "old_text", "new_text"}, {"expected_sha256", "read_receipt"}
+        )
+        if not self.allow_write:
+            raise PermissionError("workspace writes are disabled")
+        old, new = args["old_text"], args["new_text"]
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            raise ToolValidationError(
+                "old_text must be nonempty text and new_text must be text"
+            )
+        data, expected = await self._read_for_edit(args)
         content = data.decode("utf-8")
         if content.count(old) != 1:
             raise ToolValidationError(
@@ -819,18 +823,7 @@ class WorkspaceTools(Toolset):
             or len(replacement.encode("utf-8")) > self.max_file_bytes
         ):
             raise ToolValidationError("content exceeds write limit or is not text")
-        path = self._path(args["path"])
-        self._assert_mutable(path, self.workspace / args["path"])
-        if not path.is_file() or path.stat().st_size > self.max_file_bytes:
-            raise ToolValidationError(
-                "edit requires an existing file within the size limit"
-            )
-        data = await asyncio.to_thread(self._safe_read, path)
-        expected = self._expected_version(path, args)
-        if hashlib.sha256(data).hexdigest() != expected:
-            raise ToolValidationError(
-                "file version changed; read it again before editing"
-            )
+        data, expected = await self._read_for_edit(args)
         try:
             original = data.decode("utf-8")
         except UnicodeDecodeError as exc:

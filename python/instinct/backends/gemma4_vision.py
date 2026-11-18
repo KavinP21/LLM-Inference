@@ -47,9 +47,7 @@ def load_image(
 
 
 class Gemma4Vision:
-    def __init__(
-        self, mx: Any, weights: Weights, config: dict[str, Any], text_hidden: int
-    ) -> None:
+    def __init__(self, mx: Any, weights: Weights, config: dict[str, Any]) -> None:
         import mlx.nn as nn
 
         self.mx, self.nn, self.w = mx, nn, weights
@@ -63,7 +61,6 @@ class Gemma4Vision:
         self.eps = config.get("rms_norm_eps", 1e-6)
         self.base = config["rope_parameters"]["rope_theta"]
         self.standardize = config.get("standardize", False)
-        self.text_hidden = text_hidden
         half = self.head_dim // 2 // 2  # frequencies per spatial axis
         exponents = (2.0 / (2 * half)) * mx.arange(0, half).astype(mx.float32)
         self.timescale = mx.power(self.base, exponents)

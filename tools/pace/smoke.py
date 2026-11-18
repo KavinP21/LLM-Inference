@@ -43,8 +43,8 @@ def run(path: str) -> dict:
         )
         stats = runner.engine.stats()
     checks = {
-        "first_answer": "144" in first.text,
-        "second_answer": "145" in second.text,
+        "first_answer": first.text.strip().removesuffix(".") == "144",
+        "second_answer": second.text.strip().removesuffix(".") == "145",
         "follow_up_cached": second.cached_tokens >= first.input_tokens,
     }
     return {

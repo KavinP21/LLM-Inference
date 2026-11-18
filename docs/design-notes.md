@@ -10,7 +10,7 @@ Prefix reuse counts shared pages once and reserves a private copy for partial-ta
 append. Cache pins and requests own separate references; clearing pins must not
 invalidate active readers. See [mlx_engine.py](../python/instinct/mlx_engine.py),
 [prefix_cache.py](../python/instinct/prefix_cache.py), and their
-[ownership tests](../tests/test_prefix_cache.py).
+[ownership tests](../tests/test_mlx_engine.py).
 
 ## Make long prompts visible to the scheduler
 
@@ -31,18 +31,13 @@ runs with running each prompt alone on the tiny models, where no ties occur.
 
 ## Check fused-kernel eligibility
 
-Prefix validation exposed a Qwen call with five query tokens and GQA factor seven.
-Forcing MLX 0.32.2's fused short-query kernel on that shape failed. The guard now
-checks head width and the query-length/GQA limit before forcing fusion; other
-shapes use normal MLX dispatch. Execution errors are not swallowed.
-
-Read `_fast_attention` in [the Qwen adapter](../python/instinct/backends/mlx.py).
-[Metal regressions](../tests/test_prefix_cache_metal.py) cover query lengths
-1, 4, 5, 6, 7, 8, 9, and 17.
+MLX chooses fused operations by backend and input shape. Off Metal,
+[portable.py](../python/instinct/backends/portable.py) checks representative
+shapes before opting into fused operations. Its fallback implementations have
+[reference tests](../tests/test_portable_kernels.py).
 
 ## Measure page packing with attention
 
-The Metal kernel uses block tables over packed live pages, avoiding per-request
-history gathering and longest-request padding. MLX's immutable arrays still
-require a per-layer stack. That cost explains the weaker single-request benchmark.
-A different page owner needs fresh end-to-end measurements before a speed claim.
+Metal decode follows page tables directly into the K/V arena. Portable decode
+gathers the visible rows before attention. Measure time in the full decode step:
+a faster attention kernel can lose the gain if it needs more copies or padding.

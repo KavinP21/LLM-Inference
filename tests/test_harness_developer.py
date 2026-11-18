@@ -43,7 +43,7 @@ def service_for(tmp_path, backend=None):
 
 async def run_id(service, chat_id):
     for _ in range(200):
-        row = service.conversations._latest(chat_id)
+        row = service.conversations._latest_turn(chat_id)
         if row["run_id"]:
             return row["run_id"]
         await asyncio.sleep(0.005)

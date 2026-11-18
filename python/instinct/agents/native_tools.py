@@ -16,7 +16,7 @@ from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from ..common import strict_decoder, strict_json
-from .protocol import ProtocolError, parse_action
+from .protocol import ProtocolError, validate_action
 
 _CONTROLS = frozenset({"spawn", "send", "wait", "finish"})
 _RESERVED = _CONTROLS | {"tool"}
@@ -535,16 +535,17 @@ def _xml_argument(raw: str, schema: dict) -> Any:
     return value
 
 
-def _native_xml_call(body: str, catalog: Mapping[str, dict]) -> dict:
-    """Parse Qwen3-Coder's bounded tag grammar, without an XML/entity evaluator."""
+def parse_xml_call(body: str, catalog: Mapping[str, dict] | None) -> dict:
+    """Decode a Qwen function block, using the declared parameter types if known."""
     opening = re.match(r"<function=([A-Za-z_][A-Za-z0-9_-]{0,63})>", body)
     if opening is None or not body.endswith("</function>"):
         raise ProtocolError("native XML requires one complete function block")
     name = opening.group(1)
-    if name not in catalog:
-        raise ProtocolError(f"native function is not currently advertised: {name}")
-    schema = catalog[name]
-    properties = schema.get("properties", {})
+    properties = None
+    if catalog is not None:
+        if name not in catalog:
+            raise ProtocolError(f"native function is not currently advertised: {name}")
+        properties = catalog[name].get("properties", {})
     inner = body[opening.end() : -len("</function>")]
     arguments = {}
     position = 0
@@ -563,7 +564,7 @@ def _native_xml_call(body: str, catalog: Mapping[str, dict]) -> dict:
         key = parameter.group(1)
         if key in arguments:
             raise ProtocolError(f"duplicate native parameter: {key}")
-        if key not in properties:
+        if properties is not None and key not in properties:
             raise ProtocolError(f"native parameter is not advertised: {key}")
         start = position + parameter.end()
         end = inner.find("</parameter>", start)
@@ -594,7 +595,13 @@ def _native_xml_call(body: str, catalog: Mapping[str, dict]) -> dict:
             raw = raw[:-2]
         elif raw.endswith("\n"):
             raw = raw[:-1]
-        arguments[key] = _xml_argument(raw, properties[key])
+        if properties is not None:
+            arguments[key] = _xml_argument(raw, properties[key])
+        else:
+            try:
+                arguments[key] = strict_json(raw)
+            except (ValueError, RecursionError):
+                arguments[key] = raw
         position = end + len("</parameter>")
     return {"name": name, "arguments": arguments}
 
@@ -617,13 +624,19 @@ def parse_native_action(
         raise ProtocolError(
             f"native response must be text of at most {max_chars} characters"
         )
-    catalog = {
+    return _parse_native_action(text.strip(), _catalog(tool_specs))
+
+
+def _catalog(tool_specs: Sequence[dict]) -> dict[str, dict]:
+    return {
         spec["function"]["name"]: spec["function"]["parameters"]
         for spec in validate_tool_specs(tool_specs)
     }
-    body = text.strip()
+
+
+def _parse_native_action(body: str, catalog: Mapping[str, dict]) -> dict[str, Any]:
     wrapped = body.startswith("<tool_call>")
-    if body.startswith("<tool_call>"):
+    if wrapped:
         if not body.endswith("</tool_call>"):
             raise ProtocolError("native call requires one complete tool_call wrapper")
         body = body[len("<tool_call>") : -len("</tool_call>")].strip()
@@ -632,13 +645,16 @@ def parse_native_action(
             raise ProtocolError(
                 "native XML function requires a complete tool_call wrapper"
             )
-        body = json.dumps(
-            _native_xml_call(body, catalog), ensure_ascii=False, allow_nan=False
-        )
-    try:
-        call = strict_json(body, ProtocolError)
-    except (ValueError, RecursionError) as exc:
-        raise ProtocolError(f"invalid native call JSON: {exc}") from exc
+        call = parse_xml_call(body, catalog)
+    else:
+        try:
+            call = strict_json(body, ProtocolError)
+        except (ValueError, RecursionError) as exc:
+            raise ProtocolError(f"invalid native call JSON: {exc}") from exc
+    return _validate_native_call(call, catalog)
+
+
+def _validate_native_call(call: Any, catalog: Mapping[str, dict]) -> dict[str, Any]:
     if (
         not isinstance(call, dict)
         or set(call) != {"name", "arguments"}
@@ -685,11 +701,7 @@ def parse_native_action(
         if name in _CONTROLS
         else {"action": "tool", "name": name, "args": arguments}
     )
-    canonical_wire = json.dumps(canonical, ensure_ascii=False, allow_nan=False)
-    # The model's wire response was already bounded above. Serializing an object
-    # into the legacy result string introduces escaped quotes; do not confuse
-    # that internal expansion with the native response's own size allowance.
-    return parse_action(canonical_wire, max_chars=max(max_chars, len(canonical_wire)))
+    return validate_action(canonical)
 
 
 class NoNativeCall(ProtocolError):
@@ -722,16 +734,16 @@ def parse_native_actions(
         raise ProtocolError(
             f"native response must be text of at most {max_chars} characters"
         )
-    specs = validate_tool_specs(tool_specs)
+    catalog = _catalog(tool_specs)
     body = text.strip()
     if dialect == "gemma4":
-        return _gemma_actions(body, specs, max_calls=max_calls, max_chars=max_chars)
+        return _gemma_actions(body, catalog, max_calls=max_calls)
     if "<tool_call>" not in body and not body.startswith("{"):
         raise NoNativeCall("reply contains no tool call")
     if not body.startswith("<tool_call>") and not (
         allow_xml_text and "<tool_call>" in body
     ):
-        return [parse_native_action(body, specs, max_chars=max_chars)]
+        return [_parse_native_action(body, catalog)]
     decoder = strict_decoder(ProtocolError)
 
     def skip_whitespace(position: int) -> int:
@@ -774,6 +786,7 @@ def parse_native_actions(
             if closing < 0:
                 raise ProtocolError("native XML requires an exact closing function tag")
             end = closing + len("</function>")
+            call = parse_xml_call(body[start:end], catalog)
         else:
             has_json = True
             if used_text:
@@ -781,24 +794,19 @@ def parse_native_actions(
                     "plain text is supported only around native XML function calls"
                 )
             try:
-                _, end = decoder.raw_decode(body, start)
+                call, end = decoder.raw_decode(body, start)
             except (ValueError, RecursionError) as exc:
                 raise ProtocolError(f"invalid native batch JSON: {exc}") from exc
         position = skip_whitespace(end)
         if not body.startswith("</tool_call>", position):
             raise ProtocolError("native call requires an exact closing tool_call tag")
-        # Retain only decoded JSON, not an extracted prose fragment. Validation
-        # of all calls completes before the caller receives the returned list.
-        payload = body[start:end]
-        if payload.startswith("<function="):
-            payload = "<tool_call>" + payload + "</tool_call>"
-        actions.append(parse_native_action(payload, specs, max_chars=max_chars))
+        actions.append(_validate_native_call(call, catalog))
         position = skip_whitespace(position + len("</tool_call>"))
     return actions
 
 
 def _gemma_actions(
-    body: str, specs: list[dict], *, max_calls: int, max_chars: int
+    body: str, catalog: Mapping[str, dict], *, max_calls: int
 ) -> list[dict[str, Any]]:
     """Gemma 4 writes ``<|tool_call>call:name{...}<tool_call|>``, possibly with
     a short note around the calls."""
@@ -812,9 +820,4 @@ def _gemma_actions(
         raise ProtocolError(f"invalid Gemma tool call: {exc}") from exc
     if len(calls) > max_calls:
         raise ProtocolError(f"native batch exceeds its {max_calls}-call allowance")
-    return [
-        parse_native_action(
-            json.dumps(call, ensure_ascii=False), specs, max_chars=max_chars
-        )
-        for call in calls
-    ]
+    return [_validate_native_call(call, catalog) for call in calls]
