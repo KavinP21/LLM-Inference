@@ -77,8 +77,7 @@ def split_thinking(text: str, family: ChatFamily) -> tuple[str, str, bool]:
 def _thinking_end(body: str, close: str) -> int:
     # Thinking about a file that contains the close marker quotes it, and the
     # tokenizer turns the quote into the real token. Skip occurrences that are
-    # immediately closed off by a quote or punctuation, which a real end of
-    # thinking never is.
+    # followed by a quote or punctuation when a later marker looks like the end.
     first = position = body.find(close)
     while position != -1:
         following = body[position + len(close) : position + len(close) + 1]

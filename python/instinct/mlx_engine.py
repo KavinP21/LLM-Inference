@@ -49,6 +49,7 @@ class Request:
     length: int = 0
     tables: dict[str, list[int]] = field(default_factory=dict)
     reserved: dict[str, int] = field(default_factory=dict)
+    trimmed_pages: dict[str, int] = field(default_factory=dict)
     slot: int = -1
     forced: deque[int] = field(default_factory=deque)
     reused: int = 0
@@ -162,12 +163,17 @@ class MlxEngine:
         for group in full:
             share = remaining * group.bytes_per_token(self.kv_bits) / per_token
             capacities[group.name] = max(1, int(share // self.page_bytes[group.name]))
+        if (
+            sum(count * self.page_bytes[name] for name, count in capacities.items())
+            > budget
+        ):
+            raise ValueError("K/V page capacity exceeds kv_cache_bytes")
         return capacities
 
     def _window_pages(self, group: KVGroup) -> int:
         return math.ceil((group.window + self.prefill_burst_size) / self.page_size) + 1
 
-    # --- requests -------------------------------------------------------------
+    # requests
 
     def submit(
         self,
@@ -251,7 +257,7 @@ class MlxEngine:
     def has_work(self) -> bool:
         return bool(self.running or self.waiting)
 
-    # --- admission and pages --------------------------------------------------
+    # admission and pages
 
     def _needs(self, request: Request, reused: int) -> dict[str, int]:
         total = request.prompt.size + request.max_new_tokens
@@ -282,11 +288,7 @@ class MlxEngine:
                 if not self._reserve(needs, slots):
                     return
             self.waiting.popleft()
-            request.reserved = needs
-            request.tables = {name: [] for name in self.cache.groups}
-            if slots:
-                request.slot = self.cache.take_slot()
-                self.cache.clear_slot(request.slot)
+            self._start_request(request, needs)
             if entry is not None:
                 self._attach(request, entry)
             request.state = SequenceState.PREFILLING
@@ -302,6 +304,13 @@ class MlxEngine:
         for name, count in needs.items():
             self.cache.pools[name].reserve(count)
         return True
+
+    def _start_request(self, request: Request, needs: dict[str, int]) -> None:
+        request.reserved = needs
+        request.tables = {name: [] for name in self.cache.groups}
+        if self.cache.state_groups:
+            request.slot = self.cache.take_slot()
+            self.cache.clear_slot(request.slot)
 
     def _attach(self, request: Request, entry: Any) -> None:
         length = len(entry.tokens)
@@ -344,8 +353,13 @@ class MlxEngine:
                 continue
             table = request.tables[name]
             pool = self.cache.pools[name]
-            keep_from = (request.length - group.window + 1) // self.page_size
-            for index in range(min(keep_from, len(table))):
+            first_live = min(
+                len(table), (request.length - group.window + 1) // self.page_size
+            )
+            start = request.trimmed_pages.get(name, 0)
+            if first_live <= start:
+                continue
+            for index in range(start, first_live):
                 page = table[index]
                 if page < 0:
                     continue
@@ -355,6 +369,7 @@ class MlxEngine:
                 # Keep the quota: the window moves on and will need a page.
                 if not shared and pool.reserve(1):
                     request.reserved[name] = request.reserved.get(name, 0) + 1
+            request.trimmed_pages[name] = first_live
 
     def _release(self, request: Request) -> None:
         for name, table in request.tables.items():
@@ -362,6 +377,7 @@ class MlxEngine:
             pool.release(table)
             pool.unreserve(request.reserved.get(name, 0))
         request.tables, request.reserved = {}, {}
+        request.trimmed_pages.clear()
         if request.slot >= 0:
             self.cache.free_slot(request.slot)
             request.slot = -1
@@ -383,7 +399,7 @@ class MlxEngine:
         key = "completed" if state is SequenceState.COMPLETED else "cancelled"
         self.totals[key] += 1
 
-    # --- execution ------------------------------------------------------------
+    # execution
 
     def step(self) -> list[TokenEvent]:
         """Advance every running request by one token and prefill one chunk."""
@@ -419,21 +435,7 @@ class MlxEngine:
             stop = at + int(embeddings.shape[0])
             if at < end < stop:
                 end = at if at > start else stop
-        self._ensure_pages(request, end)
-        self.cache.ensure_capacity()
-        batch = PrefillBatch(
-            self.cache,
-            mx.array(request.prompt[start:end]),
-            start=start,
-            tables={
-                name: np.asarray(t, dtype=np.int64)
-                for name, t in request.tables.items()
-            },
-            slot=request.slot,
-            images=request.images,
-        )
-        logits = self.model.forward(batch)
-        request.length = end
+        logits = self._prefill_chunk(request, end)
         if end < request.prompt.size:
             mx.eval(logits, *self._arrays())
             if self.prefix_cache and end in request.checkpoints:
@@ -449,6 +451,25 @@ class MlxEngine:
         request.state = SequenceState.RUNNING
         token = self._choose([request], logits[-1:])[0]
         return [self._emit(request, token)]
+
+    def _prefill_chunk(self, request: Request, end: int) -> Any:
+        start = request.length
+        self._ensure_pages(request, end)
+        self.cache.ensure_capacity()
+        batch = PrefillBatch(
+            self.cache,
+            self.mx.array(request.prompt[start:end]),
+            start=start,
+            tables={
+                name: np.asarray(t, dtype=np.int64)
+                for name, t in request.tables.items()
+            },
+            slot=request.slot,
+            images=request.images,
+        )
+        logits = self.model.forward(batch)
+        request.length = end
+        return logits
 
     def _decode(self, requests: list[Request]) -> list[TokenEvent]:
         mx = self.mx
@@ -538,35 +559,18 @@ class MlxEngine:
         slots = 1 if self.cache.state_groups else 0
         if not self._reserve(needs, slots):
             raise RuntimeError("no K/V room for the prompt")
-        request.reserved = needs
-        request.tables = {name: [] for name in self.cache.groups}
-        if slots:
-            request.slot = self.cache.take_slot()
-            self.cache.clear_slot(request.slot)
         try:
+            self._start_request(request, needs)
             for start in range(0, request.prompt.size, self.prefill_chunk_size):
                 end = min(request.prompt.size, start + self.prefill_chunk_size)
-                self._ensure_pages(request, end)
-                self.cache.ensure_capacity()
-                batch = PrefillBatch(
-                    self.cache,
-                    self.mx.array(request.prompt[start:end]),
-                    start=start,
-                    tables={
-                        n: np.asarray(t, dtype=np.int64)
-                        for n, t in request.tables.items()
-                    },
-                    slot=request.slot,
-                )
-                logits = self.model.forward(batch)
+                logits = self._prefill_chunk(request, end)
                 self.mx.eval(logits, *self._arrays())
-                request.length = end
                 self._trim(request)
             return np.array(logits[-1])
         finally:
             self._release(request)
 
-    # --- housekeeping ---------------------------------------------------------
+    # housekeeping
 
     def clear_prefix_cache(self, cache_namespace: str | None = None) -> None:
         if self.prefix_cache:
@@ -610,9 +614,7 @@ class MlxEngine:
         for request_id in list(self.running) + list(self.waiting):
             self.cancel(request_id)
         self.clear_prefix_cache()
-        self.cache.keys.clear()
-        self.cache.values.clear()
-        self.cache.states.clear()
+        self.cache.clear()
         self.model.close()
         self._closed = True
 

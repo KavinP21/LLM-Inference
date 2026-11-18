@@ -4,20 +4,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-try:
-    from _instinct import Engine as CudaEngine
-    from _instinct import SequenceState as CudaSequenceState
-    from _instinct import build_info as cuda_build_info
-except (
-    ImportError
-):  # CUDA extension is intentionally absent on Apple development hosts.
-    CudaEngine = None
-    CudaSequenceState = None
-    cuda_build_info = None
-
 from .backends.base import mlx_build_info, mlx_gpu_available
 from .mlx_engine import MlxEngine
 from .runtime import SequenceState as MlxSequenceState
+
+try:
+    from . import _instinct as _cuda
+except ImportError:
+    # A standalone CMake build can also be placed on PYTHONPATH.
+    try:
+        import _instinct as _cuda
+    except ImportError:
+        _cuda = None
+
+CudaEngine = _cuda.Engine if _cuda is not None else None
+CudaSequenceState = _cuda.SequenceState if _cuda is not None else None
+cuda_build_info = _cuda.build_info if _cuda is not None else None
 
 DEFAULT_MODEL_PATH = "models/gemma-4-26b-a4b-mlx"
 

@@ -30,8 +30,10 @@ RequestId Engine::submit(std::span<const std::int32_t> input_ids,
                          std::uint32_t max_new_tokens,
                          std::span<const std::int32_t> eos_token_ids) {
   const auto id = scheduler_.submit(input_ids, max_new_tokens, eos_token_ids);
-  check(scheduler_.sequence(id).state != SequenceState::rejected,
-        "request rejected: invalid length, concurrency limit, or insufficient KV capacity");
+  if (scheduler_.sequence(id).state == SequenceState::rejected) {
+    scheduler_.forget(id);
+    check(false, "request rejected: invalid length, concurrency limit, or insufficient KV capacity");
+  }
   return id;
 }
 
@@ -47,40 +49,39 @@ std::vector<TokenEvent> Engine::step() {
   std::vector<TokenEvent> events;
   events.reserve(schedule.decode.size() + (schedule.prefill.has_value() ? 1U : 0U));
   try {
+    if (!schedule.decode.empty()) {
+      const NvtxRange decode_range("engine.decode", 0xff54a24bU);
+      token_scratch_.clear();
+      position_scratch_.clear();
+      length_scratch_.clear();
+      table_scratch_.clear();
+      for (const auto id : schedule.decode) {
+        const auto& sequence = scheduler_.sequence(id);
+        check(!sequence.output_tokens.empty(), "running sequence has no generated input token");
+        token_scratch_.push_back(sequence.output_tokens.back());
+        position_scratch_.push_back(static_cast<std::int32_t>(sequence.live_tokens() - 1U));
+        length_scratch_.push_back(static_cast<std::int32_t>(sequence.live_tokens()));
+        append_padded_table(id, table_scratch_);
+      }
+      const auto generated = model_.forward(token_scratch_, position_scratch_, length_scratch_,
+                                            table_scratch_);
+      for (std::size_t i = 0; i < generated.size(); ++i) {
+        const bool finished = scheduler_.append_token(schedule.decode[i], generated[i]);
+        events.push_back({schedule.decode[i], generated[i], finished});
+      }
+    }
 
-  if (!schedule.decode.empty()) {
-    const NvtxRange decode_range("engine.decode", 0xff54a24bU);
-    token_scratch_.clear();
-    position_scratch_.clear();
-    length_scratch_.clear();
-    table_scratch_.clear();
-    for (const auto id : schedule.decode) {
+    if (schedule.prefill.has_value()) {
+      const NvtxRange prefill_range("engine.prefill", 0xfff58518U);
+      const auto id = *schedule.prefill;
       const auto& sequence = scheduler_.sequence(id);
-      check(!sequence.output_tokens.empty(), "running sequence has no generated input token");
-      token_scratch_.push_back(sequence.output_tokens.back());
-      position_scratch_.push_back(static_cast<std::int32_t>(sequence.live_tokens() - 1U));
-      length_scratch_.push_back(static_cast<std::int32_t>(sequence.live_tokens()));
+      table_scratch_.clear();
       append_padded_table(id, table_scratch_);
+      const auto generated = model_.prefill(sequence.prompt_tokens, table_scratch_);
+      scheduler_.finish_prefill(id);
+      const bool finished = scheduler_.append_token(id, generated);
+      events.push_back({id, generated, finished});
     }
-    const auto generated = model_.forward(token_scratch_, position_scratch_, length_scratch_,
-                                          table_scratch_);
-    for (std::size_t i = 0; i < generated.size(); ++i) {
-      const bool finished = scheduler_.append_token(schedule.decode[i], generated[i]);
-      events.push_back({schedule.decode[i], generated[i], finished});
-    }
-  }
-
-  if (schedule.prefill.has_value()) {
-    const NvtxRange prefill_range("engine.prefill", 0xfff58518U);
-    const auto id = *schedule.prefill;
-    const auto& sequence = scheduler_.sequence(id);
-    table_scratch_.clear();
-    append_padded_table(id, table_scratch_);
-    const auto generated = model_.prefill(sequence.prompt_tokens, table_scratch_);
-    scheduler_.finish_prefill(id);
-    const bool finished = scheduler_.append_token(id, generated);
-    events.push_back({id, generated, finished});
-  }
   } catch (...) {
     for (const auto id : schedule.decode) scheduler_.cancel(id);
     if (schedule.prefill.has_value()) scheduler_.cancel(*schedule.prefill);
@@ -93,12 +94,21 @@ std::vector<std::int32_t> Engine::generate(
     std::span<const std::int32_t> input_ids, std::uint32_t max_new_tokens,
     std::span<const std::int32_t> eos_token_ids) {
   const auto id = submit(input_ids, max_new_tokens, eos_token_ids);
-  while (true) {
-    static_cast<void>(step());
-    const auto& sequence = scheduler_.sequence(id);
-    if (sequence.state == SequenceState::completed) return sequence.output_tokens;
-    check(sequence.state != SequenceState::cancelled && sequence.state != SequenceState::rejected,
-          "generation terminated without output");
+  try {
+    while (true) {
+      static_cast<void>(step());
+      const auto& sequence = scheduler_.sequence(id);
+      if (sequence.state == SequenceState::completed) {
+        auto output = sequence.output_tokens;
+        scheduler_.forget(id);
+        return output;
+      }
+      check(sequence.state != SequenceState::cancelled, "generation terminated without output");
+    }
+  } catch (...) {
+    scheduler_.cancel(id);
+    scheduler_.forget(id);
+    throw;
   }
 }
 

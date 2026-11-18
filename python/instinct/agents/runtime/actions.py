@@ -133,10 +133,6 @@ class ActionMixin:
                 if current.status in TERMINAL or current.pending_action is None:
                     return
             self._assert_lease(run_id)
-            batch = dict(batch, next_index=index + 1)
-            self.store.update_agent(
-                run_id, agent_id, pending_action=batch, action_phase="batch"
-            )
         warnings = [
             self.store.effect(
                 f"{run_id}/{agent_id}/{step}/effect/batch/{index}/no_progress"

@@ -89,9 +89,7 @@ class Gemma4Model:
         if config.get("vision_config") and "vision_tower.std_bias" in self.weights:
             from .gemma4_vision import Gemma4Vision
 
-            self.vision = Gemma4Vision(
-                mx, self.weights, config["vision_config"], self.hidden
-            )
+            self.vision = Gemma4Vision(mx, self.weights, config["vision_config"])
         self._geglu = mx.compile(
             lambda gate, x: nn.gelu_approx(gate) * x, shapeless=True
         )

@@ -1,7 +1,8 @@
 # Runtime architecture
 
-Instinct separates model artifacts and request orchestration from device execution. CUDA and MLX
-consume the same validated container and expose the same `submit`/`step`/`cancel`/`generate` API.
+MLX and the C++ CUDA engine share a request API and the Qwen2 `.engine` format.
+MLX also loads native Gemma 4 and Qwen3.5 checkpoints. Each engine owns its
+scheduler, cache, and device execution.
 
 ```text
                           Python token IDs
@@ -18,7 +19,7 @@ consume the same validated container and expose the same `submit`/`step`/`cancel
                   ┌─────┴─────┐             │
              Qwen adapter  Gemma adapter     │
                   └─────┬─────┘             │
-                  MLX + custom Metal    cuBLASLt + kernels
+                  MLX (Metal/portable)  cuBLASLt + kernels
                          └────────┬────────┘
                                   │
                   shared model format and test vectors
@@ -35,7 +36,7 @@ through `chat_runner.py`, which batches every request in flight on one engine th
 request in a single batched forward pass, then prefills one chunk of a waiting prompt (512 tokens
 while others are decoding, 2,048 when nothing else is), so a new long prompt delays the others by
 at most a chunk. A request is admitted only when a sequence slot and K/V pages for its whole budget
-are free, so a request that starts always finishes.
+are free. Recurrent layers also reserve a state slot.
 
 **K/V storage** (`paged_kv.py`). Every attention layer keeps keys and values in one arena of token
 rows, `[rows, kv_heads, head_dim]`, and a page is 64 consecutive rows. Each sequence has a page
@@ -48,9 +49,10 @@ slot arrays.
 
 **Attention** (`batches.py`, `backends/metal_kernels.py`). Prefill gathers the sequence's rows and
 runs MLX's attention with a causal (or window) mask, in query tiles when the score matrix would be
-large. Decode uses a split-K paged kernel that reads the arena through the page tables: a
+large. Metal decode uses a split-K kernel that reads the arena through the page tables: a
 threadgroup per sequence, KV head and slice of the key range serves every query head of that KV
-head, and a second pass merges the slices. Model adapters see one interface for both
+head, and a second pass merges the slices when needed. The portable path gathers rows
+and runs dense attention. Model adapters see one interface for both
 (`rope`, `attend`, `state`), so each is written once.
 
 **Prefix cache** (`prefix_cache.py`, opt-in). See [prefix-cache.md](prefix-cache.md).
@@ -107,10 +109,9 @@ checks distinguish an agent's final response from a verified criterion. The runt
 models; how real models did on actual tasks is in
 [agent-runtime.md](agent-runtime.md#how-real-models-did).
 
-Worker HTTP generation jobs are implemented. Streaming chat sessions, an OpenAI-compatible API,
-automatic cluster discovery/placement, NCCL tensor parallelism and multi-host scaling aren't
-implemented. Each current replica must fit its complete
-model on its selected device.
+The app and worker serve streaming chat through an OpenAI-compatible `/v1` API.
+Worker placement is configured explicitly. Each replica must fit its entire
+model on the selected device.
 
 ## CUDA KV layout
 

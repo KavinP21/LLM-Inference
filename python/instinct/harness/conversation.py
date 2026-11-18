@@ -55,7 +55,7 @@ SUMMARY_REQUEST = (
 SUMMARY_PREFIX = "[Summary of the earlier conversation]\n"
 
 
-def _slim(events, limit):
+def _clip_event_payloads(events, limit):
     return [dict(event, payload=clip(event["payload"], limit)) for event in events]
 
 
@@ -67,7 +67,9 @@ def _old_turn_events(events):
     ]
     kept = [event for event in events if event["kind"] in OLD_TURN_EVENTS]
     # The last root response carries the reasoning shown as "Thought".
-    return _slim(sorted(kept + responses[-1:], key=lambda event: event["id"]), 600)
+    return _clip_event_payloads(
+        sorted(kept + responses[-1:], key=lambda event: event["id"]), 600
+    )
 
 
 IMAGE_MIMES = {
@@ -117,7 +119,7 @@ def _image_input(payload):
     message = payload.get("message", "")
     if media and isinstance(message, str) and not message.strip():
         message = "Describe the attached image."
-    return media, names, ConversationController._text(message)
+    return media, names, text_field(message, "message")
 
 
 def _media_size(item):
@@ -251,8 +253,7 @@ class ConversationController:
             CREATE TABLE IF NOT EXISTS studio_chats (
                 chat_id TEXT PRIMARY KEY, title TEXT NOT NULL,
                 policy TEXT NOT NULL, configuration TEXT NOT NULL,
-                created REAL NOT NULL, updated REAL NOT NULL,
-                legacy INTEGER NOT NULL DEFAULT 0
+                created REAL NOT NULL, updated REAL NOT NULL
             );
             CREATE TABLE IF NOT EXISTS studio_chat_turns (
                 turn_id TEXT PRIMARY KEY,
@@ -298,10 +299,6 @@ class ConversationController:
     def db(self):
         return self.service.store.connection
 
-    @staticmethod
-    def _text(value, label="message", limit=12_000):
-        return text_field(value, label, limit)
-
     def _chat(self, chat_id):
         row = self.db.execute(
             "SELECT * FROM studio_chats WHERE chat_id=?", (chat_id,)
@@ -310,7 +307,7 @@ class ConversationController:
             raise ValueError("conversation does not exist")
         return row
 
-    def _latest(self, chat_id):
+    def _latest_turn(self, chat_id):
         return self.db.execute(
             "SELECT * FROM studio_chat_turns WHERE chat_id=? "
             "ORDER BY created DESC,rowid DESC LIMIT 1",
@@ -342,7 +339,7 @@ class ConversationController:
 
     def _chat_status(self, chat_id):
         active = self._active_turn(chat_id)
-        return self._status(active or self._latest(chat_id))
+        return self._status(active or self._latest_turn(chat_id))
 
     def _response(self, chat_id, turn_id, **extra):
         turn = self.db.execute(
@@ -411,7 +408,8 @@ class ConversationController:
         chat_id, turn_id, now = uuid.uuid4().hex, uuid.uuid4().hex, time.time()
         with self.service.store.transaction():
             self.db.execute(
-                "INSERT INTO studio_chats VALUES(?,?,?,?,?,?,0)",
+                "INSERT INTO studio_chats(chat_id,title,policy,configuration,created,updated) "
+                "VALUES(?,?,?,?,?,?)",
                 (
                     chat_id,
                     " ".join(message.split())[:80],
@@ -569,7 +567,7 @@ class ConversationController:
     async def rename(self, chat_id, payload):
         if not isinstance(payload, dict) or set(payload) != {"title"}:
             raise ValueError("rename accepts only title")
-        title = " ".join(self._text(payload["title"], "title", 200).split())
+        title = " ".join(text_field(payload["title"], "title", 200).split())
         if not title:
             raise ValueError("title must not be empty")
         self._chat(chat_id)
@@ -1247,7 +1245,7 @@ class ConversationController:
                     for event in detail["events"]
                 )
                 if turn["active"] or index >= len(rows) - RECENT_TURNS:
-                    turn["events"] = _slim(detail["events"], 4000)
+                    turn["events"] = _clip_event_payloads(detail["events"], 4000)
                 else:
                     if "old_events" not in detail:
                         detail["old_events"] = _old_turn_events(detail["events"])

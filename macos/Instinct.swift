@@ -46,7 +46,7 @@ final class Backend {
 
     func start(workspace: URL, demo: Bool = false, state: URL? = nil) throws {
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
-            throw AppError("No Python environment at \(python.path). Run `macos/build.sh` from the repository after installing it.")
+            throw AppError("No Python environment at \(python.path). Follow the install steps in docs/app.md to create .venv before building.")
         }
         stopping = false
         port = nil
