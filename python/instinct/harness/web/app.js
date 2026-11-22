@@ -702,26 +702,29 @@
     try {
       const { keys } = await api("/api/keys");
       const used = (time) => (time ? `used ${new Date(time * 1000).toLocaleDateString()}` : "not used yet");
-      patch($("key-list"), keys.length ? keys.map((key) => `<div class="key-row"><span><strong>${escape(key.name)}</strong><small>${key.scope === "app" ? "API and app · " : ""}${used(key.last_used)}</small></span><button type="button" class="icon-button" data-revoke-key="${escape(key.id)}" aria-label="Revoke ${escape(key.name)}">×</button></div>`).join("") : `<p class="settings-note">No keys yet.</p>`);
+      patch($("key-list"), keys.length ? keys.map((key) => `<div class="key-row"><span><strong>${escape(key.name)}</strong><small>${used(key.last_used)}</small></span><button type="button" class="icon-button" data-revoke-key="${escape(key.id)}" aria-label="Revoke ${escape(key.name)}">×</button></div>`).join("") : `<p class="settings-note">No keys yet.</p>`);
     } catch (error) {
       patch($("key-list"), `<p class="settings-note">${escape(error.message)}</p>`);
     }
   }
-  async function renderNetwork() {
+  async function renderGuests() {
     try {
-      const network = await api("/api/network");
-      const saved = network.settings;
-      $("settings-tab-devices").hidden = !network.editable;
-      if (!network.editable && state.settingsTab === "devices") selectSettingsTab("sandbox");
-      $("network-enabled").checked = saved.enabled;
-      $("network-port").value = saved.port;
-      $("network-cert").value = saved.tls_cert;
-      $("network-key").value = saved.tls_key;
-      $("network-http").checked = saved.allow_http;
-      const scheme = saved.tls_cert ? "https" : "http";
-      $("network-status").textContent = network.serving ? `Serving now on port ${saved.port}.` : "Takes effect when Instinct restarts.";
-      $("network-addresses").textContent = saved.enabled ? `Open ${network.addresses.map((name) => `${scheme}://${name}:${saved.port}`).join(" or ")} on the other device.` : "";
-    } catch { $("settings-tab-devices").hidden = true; }
+      const status = await api("/api/guests");
+      $("sharing-enabled").checked = status.enabled;
+      const running = status.activity.runs + status.activity.jobs;
+      $("sharing-status").textContent = !status.enabled
+        ? "Off. Nothing on this Mac is reachable from other machines."
+        : status.error ? status.error
+        : status.url ? `On. ${running} guest ${running === 1 ? "request" : "requests"} running.`
+        : status.tailscale ? "On, on this Mac only. Tailscale isn't publishing it yet." : "On, on this Mac only. Install Tailscale to share it.";
+      $("sharing-status").classList.toggle("error", Boolean(status.enabled && status.error));
+      $("sharing-url").hidden = !(status.enabled && (status.url || status.local_url));
+      $("sharing-url").textContent = status.url || status.local_url || "";
+      const when = (time) => new Date(time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      patch($("invite-list"), status.invites.length ? status.invites.map((invite) => `<div class="key-row${invite.active ? "" : " inactive"}"><span><strong>${escape(invite.name)}</strong><small>${invite.revoked ? "Revoked" : !invite.active ? "Expired" : invite.expires ? `Until ${escape(when(invite.expires))}` : "No expiry"} · ${invite.limits.concurrent} at once · ${compact(invite.tokens_today)} tokens today</small></span>${invite.active ? `<button type="button" class="button" data-revoke-invite="${escape(invite.id)}">Revoke</button>` : `<button type="button" class="icon-button" data-delete-invite="${escape(invite.id)}" aria-label="Remove ${escape(invite.name)}">×</button>`}</div>`).join("") : `<p class="settings-note">No invites yet.</p>`);
+    } catch (error) {
+      patch($("invite-list"), `<p class="settings-note">${escape(error.message)}</p>`);
+    }
   }
   function renderPolicy() {
     // A chat keeps the permissions it started with; new chats take the choice.
@@ -749,8 +752,9 @@
   }
   function renderSettings() {
     $("new-key").hidden = true;
+    $("new-invite").hidden = true;
     renderKeys();
-    renderNetwork();
+    renderGuests();
     $("command-network").checked = Boolean(state.settings?.command_network);
     $("web-access").checked = state.settings?.web_access !== false;
     const turns = (state.detail?.turns || []).filter((turn) => turn.run_id);
@@ -1689,38 +1693,47 @@
     const name = $("key-name").value.trim();
     if (!name) return;
     try {
-      const created = await api("/api/keys", { name, app: $("key-app").checked });
+      const created = await api("/api/keys", { name });
       $("key-name").value = "";
       $("new-key-value").textContent = created.key;
       $("new-key").hidden = false;
       renderKeys();
     } catch (error) { toast(error.message, true); }
   });
-  $("network-form").addEventListener("submit", async (event) => {
+  $("sharing-enabled").addEventListener("change", async () => {
+    const input = $("sharing-enabled");
+    input.disabled = true;
+    try { await api("/api/guests/sharing", { enabled: input.checked }); } catch (error) { toast(error.message, true); }
+    input.disabled = false;
+    renderGuests();
+  });
+  $("invite-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const name = $("invite-name").value.trim();
+    if (!name) return;
     try {
-      await api("/api/network", {
-        enabled: $("network-enabled").checked,
-        port: Number($("network-port").value),
-        tls_cert: $("network-cert").value.trim(),
-        tls_key: $("network-key").value.trim(),
-        allow_http: $("network-http").checked,
-      });
-      toast("Saved. Restart Instinct to apply.");
-      renderNetwork();
+      const made = await api("/api/guests/invites", { name, hours: Number($("invite-hours").value), limits: { concurrent: Number($("invite-concurrent").value) } });
+      $("invite-name").value = "";
+      $("new-invite-link").textContent = made.link || made.token;
+      $("new-invite-note").textContent = made.link
+        ? "Send this link. It works until it expires or you revoke it, and it won't be shown again."
+        : "Copy this invite now; it won't be shown again. Turn on sharing to get the link to send.";
+      $("new-invite").hidden = false;
+      renderGuests();
     } catch (error) { toast(error.message, true); }
   });
-  $("sign-in-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const key = $("sign-in-key").value.trim();
+  $("copy-invite").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("new-invite-link").textContent); toast("Invite link copied"); } catch { toast("Couldn't copy the link", true); }
+  });
+  $("invite-list").addEventListener("click", async (event) => {
+    const revoke = event.target.closest("[data-revoke-invite]");
+    const remove = event.target.closest("[data-delete-invite]");
+    if (!revoke && !remove) return;
     try {
-      await api("/api/auth", { key });
-      try { if ($("sign-in-remember").checked) localStorage.setItem("instinct-key", key); } catch {}
-      location.reload();
-    } catch {
-      $("sign-in-error").textContent = "That key doesn't open the app. Make one under Settings > API on your Mac, with “Can also open the app” on.";
-      $("sign-in-error").hidden = false;
-    }
+      if (revoke) { await api(`/api/guests/invites/${encodeURIComponent(revoke.dataset.revokeInvite)}/revoke`, {}); toast("Invite revoked. Its guests are signed out."); }
+      else await api(`/api/guests/invites/${encodeURIComponent(remove.dataset.deleteInvite)}/delete`, {});
+      renderGuests();
+    } catch (error) { toast(error.message, true); }
   });
   $("copy-key").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText($("new-key-value").textContent); toast("Key copied"); } catch { toast("Couldn't copy the key", true); }
@@ -1981,17 +1994,11 @@
     } catch (error) { toast(error.message, true); }
   });
 
-  // Another device's browser signs in with an app key (remembered if asked).
+  // Only the Mac app can open this window: it signs in with a one-time token.
   async function signedIn() {
     const probe = await fetch("/api/settings", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
     if (!probe || probe.status !== 401) return true;
-    let saved = null;
-    try { saved = localStorage.getItem("instinct-key"); } catch {}
-    if (saved) {
-      try { await api("/api/auth", { key: saved }); return true; } catch { try { localStorage.removeItem("instinct-key"); } catch {} }
-    }
     $("sign-in").showModal();
-    $("sign-in-key").focus();
     return false;
   }
   // The welcome screen's mark in 3D: slices of the mark stacked in depth give

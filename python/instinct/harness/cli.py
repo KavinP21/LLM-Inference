@@ -7,7 +7,6 @@ import asyncio
 import json
 import os
 import signal
-import ssl
 import stat
 import threading
 from pathlib import Path
@@ -19,6 +18,7 @@ from .extensions import MCPServerConfig, MCPStdioClient, SkillRegistry
 from .projects import Projects, state_folder
 from .server import AppServer
 from .service import AppService
+from .sharing import Sharing
 
 
 def load_mcp_config(path: str | Path, workspace: Path) -> list[MCPServerConfig]:
@@ -79,40 +79,6 @@ def load_mcp_config(path: str | Path, workspace: Path) -> list[MCPServerConfig]:
 APP_TOKEN = "INSTINCT_APP_TOKEN"
 
 
-def remote_settings(args) -> dict | None:
-    """Where and how to serve other devices, from flags or the app's settings."""
-    saved = {}
-    network_file = getattr(args, "network_file", None)
-    if network_file is not None and network_file.is_file():
-        saved = json.loads(network_file.read_text())
-    host = getattr(args, "remote_host", None) or (
-        "0.0.0.0" if saved.get("enabled") else None
-    )
-    if not host:
-        return None
-    cert = getattr(args, "tls_cert", None) or (
-        Path(saved["tls_cert"]) if saved.get("tls_cert") else None
-    )
-    key = getattr(args, "tls_key", None) or (
-        Path(saved["tls_key"]) if saved.get("tls_key") else None
-    )
-    if bool(cert) != bool(key):
-        raise ValueError("TLS needs both a certificate and its key")
-    if cert is None and not (
-        getattr(args, "allow_http", False) or saved.get("allow_http")
-    ):
-        raise ValueError(
-            "serving other devices needs --tls-cert and --tls-key, or --allow-http on a network that already encrypts (Tailscale)"
-        )
-    context = None
-    if cert is not None:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(cert, key)
-    port = getattr(args, "remote_port", None) or saved.get("port") or 8765
-    return {"host": host, "port": int(port), "tls": context}
-
-
 async def serve(args):
     # The deterministic demo must never launch operator external programs.
     if args.demo and args.mcp_config:
@@ -145,9 +111,6 @@ async def serve(args):
     # workspace's state folder.
     home = getattr(args, "home", None)
     keys_file = args.keys_file or (home / "api-keys.json" if home else None)
-    network_file = getattr(args, "network_file", None) or (
-        home / "network.json" if home else None
-    )
     projects = Projects((home or state_dir) / "projects.json")
 
     def build(folder: Path, folder_state: Path) -> AppService:
@@ -159,7 +122,6 @@ async def serve(args):
             skills=skills,
             mcp_clients=clients,
             keys_file=keys_file,
-            network_file=network_file,
             projects=projects,
         )
 
@@ -174,7 +136,7 @@ async def serve(args):
         )
         fresh.adopt(previous)
         fresh.switch_project = switch
-        fresh.remote_url = previous.remote_url
+        fresh.sharing = previous.sharing
         for running in servers:
             running.service = fresh
         current["service"] = fresh
@@ -185,7 +147,14 @@ async def serve(args):
     server = None
     thread = None
     thread_started = False
-    remote_server = None
+    # Guests reach this Mac only through the sharing gateway; see sharing.py.
+    sharing = Sharing(
+        home or state_dir,
+        lambda: current["service"],
+        asyncio.get_running_loop(),
+        funnel=not args.demo and not getattr(args, "no_funnel", False),
+    )
+    service.sharing = sharing
     try:
         server = AppServer(
             ("127.0.0.1", args.port),
@@ -198,20 +167,7 @@ async def serve(args):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         thread_started = True
-        remote = remote_settings(args)
-        if remote is not None:
-            remote_server = AppServer(
-                (remote["host"], remote["port"]),
-                service,
-                asyncio.get_running_loop(),
-                tls=remote["tls"],
-                remote=True,
-            )
-            servers.append(remote_server)
-            service.remote_url = (
-                f"{remote_server.scheme}://{{host}}:{remote_server.server_port}"
-            )
-            threading.Thread(target=remote_server.serve_forever, daemon=True).start()
+        await asyncio.to_thread(sharing.start)
         if not args.demo and config.get("workers"):
             # Warm the model in the background while the operator starts typing.
             # A submitted chat is durably queued if loading is still in progress.
@@ -236,9 +192,7 @@ async def serve(args):
             print(f"Instinct is serving at {server.origin}.", flush=True)
         await stopped.wait()
     finally:
-        if remote_server is not None:
-            await asyncio.to_thread(remote_server.shutdown)
-            remote_server.server_close()
+        await asyncio.to_thread(sharing.stop)
         try:
             if server is not None:
                 try:
@@ -281,32 +235,17 @@ def main():
         "--mcp-config",
         help="Local JSON list of explicit MCP server commands/tool grants",
     )
-    remote = parser.add_argument_group("other devices")
-    remote.add_argument(
-        "--remote-host", help="Also serve other devices on this address, e.g. 0.0.0.0"
-    )
-    remote.add_argument(
-        "--remote-port", type=int, help="Port for other devices (default 8765)"
-    )
-    remote.add_argument(
-        "--tls-cert",
-        type=Path,
-        help="Certificate for other devices (e.g. from tailscale cert)",
-    )
-    remote.add_argument("--tls-key", type=Path, help="Private key for --tls-cert")
-    remote.add_argument(
-        "--allow-http",
+    parser.add_argument(
+        "--no-funnel",
         action="store_true",
-        help="Serve other devices without TLS, on a network that already encrypts (Tailscale)",
+        help="Serve guests on 127.0.0.1 only, without publishing through Tailscale",
     )
-    remote.add_argument("--network-file", type=Path, help=argparse.SUPPRESS)
     # The Mac app's Application Support folder.
     parser.add_argument("--home", type=Path, help=argparse.SUPPRESS)
-    remote.add_argument(
-        "--create-key", metavar="NAME", help="Make a key, print it once and exit"
-    )
-    remote.add_argument(
-        "--app-key", action="store_true", help="The new key also opens the app"
+    parser.add_argument(
+        "--create-key",
+        metavar="NAME",
+        help="Make a key for this Mac's /v1 API, print it once and exit",
     )
     args = parser.parse_args()
     if args.create_key:
@@ -314,7 +253,7 @@ def main():
         if not state_dir.is_absolute():
             state_dir = Path(args.workspace).resolve() / state_dir
         keys = ApiKeys(args.keys_file or state_dir / "api-keys.json")
-        print(keys.create(args.create_key, "app" if args.app_key else "api")["key"])
+        print(keys.create(args.create_key)["key"])
         return
     if args.demo and args.config:
         parser.error("Choose either --demo or a live --config")

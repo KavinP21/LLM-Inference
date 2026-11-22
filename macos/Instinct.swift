@@ -51,7 +51,7 @@ final class Backend {
         stopping = false
         port = nil
         token = Self.randomToken()
-        // Keys, network settings and the project list belong to the app, not
+        // Keys, guest invites and the project list belong to the app, not
         // to a workspace; a test's state folder keeps its own.
         let home = state ?? Self.supportDirectory
         let state = state ?? Self.stateDirectory(for: workspace)

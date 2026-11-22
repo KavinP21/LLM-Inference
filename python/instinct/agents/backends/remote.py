@@ -71,6 +71,7 @@ class RemoteWorkerBackend:
         allow_insecure: bool = False,
         max_response_bytes: int = 2 << 20,
         max_request_bytes: int = 1 << 20,
+        route: str | None = None,
     ) -> None:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -102,7 +103,10 @@ class RemoteWorkerBackend:
             raise ValueError("max_concurrency must be positive")
         if type(max_response_bytes) is not int or max_response_bytes <= 0:
             raise ValueError("max_response_bytes must be positive")
-        self.url = url.rstrip("/")
+        # A host's guest gateway serves each model under its own path.
+        if route is not None and route not in {"driver", "subagent"}:
+            raise ValueError("route must be driver or subagent")
+        self.url = url.rstrip("/") + (f"/guest/models/{route}" if route else "")
         self._token = token
         self.max_concurrency = max_concurrency
         self.request_timeout = _positive(request_timeout, "request_timeout")
