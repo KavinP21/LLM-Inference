@@ -10,7 +10,8 @@ whether edits need review. You can rewind a chat and restore the files it
 changed. Long chats reuse the prompt cache when possible and summarize older
 turns as the context fills.
 
-[Install and use the Mac app](docs/app.md).
+[Install and use the Mac app](docs/app.md). [Share your models with anyone, anywhere](docs/guests.md), with
+their files kept on their own computer.
 
 ## The inference engine
 
