@@ -296,3 +296,20 @@ def test_guest_apps_use_the_job_protocol_with_the_invite(host):
     assert host.pool.calls[-1][0].startswith("guest.")
     with pytest.raises(AuthenticationError):
         asyncio.run(ask("inv_not-a-real-invite"))
+
+
+def test_the_guest_app_is_served_with_a_strict_policy(host):
+    connection = http.client.HTTPConnection("127.0.0.1", host.port, timeout=5)
+    for path, kind in (
+        ("/", "text/html"),
+        ("/guest.js", "text/javascript"),
+        ("/guest.css", "text/css"),
+    ):
+        connection.request("GET", path)
+        response = connection.getresponse()
+        assert response.read()
+        assert response.status == 200 and response.getheader("Content-Type").startswith(
+            kind
+        )
+        policy = response.getheader("Content-Security-Policy")
+        assert "script-src 'self'" in policy and "frame-ancestors 'none'" in policy

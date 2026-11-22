@@ -4,6 +4,7 @@ made, listed and revoked through the app's own API."""
 import asyncio
 import http.client
 import json
+import socket
 import threading
 
 import pytest
@@ -70,7 +71,10 @@ def test_sharing_is_off_until_turned_on_and_invites_are_managed(owner):
     _, sharing, call = owner
     status = call("GET", "/api/guests")
     assert status["enabled"] is False and status["listening"] is False
-    status = call("POST", "/api/guests/sharing", {"enabled": True, "port": 18766})
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    status = call("POST", "/api/guests/sharing", {"enabled": True, "port": port})
     assert status["listening"] and status["local_url"].startswith("http://127.0.0.1:")
     # The guest listener is loopback only; Funnel is what publishes it.
     assert sharing.server.server_address[0] == "127.0.0.1"
