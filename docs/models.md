@@ -69,6 +69,28 @@ rounding alone carries it. Qwen decodes at the same speed; Gemma is about 10%
 slower at that length, from quantizing on 30 layers each step. The app's
 profile uses it for the Qwen sub-agents, so 8 GiB holds two full 256K contexts.
 
+**Memory ceiling.** A profile's `"memory": {"max_gb": 105}` caps what its model
+workers can use together, counting lazy ones as if they were all loaded. Each
+local worker counts its weights, its `kv_cache_bytes`, 2.5 GB for one forward
+pass's activations and 0.8 GB for its process, and the app counts 1 GB. A
+profile over the ceiling is refused at startup.
+
+Each MLX worker also gets its share as MLX's memory limit, and may keep only
+1 GiB of freed buffers. MLX would otherwise hold freed buffers up to its whole
+limit, in every process.
+
+The shipped profile comes to 92.4 GB:
+
+| Worker | Share |
+| --- | ---: |
+| Gemma 4, with 24 GiB of K/V | 44.7 GB |
+| The abliterated Gemma, with 12 GiB of K/V | 31.8 GB |
+| Qwen3.5, with 8 GiB of K/V | 14.9 GB |
+
+The arenas only grow as contexts need them. Serving 16 users at once, with
+3-turn chats over 4,000-token documents, the Gemma worker's physical footprint
+peaked at 26 GB.
+
 **Abliterated Gemma 4.** huihui-ai's abliterated Gemma 4 26B A4B, with its
 refusals removed, can drive chats too. The 4-bit MLX conversion
 (`vanch007/Huihui-gemma-4-26B-A4B-it-abliterated-mlx-4bit`, pinned) has the

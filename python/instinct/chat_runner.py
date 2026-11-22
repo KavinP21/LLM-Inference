@@ -178,6 +178,7 @@ class ChatRunner:
         prefix_cache_bytes: int | None = None,
         prefill_chunk_size: int = 512,
         kv_bits: int = 16,
+        memory_limit_bytes: int | None = None,
         max_sessions: int = 64,
         eos_token_ids: Sequence[int] | None = None,
         local_files_only: bool = True,
@@ -209,6 +210,7 @@ class ChatRunner:
             prefill_chunk_size=prefill_chunk_size,
             kv_bits=kv_bits,
         )
+        self.memory_limit_bytes = memory_limit_bytes
         loaded = threading.Event()
         failure: list[BaseException] = []
         self._thread = threading.Thread(
@@ -262,6 +264,15 @@ class ChatRunner:
 
     def _run(self, path, options, loaded, failure) -> None:
         try:
+            if self.memory_limit_bytes:
+                # Keep only a little freed memory for reuse, and hold MLX to
+                # this worker's share (see agents/backends/memory.py).
+                from .agents.backends.memory import CACHE_LIMIT_BYTES
+                from .backends.base import mlx
+
+                mx = mlx()
+                mx.set_cache_limit(CACHE_LIMIT_BYTES)
+                mx.set_memory_limit(self.memory_limit_bytes)
             self.engine = MlxEngine(path, **options)
         except BaseException as exc:
             failure.append(exc)
