@@ -95,7 +95,7 @@ three-turn chat over a 4,000-token document:
 - Each invite's requests-at-once limit caps a single guest.
 - The host runs at most 24 guest runs at once.
 - Model workers together are held under 105 GB of memory (see
-  [models.md](models.md#memory-ceiling)).
+  [models.md](models.md), "Memory ceiling").
 
 ## Troubleshooting
 
