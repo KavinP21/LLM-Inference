@@ -5,7 +5,7 @@ Qwen3.5 sub-agents, with the full agent harness. Guests never get anything
 else. Their files and chats stay on their own computer, and you can cut anyone
 off at any time.
 
-## Giving someone access (for example, an interviewer)
+## Giving someone access
 
 1. **Once:** install [Tailscale](https://tailscale.com/download) and sign in.
 2. In Instinct, open **Settings › Guests** and turn on **Share on the
@@ -13,7 +13,7 @@ off at any time.
    HTTPS certificates and Funnel for your tailnet. Approve it, then turn
    sharing off and on again. The pane shows your public address,
    `https://<your-mac>.<tailnet>.ts.net`.
-3. Under **Guests**, type a name ("Interviewer"), pick how long the invite lasts
+3. Under **Guests**, type a name, pick how long the invite lasts
    and how many requests it may run at once, and click **Create invite**.
    Copy the link: it's shown once.
 4. Send the link. The guest opens it in Chrome, Edge, Arc or Brave and clicks
