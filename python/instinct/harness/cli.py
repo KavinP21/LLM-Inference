@@ -14,6 +14,7 @@ from pathlib import Path
 from ..agents.cli import load_config
 from ..common import strict_json
 from .api_keys import ApiKeys
+from .connection import HostConnection
 from .extensions import MCPServerConfig, MCPStdioClient, SkillRegistry
 from .projects import Projects, state_folder
 from .server import AppServer
@@ -106,10 +107,19 @@ async def serve(args):
         else []
     )
     config = load_config(args.config) if args.config else {}
-    # The app keeps keys, network settings, the project list and each
-    # project's state under one folder; the command line keeps them in the
-    # workspace's state folder.
+    # The app keeps keys, invites, the project list and each project's state
+    # under one folder; the command line keeps them in the workspace's state
+    # folder.
     home = getattr(args, "home", None)
+    # A guest of another Mac uses that host's models instead of its own.
+    connection = HostConnection(
+        getattr(args, "host_connection", None)
+        or (home or state_dir) / "host-connection.json"
+    )
+    remote = await asyncio.to_thread(connection.config)
+    demo = args.demo
+    if remote is not None:
+        config, demo = remote, False
     keys_file = args.keys_file or (home / "api-keys.json" if home else None)
     projects = Projects((home or state_dir) / "projects.json")
 
@@ -118,7 +128,7 @@ async def serve(args):
             folder,
             folder_state,
             config=config,
-            demo=args.demo,
+            demo=demo,
             skills=skills,
             mcp_clients=clients,
             keys_file=keys_file,
@@ -137,6 +147,7 @@ async def serve(args):
         fresh.adopt(previous)
         fresh.switch_project = switch
         fresh.sharing = previous.sharing
+        fresh.host_connection = previous.host_connection
         for running in servers:
             running.service = fresh
         current["service"] = fresh
@@ -144,6 +155,7 @@ async def serve(args):
 
     service = current["service"]
     service.switch_project = switch
+    service.host_connection = connection
     server = None
     thread = None
     thread_started = False
@@ -152,8 +164,11 @@ async def serve(args):
         home or state_dir,
         lambda: current["service"],
         asyncio.get_running_loop(),
-        funnel=not args.demo and not getattr(args, "no_funnel", False),
+        funnel=not demo and not getattr(args, "no_funnel", False),
     )
+    if remote is not None:
+        # Borrowed models are never passed on to guests of this Mac.
+        sharing.blocked = "This Mac uses another Mac's models, so it can't share them."
     service.sharing = sharing
     try:
         server = AppServer(
@@ -168,7 +183,7 @@ async def serve(args):
         thread.start()
         thread_started = True
         await asyncio.to_thread(sharing.start)
-        if not args.demo and config.get("workers"):
+        if not demo and config.get("workers"):
             # Warm the model in the background while the operator starts typing.
             # A submitted chat is durably queued if loading is still in progress.
             await service.start_backend()
@@ -236,6 +251,11 @@ def main():
         help="Local JSON list of explicit MCP server commands/tool grants",
     )
     parser.add_argument(
+        "--host-connection",
+        type=Path,
+        help="Saved link to another Mac whose models to use (see connection.py)",
+    )
+    parser.add_argument(
         "--no-funnel",
         action="store_true",
         help="Serve guests on 127.0.0.1 only, without publishing through Tailscale",
@@ -259,7 +279,8 @@ def main():
         parser.error("Choose either --demo or a live --config")
     if args.demo and args.mcp_config:
         parser.error("--demo cannot be combined with --mcp-config")
-    if not args.demo and not args.config:
+    hosted = args.host_connection is not None and args.host_connection.is_file()
+    if not args.demo and not args.config and not hosted:
         parser.error("--config is required unless --demo is given")
     if not 0 <= args.port <= 65535:
         parser.error("port must be between zero and 65535")

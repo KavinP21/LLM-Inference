@@ -147,8 +147,10 @@ class AppService:
         self.project = projects.touch(self.workspace) if projects else None
         # Set by the launcher, which owns the servers: opens another folder.
         self.switch_project = None
-        # Set by the launcher: guest invites and the guest gateway.
+        # Set by the launcher: guest invites and the guest gateway, and the
+        # saved link when this Mac uses another Mac's models.
         self.sharing = None
+        self.host_connection = None
         self.openai = OpenAIEndpoint(self)
         try:
             saved = json.loads(self.settings_path.read_text())
@@ -837,6 +839,8 @@ class AppService:
             return await asyncio.to_thread(
                 browse, payload.get("path"), root=Path.home()
             )
+        if parts[:2] == ["api", "host"]:
+            return await self._host(method, parts, payload)
         if parts[:2] == ["api", "guests"]:
             if self.sharing is None:
                 raise ValueError("guest sharing isn't available on this server")
@@ -880,6 +884,30 @@ class AppService:
         if method == "POST" and len(parts) == 3 and parts[:2] == ["api", "approvals"]:
             return await self.decide(parts[2], payload)
         raise ValueError("unknown API route")
+
+    async def _host(self, method: str, parts: list[str], payload: dict) -> dict:
+        """Connect to another Mac's models, or stop. Both apply on restart."""
+        connection = self.host_connection
+        if connection is None:
+            raise ValueError("this server can't connect to another Mac")
+        if method == "GET" and parts == ["api", "host"]:
+            return {
+                **connection.status(),
+                "active": not self.demo
+                and any(
+                    w.get("type") == "remote" for w in self.config.get("workers", [])
+                ),
+            }
+        if method == "POST" and parts == ["api", "host", "connect"]:
+            if not isinstance(payload, dict) or set(payload) != {"link"}:
+                raise ValueError("connect takes the invite link")
+            return {
+                **await asyncio.to_thread(connection.connect, payload["link"]),
+                "restart": True,
+            }
+        if method == "POST" and parts == ["api", "host", "disconnect"]:
+            return {**await asyncio.to_thread(connection.disconnect), "restart": True}
+        raise ValueError("unknown host route")
 
     async def _projects(self, method: str, parts: list[str], payload: dict) -> dict:
         if self.projects is None:

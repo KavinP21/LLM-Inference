@@ -65,6 +65,8 @@ class Sharing:
         self.funnel = funnel  # Off in tests and for loopback-only use.
         self.server: GatewayServer | None = None
         self.error: str | None = None
+        # Set when this Mac is itself a guest: it must not pass models on.
+        self.blocked: str | None = None
         self._lock = threading.Lock()
 
     # --- settings -----------------------------------------------------------
@@ -92,7 +94,7 @@ class Sharing:
     def start(self) -> None:
         """Listen on loopback and publish through Funnel, if sharing is on."""
         settings = self.settings()
-        if not settings["enabled"]:
+        if not settings["enabled"] or self.blocked:
             return
         with self._lock:
             if self.server is None:
@@ -119,6 +121,8 @@ class Sharing:
     def update(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict) or payload.keys() - {"enabled", "port"}:
             raise ValueError("sharing takes enabled and port")
+        if self.blocked and payload.get("enabled"):
+            raise ValueError(self.blocked)
         settings = {**self.settings(), **payload}
         if type(settings["enabled"]) is not bool:
             raise ValueError("enabled is true or false")
@@ -172,6 +176,7 @@ class Sharing:
             "url": self.url() if self.server is not None else None,
             "tailscale": tailscale_binary() is not None,
             "error": self.error,
+            "blocked": self.blocked,
             "activity": self.gateway.status(),
             "invites": self.invites.list(),
         }
@@ -182,6 +187,8 @@ class Sharing:
             return self.status()
         if method == "POST" and parts == ["api", "guests", "sharing"]:
             return self.update(payload)
+        if method == "POST" and parts == ["api", "guests", "invites"] and self.blocked:
+            raise ValueError(self.blocked)
         if method == "POST" and parts == ["api", "guests", "invites"]:
             if not isinstance(payload, dict) or payload.keys() - {
                 "name",

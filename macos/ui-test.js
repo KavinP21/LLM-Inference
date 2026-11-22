@@ -135,6 +135,15 @@ await check("makes and revokes a guest invite", async () => {
   $("close-settings").click();
 });
 
+await check("offers to use another Mac's models", async () => {
+  $("open-settings").click();
+  await until(() => $("settings").open);
+  document.querySelector('[data-settings-tab="host"]').click();
+  await until(() => visible($("host-form")) && $("host-status").textContent.includes("this Mac"));
+  await snapshot("7c-host");
+  $("close-settings").click();
+});
+
 await check("opens another project in place and comes back", async () => {
   $("workspace-name").click();
   await until(() => $("projects").open && document.querySelector("[data-open-project]"));

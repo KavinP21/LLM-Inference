@@ -726,6 +726,22 @@
       patch($("invite-list"), `<p class="settings-note">${escape(error.message)}</p>`);
     }
   }
+  async function renderHost() {
+    try {
+      const host = await api("/api/host");
+      $("host-status").textContent = host.connected
+        ? `${host.active ? "Using" : "Will use, after a restart,"} the models on ${host.host}.`
+        : "Using this Mac's own models.";
+      $("host-form").hidden = host.connected;
+      $("host-disconnect").hidden = !host.connected;
+    } catch { $("settings-tab-host")?.setAttribute("hidden", ""); }
+  }
+  function restartForHost(result) {
+    // The Mac app restarts its server; elsewhere the person restarts it.
+    const native = window.webkit?.messageHandlers?.instinct;
+    if (result.restart && native) native.postMessage({ type: "restart" });
+    else toast("Saved. Restart Instinct to apply.");
+  }
   function renderPolicy() {
     // A chat keeps the permissions it started with; new chats take the choice.
     const existing = state.detail?.chat?.policy;
@@ -755,6 +771,7 @@
     $("new-invite").hidden = true;
     renderKeys();
     renderGuests();
+    renderHost();
     $("command-network").checked = Boolean(state.settings?.command_network);
     $("web-access").checked = state.settings?.web_access !== false;
     const turns = (state.detail?.turns || []).filter((turn) => turn.run_id);
@@ -1699,6 +1716,20 @@
       $("new-key").hidden = false;
       renderKeys();
     } catch (error) { toast(error.message, true); }
+  });
+  $("host-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const link = $("host-link").value.trim();
+    if (!link) return;
+    try {
+      const result = await api("/api/host/connect", { link });
+      $("host-link").value = "";
+      toast(`Connected to ${result.host}. Restarting…`);
+      restartForHost(result);
+    } catch (error) { toast(error.message, true); }
+  });
+  $("host-disconnect").addEventListener("click", async () => {
+    try { restartForHost(await api("/api/host/disconnect", {})); } catch (error) { toast(error.message, true); }
   });
   $("sharing-enabled").addEventListener("change", async () => {
     const input = $("sharing-enabled");

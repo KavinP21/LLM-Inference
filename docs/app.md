@@ -223,7 +223,8 @@ invite, and send the link. What that does:
   with projects, the terminal and sandboxed commands, and use this Mac only
   for the models.
 
-Usage counts per invite are the only thing kept about guests.
+Usage counts per invite are the only thing kept about guests. [guests.md](guests.md) walks through giving someone
+access.
 
 ## Optional extensions
 
