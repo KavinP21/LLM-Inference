@@ -63,7 +63,13 @@ final class Backend {
         var arguments = ["-m", "instinct.harness.cli", "--app", "--port", "0",
                          "--workspace", workspace.path, "--state-dir", state.path,
                          "--home", home.path]
-        arguments += modelsReady && !demo ? ["--config", config.path] : ["--demo"]
+        // A saved link to another Mac's models wins over this Mac's own.
+        let host = home.appendingPathComponent("host-connection.json")
+        if !demo && FileManager.default.fileExists(atPath: host.path) {
+            arguments += ["--host-connection", host.path]
+        } else {
+            arguments += modelsReady && !demo ? ["--config", config.path] : ["--demo"]
+        }
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment["INSTINCT_APP_TOKEN"] = token
@@ -353,7 +359,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         webView.isHidden = true
         startup.isHidden = false
         window.subtitle = workspace.path
-        startup.show(backend.modelsReady ? "Starting in \(workspace.lastPathComponent)…" : "Models not found; starting in demo mode…")
+        let hosted = FileManager.default.fileExists(atPath: Backend.supportDirectory.appendingPathComponent("host-connection.json").path)
+        startup.show(hosted ? "Connecting to another Mac's models…"
+                     : backend.modelsReady ? "Starting in \(workspace.lastPathComponent)…" : "Models not found; starting in demo mode…")
         do {
             try backend.start(workspace: workspace, demo: test.map { !$0.models } ?? false,
                               state: test?.output.appendingPathComponent("state"))
@@ -518,6 +526,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             window.performZoom(nil)
         case "openFolder":
             openFolder(nil)
+        case "restart":
+            // Connected to (or disconnected from) another Mac's models.
+            launch()
         case "workspace":
             if let path = body["path"] as? String { useWorkspace(URL(fileURLWithPath: path, isDirectory: true)) }
         case "reveal":

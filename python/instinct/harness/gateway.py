@@ -108,6 +108,33 @@ class Gateway:
             labels.append({"id": alias, "label": model_label(worker.get("model", ""))})
         return labels
 
+    def identity(self, group: str) -> dict[str, Any]:
+        """What a guest's app records about a model, so its runs can be
+        resumed against the same one: fingerprints, never the host's paths."""
+        service = self._service()
+        identities = getattr(service, "identities", {}) or {}
+        for worker in self.config().get("workers", []):
+            if worker.get("group") != group:
+                continue
+            found = identities.get(worker.get("name"), {})
+            safe = {
+                key: found[key]
+                for key in (
+                    "model_data_sha256",
+                    "model_config_sha256",
+                    "tokenizer_signature",
+                    "runner",
+                    "runner_version",
+                    "checkpoint_format",
+                )
+                if key in found
+            }
+            for key in ("model", "tokenizer"):
+                if found.get(key):
+                    safe[key] = Path(str(found[key])).name
+            return safe
+        return {}
+
     def models(self, invite_id: str) -> GuestModels:
         with self._lock:
             if invite_id not in self._models:

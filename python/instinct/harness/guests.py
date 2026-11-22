@@ -378,6 +378,7 @@ class GroupModels:
         pool = self.models.gateway.pool()
         limit = self.models.context_limit(self.group) if pool is not None else 0
         return {
+            **self.models.gateway.identity(self.group),
             "worker_id": f"guest-{self.group}",
             "native_call_dialect": self.models.native_call_dialect
             if pool is not None
