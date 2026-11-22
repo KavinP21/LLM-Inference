@@ -146,7 +146,13 @@ def validate_request(
 
 # Options an MLX worker passes to its ChatRunner.
 CHAT_OPTIONS = frozenset(
-    {"effort", "kv_bits", "prefill_chunk_size", "prefix_cache_bytes"}
+    {
+        "effort",
+        "kv_bits",
+        "prefill_chunk_size",
+        "prefix_cache_bytes",
+        "memory_limit_bytes",
+    }
 )
 
 

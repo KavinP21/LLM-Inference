@@ -202,7 +202,11 @@ class LocalModelBackend:
                 max_num_sequences=1,
                 max_model_length=self.config.max_model_length,
                 kv_cache_bytes=self.config.kv_cache_bytes,
-                **self.config.engine_options,
+                **{
+                    key: value
+                    for key, value in self.config.engine_options.items()
+                    if key != "memory_limit_bytes"
+                },
             )
             loaded_file = getattr(getattr(engine, "model", None), "file", None)
             if loaded_file is not None:
@@ -277,6 +281,7 @@ class LocalModelBackend:
                 prefix_cache_bytes=options.get("prefix_cache_bytes"),
                 prefill_chunk_size=options.get("prefill_chunk_size", 512),
                 kv_bits=options.get("kv_bits", 16),
+                memory_limit_bytes=options.get("memory_limit_bytes"),
                 eos_token_ids=self.config.eos_token_ids,
                 local_files_only=self.config.local_files_only,
             )
