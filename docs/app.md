@@ -32,8 +32,7 @@ the folders you've used (pin the ones you want on top, and give them your own
 titles), and **Open a folder…** adds another. Switching happens in place, so the
 models stay loaded; it waits for running chats to finish or be stopped. Each
 project keeps its own chats and checkpoints, in
-`~/Library/Application Support/Instinct/workspaces/`. On another device the
-same list has a folder browser for your home folder.
+`~/Library/Application Support/Instinct/workspaces/`.
 
 - **File tools** can't reach outside the folder: list, read, search (text or
   regular expressions), write, edit, make folders, move and rename, and delete.
@@ -159,12 +158,11 @@ The workspace panel's tabs:
 ## Running the server on its own
 
 The app is a native window around a local server, which also runs headless,
-for example on a Mac mini that other devices use:
+for example on a Mac mini that serves guests:
 
 ```bash
-instinct-server --workspace ~/code/project --config examples/instinct.json \
-  --remote-host 0.0.0.0 --tls-cert cert.pem --tls-key key.pem
-instinct-server --workspace ~/code/project --create-key phone --app-key   # prints a key once
+instinct-server --workspace ~/code/project --config examples/instinct.json
+instinct-server --workspace ~/code/project --create-key my-script   # a /v1 key, printed once
 ```
 
 Ctrl-C or SIGTERM stops it and its model workers, and the workers also exit if
@@ -194,26 +192,38 @@ curl http://127.0.0.1:PORT/v1/chat/completions \
   served from the prefix cache.
 
 A standalone `instinct-worker` answers the same two routes with its worker token.
-Keys only open `/v1`; they can't reach chats, files or the terminal.
+Keys only open `/v1`; they can't reach chats, files or the terminal. The API
+listens on 127.0.0.1 only, so it's for apps on this Mac.
 
-## Other devices
+## Guests
 
-A phone, a tablet or another computer can use Instinct too, in a browser or
-through the API above. Turn on **Settings > Other devices**, pick a port and
-restart Instinct; the section then lists the addresses to open.
+People on other machines, anywhere, can use this Mac's models without ever
+seeing its files. Turn on **Settings > Guests > Share on the internet**, make an
+invite, and send the link. What that does:
 
-- **Sign-in.** Make a key under **Settings > API keys** with **Can also open the
-  app** on, and paste it on the other device (it can remember it). That key
-  gives full access to the workspace, so keep it to your own devices. Keys
-  without it only open `/v1`.
-- **Encryption.** Give it a TLS certificate and key, for example from
-  `tailscale cert`, or allow plain HTTP only on a network that already
-  encrypts, like Tailscale. Over Tailscale the phone works away from home too.
-- The Mac's own window keeps using its private loopback server; other devices
-  get a second listener that only accepts key sign-ins.
+- **Publishing.** A second listener starts on 127.0.0.1, separate from the
+  app's own server and sharing nothing with it. Tailscale Funnel publishes
+  only that port at `https://<this-mac>.<tailnet>.ts.net`, with a real
+  certificate. You need Tailscale installed and signed in. The first time,
+  Tailscale asks in the browser to enable HTTPS and Funnel for your tailnet.
+- **What guests can reach.** The guest web app, and the main and sub-agent
+  models. They never reach your workspaces, chats, terminal, `/v1` or your
+  other models (the abliterated Gemma stays yours).
+- **Invites.** An invite is a random token shown once and stored here only as
+  a hash. Each one has an expiry and limits: requests at once, tokens a day,
+  context and reply length. Revoking an invite signs its browsers out and
+  stops everything it has running. The link carries the invite after a `#`,
+  which browsers never send to a server.
+- **Guests' files stay on their machine.** In the browser, the guest picks a
+  folder on their computer (Chrome, Edge, Arc or Brave). The agents run here,
+  but every file tool call is carried out by the guest's browser on that
+  folder. Their chats are kept in their browser. Here, a run's journal lives
+  in memory and is dropped when it ends, and nothing a guest sends is logged.
+- **Guests with the Mac app** can run their whole harness on their own Mac,
+  with projects, the terminal and sandboxed commands, and use this Mac only
+  for the models.
 
-From the command line: `--remote-host 0.0.0.0 --remote-port 8765` with
-`--tls-cert/--tls-key` or `--allow-http`.
+Usage counts per invite are the only thing kept about guests.
 
 ## Optional extensions
 
@@ -243,9 +253,10 @@ reviewed, and they don't inherit credentials from the environment.
 Chats, images, the agent journal, checkpoints and artifacts live in the state
 folder: Application Support for the app, `.instinct/` in the workspace
 for the command line. The file tools can't read it. The app's own server binds
-to 127.0.0.1 and checks the Host and Origin of every request; the listener for
-other devices checks the Origin and requires a key. Both authenticate the page
-with an HttpOnly cookie and serve a strict content security policy.
+to 127.0.0.1 and checks the Host and Origin of every request. It authenticates
+the page with an HttpOnly cookie and serves a strict content security policy.
+The guest listener (see Guests) has its own cookies and none of the app's
+routes.
 
 The sandbox confines writes and network, not reads: a command can read anything
 your user account can. On Linux there is no sandbox, and results say so. Remote

@@ -119,6 +119,22 @@ await check("creates and revokes an API key", async () => {
   $("close-settings").click();
 });
 
+await check("makes and revokes a guest invite", async () => {
+  $("open-settings").click();
+  await until(() => $("settings").open);
+  document.querySelector('[data-settings-tab="guests"]').click();
+  await until(() => visible($("invite-form")));
+  if ($("sharing-enabled").checked) throw new Error("sharing should start off");
+  $("invite-name").value = "UI test guest";
+  $("invite-form").requestSubmit();
+  await until(() => !$("new-invite").hidden && $("new-invite-link").textContent.includes("inv_"));
+  await until(() => document.querySelector("[data-revoke-invite]"));
+  await snapshot("7b-guests");
+  document.querySelector("[data-revoke-invite]").click();
+  await until(() => !document.querySelector("[data-revoke-invite]"));
+  $("close-settings").click();
+});
+
 await check("opens another project in place and comes back", async () => {
   $("workspace-name").click();
   await until(() => $("projects").open && document.querySelector("[data-open-project]"));

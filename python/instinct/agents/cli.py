@@ -132,6 +132,7 @@ async def create_pool(config: dict) -> WorkerPool:
                     "poll_interval",
                     "allow_insecure_http",
                     "max_request_bytes",
+                    "route",
                 }
                 if (
                     worker.keys() - permitted

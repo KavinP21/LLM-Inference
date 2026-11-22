@@ -513,15 +513,18 @@ dialog::backdrop { background: var(--scrim); }
 .key-row strong { display: block; font-size: 13px; font-weight: 500; }
 .key-row small { color: var(--faint); font-size: 12px; }
 .key-form { display: flex; gap: 8px; margin-top: 12px; }
-.key-form input, .network-fields input:not([type=checkbox]) { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 10px; background: var(--page); color: var(--ink); font-size: 13px; outline: none; }
-.key-form input:focus, .network-fields input:not([type=checkbox]):focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--ring); }
+.key-form input, .invite-form input, .invite-form select { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 10px; background: var(--page); color: var(--ink); font-size: 13px; outline: none; }
+.key-form input:focus, .invite-form input:focus, .invite-form select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--ring); }
 .new-key { margin-top: 14px; padding: 12px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--accent-soft); }
 .new-key p { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .new-key code { display: block; font: 12px var(--mono); word-break: break-all; margin-bottom: 10px; color: var(--ink); }
-.network-fields { display: grid; gap: 10px; margin: 12px 0; }
-.network-fields > label:not(.toggle-row) { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-#network-addresses { word-break: break-all; }
-#network-form > .button { margin-top: 4px; }
+.invite-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.invite-form input { flex: 1 1 180px; }
+.invite-form select { flex: none; min-width: 0; }
+.key-row.inactive strong { color: var(--faint); font-weight: 400; }
+.sharing-url { margin-top: 10px; font: 12px var(--mono); color: var(--ink); background: var(--raised); padding: 6px 9px; border-radius: 6px; word-break: break-all; }
+#sharing-status.error { color: var(--danger); }
+.sign-in-note { display: grid; gap: 8px; justify-items: start; }
 
 /* Toasts drop in under the header, in ink, clear of the message box and terminal. */
 .toast { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--page); border-radius: 10px; padding: 8px 15px; font-size: 13px; box-shadow: var(--float); max-width: min(520px, 90vw); animation: float-in .16s cubic-bezier(.3, .7, .2, 1); }

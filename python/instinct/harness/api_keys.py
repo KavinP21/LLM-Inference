@@ -1,9 +1,9 @@
-"""Keys for other apps and devices.
+"""Keys for other apps on this Mac.
 
 Only SHA-256 hashes are stored (mode 0600); a key's text is shown once, when
-it is made. Every key opens the OpenAI-compatible ``/v1`` API. A key with the
-``app`` scope also signs a browser on another device into the app itself,
-with the same access as this Mac's own window.
+it is made. A key opens the OpenAI-compatible ``/v1`` API, which listens only
+on 127.0.0.1. People on other machines use guest invites instead (see
+``guests.py``), which reach the models but never this API or the app.
 """
 
 from __future__ import annotations
@@ -44,12 +44,10 @@ class ApiKeys:
             json.dump(self._keys, stream, indent=2)
         temporary.replace(self.path)
 
-    def create(self, name: str, scope: str = "api") -> dict[str, Any]:
+    def create(self, name: str) -> dict[str, Any]:
         name = name.strip()
         if not name or len(name) > 64:
             raise ValueError("a key needs a name of up to 64 characters")
-        if scope not in {"api", "app"}:
-            raise ValueError("a key's scope is api or app")
         key = PREFIX + secrets.token_urlsafe(32)
         record = {
             "id": secrets.token_hex(6),
@@ -57,7 +55,7 @@ class ApiKeys:
             "sha256": hashlib.sha256(key.encode()).hexdigest(),
             "created": int(time.time()),
             "last_used": None,
-            "scope": scope,
+            "scope": "api",
         }
         with self._lock:
             self._keys.append(record)
