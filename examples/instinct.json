@@ -11,7 +11,7 @@
       "kv_cache_bytes": 25769803776,
       "request_timeout": 600,
       "native_tool_calls": true,
-      "max_pending": 4
+      "max_pending": 16
     },
     {
       "type": "process",
@@ -25,7 +25,7 @@
       "tokenizer": "models/gemma-4-26b-a4b-mlx",
       "backend": "mlx",
       "max_model_length": 262144,
-      "kv_cache_bytes": 25769803776,
+      "kv_cache_bytes": 12884901888,
       "request_timeout": 600,
       "native_tool_calls": true,
       "max_pending": 4
@@ -44,7 +44,7 @@
       "engine_options": {"kv_bits": 8},
       "request_timeout": 600,
       "native_tool_calls": true,
-      "max_pending": 8
+      "max_pending": 16
     }
   ],
   "runtime": {
@@ -62,5 +62,8 @@
     "tool_timeout_seconds": 390,
     "completion_timeout_seconds": 390,
     "max_tool_result_chars": 8000
+  },
+  "memory": {
+    "max_gb": 105
   }
 }
