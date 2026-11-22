@@ -20,6 +20,7 @@ from .backends import (
     RemoteWorkerBackend,
     WorkerConfig,
     WorkerPool,
+    memory,
 )
 from .profiles import CompletionProfile
 from .runtime import AgentRuntime, RuntimeConfig
@@ -37,9 +38,11 @@ def load_config(path: str | Path) -> dict:
         "runtime",
         "max_pending",
         "acceptance",
+        "memory",
     }:
         raise ValueError(
-            "configuration accepts only workers, runtime, max_pending and acceptance"
+            "configuration accepts only workers, runtime, max_pending, acceptance "
+            "and memory"
         )
     workers = config.get("workers")
     if not isinstance(workers, list) or not 1 <= len(workers) <= 32:
@@ -61,6 +64,7 @@ def load_config(path: str | Path) -> dict:
     ]
     if not config["workers"]:
         raise ValueError("every worker is optional and none of their models exist")
+    memory.check(config)
     return config
 
 
@@ -97,6 +101,11 @@ async def create_pool(config: dict) -> WorkerPool:
                 raise ValueError("idle_seconds must be positive or null")
             if kind in {"process", "local"}:
                 worker.setdefault("worker_id", name)
+                if worker.get("backend", "auto") != "cuda":
+                    # Hold MLX to this worker's share of the memory budget.
+                    options = dict(worker.get("engine_options", {}))
+                    options.setdefault("memory_limit_bytes", memory.mlx_limit(worker))
+                    worker["engine_options"] = options
                 definition = WorkerConfig(**worker)
                 if kind == "process" and lazy:
                     backend = LazyBackend(
