@@ -95,6 +95,4 @@ used to check model behavior.
 ## Public design references
 
 - [OpenAI running agents](https://developers.openai.com/api/docs/guides/agents/running-agents): persistent sessions, bounded loops and resumable state.
-- [Claude SDK subagents](https://code.claude.com/docs/en/agent-sdk/subagents): independent contexts, tool scopes, messaging and bounded delegation.
-- [Claude SDK hooks](https://code.claude.com/docs/en/agent-sdk/hooks): explicit lifecycle interception and tool review.
 - [MCP specification](https://modelcontextprotocol.io/specification): protocol lifecycle and tool schemas. Supported revisions are recorded with the implementation.
