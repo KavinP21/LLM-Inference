@@ -69,6 +69,12 @@ class CommandTools(Toolset):
                 else ", and it has no network access beyond localhost."
             )
             if sandbox.available()
+            else (
+                "It runs inside a Docker container: it can write only inside the "
+                "workspace, temporary folders and the app's own data, and can't "
+                "reach the rest of the host's files."
+            )
+            if sandbox.in_container()
             else "It runs with the user's own permissions."
         )
         return (
@@ -216,7 +222,7 @@ class CommandTools(Toolset):
                 "timed_out": timed_out,
                 "truncated": truncated,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
-                "sandboxed": sandbox.available(),
+                "sandboxed": sandbox.confined(),
             },
             ensure_ascii=False,
         )

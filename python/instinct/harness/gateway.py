@@ -105,7 +105,8 @@ class Gateway:
         workers = self.config().get("workers", [])
         for alias, group in self.groups().items():
             worker = next((w for w in workers if w.get("group") == group), {})
-            labels.append({"id": alias, "label": model_label(worker.get("model", ""))})
+            name = worker.get("model") or worker.get("label", "")
+            labels.append({"id": alias, "label": model_label(name)})
         return labels
 
     def identity(self, group: str) -> dict[str, Any]:

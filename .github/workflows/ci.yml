@@ -43,7 +43,7 @@ jobs:
         env:
           PYTHONPATH: python
           INSTINCT_INSPECT_MODEL: build/instinct-inspect-model
-      - run: bash -n tools/*.sh tools/pace/*.sh tools/pace/*.sbatch tools/nvidia/*.sh
+      - run: bash -n tools/*.sh tools/pace/*.sh tools/pace/*.sbatch tools/nvidia/*.sh tools/docker/*.sh docker/*.sh
 
   mlx-linux:
     # The MLX engine on Linux without Metal, through the same portable kernels
@@ -73,6 +73,24 @@ jobs:
           python -m pip install --no-deps "mlx-cuda-12==0.32.4"
           "nvidia-cuda-nvrtc-cu12==12.9.*" "nvidia-cuda-runtime-cu12==12.9.*"
       - run: python tools/nvidia/compile_kernels.py
+
+  docker:
+    # Both images build, and the app image's code imports and refuses to
+    # start without its model configuration.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/Dockerfile --target app -t instinct:app .
+      - run: >-
+          docker run --rm --read-only --cap-drop ALL --entrypoint python instinct:app
+          -c "import instinct.harness.cli, instinct.container, instinct.nvidia"
+      - name: Without the Mac's models the app says what to do
+        run: |
+          out=$(docker run --rm --read-only --cap-drop ALL instinct:app 2>&1 || true)
+          echo "$out"
+          echo "$out" | grep -q "serves the Mac's models first"
+      - run: docker build -f docker/Dockerfile --target nvidia -t instinct:nvidia .
+      - run: bash -n tools/docker/instinct.sh docker/entrypoint.sh
 
   sanitizers:
     runs-on: ubuntu-24.04

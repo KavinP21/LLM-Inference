@@ -57,7 +57,8 @@ that's reachable from Windows on the same PC and nowhere else.
 
 **One difference from the Mac:** agent commands aren't sandboxed on Linux.
 macOS confines them with Seatbelt; on Linux they run as you, and the app
-marks them unsandboxed. Use *Ask* or *Read only* in a chat when that matters.
+marks them unsandboxed. Use *Ask* or *Read only* in a chat when that matters,
+or run Instinct [in Docker](docker.md), where the container is the sandbox.
 
 ## Which models fit
 

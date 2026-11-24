@@ -122,7 +122,7 @@ class Terminals:
         cols, rows = self._size(payload)
         terminal = Terminal(self.workspace, cols, rows)
         self.sessions[terminal.id] = terminal
-        return {"id": terminal.id, "sandboxed": sandbox.available()}
+        return {"id": terminal.id, "sandboxed": sandbox.confined()}
 
     def get(self, terminal_id: str) -> Terminal:
         terminal = self.sessions.get(terminal_id)
