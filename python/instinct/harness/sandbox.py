@@ -3,7 +3,8 @@
 On macOS, commands go through Seatbelt (``sandbox-exec``): they can read
 anything the user can, but can write only inside the workspace and the
 temporary directories, and can reach the network only on localhost unless
-network access is turned on. Elsewhere commands run unconfined, and the
+network access is turned on. Inside Instinct's Docker container the
+container is the boundary. Elsewhere commands run unconfined, and the
 ``sandboxed`` flag in results says so.
 """
 
@@ -19,7 +20,29 @@ SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
 
 def available() -> bool:
+    """Whether commands can be wrapped in Seatbelt (macOS)."""
     return sys.platform == "darwin" and os.access(SANDBOX_EXEC, os.X_OK)
+
+
+def in_container() -> bool:
+    """Whether this process runs inside a Docker or Podman container."""
+    return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
+
+
+def kind() -> str | None:
+    """What confines commands: "seatbelt", "container" or None.
+
+    In Instinct's container (``docker/``) the root filesystem is read-only
+    and only the mounted workspace, the app's state folder and /tmp are
+    writable, so commands can't reach the rest of the host.
+    """
+    if available():
+        return "seatbelt"
+    return "container" if in_container() else None
+
+
+def confined() -> bool:
+    return kind() is not None
 
 
 def _quote(path: Path) -> str:

@@ -1,0 +1,9 @@
+# Only python/, examples/, docker/ and tools/nvidia/requirements.txt go into the image.
+*
+!python/
+!examples/
+!docker/
+!tools/nvidia/requirements.txt
+**/__pycache__
+**/*.pyc
+python/instinct/**/*.so

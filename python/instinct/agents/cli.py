@@ -133,6 +133,7 @@ async def create_pool(config: dict) -> WorkerPool:
                     "allow_insecure_http",
                     "max_request_bytes",
                     "route",
+                    "label",
                 }
                 if (
                     worker.keys() - permitted
@@ -150,6 +151,7 @@ async def create_pool(config: dict) -> WorkerPool:
                     raise ValueError(
                         "remote worker token_env must name a populated environment variable"
                     )
+                worker.pop("label", None)  # Only for the model picker.
                 worker["allow_insecure"] = worker.pop("allow_insecure_http", False)
                 backend = RemoteWorkerBackend(token=os.environ[variable], **worker)
                 replicas[name] = backend

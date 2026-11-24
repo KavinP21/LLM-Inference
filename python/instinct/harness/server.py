@@ -1,6 +1,8 @@
 """The app's HTTP server, with exact-origin and cookie authentication.
 
-It listens only on 127.0.0.1. The Mac app signs in with a one-time token,
+It listens only on 127.0.0.1 (inside Instinct's Docker container, on the
+container's interface, published to the host's 127.0.0.1 only). The Mac app
+signs in with a one-time token,
 and other apps on this Mac use API keys on ``/v1``. Nothing here is ever
 published to other machines: guests use the separate gateway in
 ``gateway.py``, which has no route to this server.
@@ -38,8 +40,14 @@ class AppServer(ThreadingHTTPServer):
         loop,
         *,
         token: str | None = None,
+        container: bool = False,
     ):
-        if address[0] != "127.0.0.1":
+        # In Instinct's container the server must listen on the container's
+        # own interface for Docker to forward the host's 127.0.0.1 port to
+        # it; the browser still reaches it as 127.0.0.1, which the origin
+        # check below requires.
+        allowed = {"127.0.0.1", "0.0.0.0"} if container else {"127.0.0.1"}
+        if address[0] not in allowed:
             raise ValueError("the app's own server only binds to 127.0.0.1")
         self.service, self.loop = service, loop
         self.bootstrap_token = token or secrets.token_urlsafe(32)

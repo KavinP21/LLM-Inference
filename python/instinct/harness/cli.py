@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..agents.cli import load_config
 from ..common import strict_json
+from . import sandbox
 from .api_keys import ApiKeys
 from .connection import HostConnection
 from .extensions import MCPServerConfig, MCPStdioClient, SkillRegistry
@@ -214,14 +215,19 @@ async def serve(args):
     if remote is not None:
         # Borrowed models are never passed on to guests of this Mac.
         sharing.blocked = "This Mac uses another Mac's models, so it can't share them."
+    if getattr(args, "container", False):
+        sharing.blocked = "Sharing isn't available while Instinct runs in Docker."
     service.sharing = sharing
     try:
+        container = getattr(args, "container", False)
         server = AppServer(
-            ("127.0.0.1", args.port),
+            ("0.0.0.0" if container else "127.0.0.1", args.port),
             service,
             asyncio.get_running_loop(),
-            # The Mac app makes the token itself, so it is never printed.
+            # The Mac app (or the Docker launcher) makes the token itself, so
+            # it is never printed.
             token=os.environ.get(APP_TOKEN),
+            **({"container": True} if container else {}),
         )
         servers.append(server)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -298,6 +304,9 @@ def main():
     # Used by the Mac app: token from $INSTINCT_APP_TOKEN, a JSON ready line
     # with the port, and exit when the app closes our stdin.
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
+    # Used by docker/entrypoint.sh: listen on the container's interface (the
+    # launcher publishes the port on the host's 127.0.0.1 only).
+    parser.add_argument("--container", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--open",
         action="store_true",
@@ -347,6 +356,12 @@ def main():
         parser.error("--config is required unless --demo is given")
     if not 0 <= args.port <= 65535:
         parser.error("port must be between zero and 65535")
+    if args.container and not sandbox.in_container():
+        parser.error("--container only works inside Instinct's Docker container")
+    if args.container and len(os.environ.get(APP_TOKEN, "")) < 32:
+        parser.error(
+            f"--container needs a token of at least 32 characters in ${APP_TOKEN}"
+        )
     if args.app and args.open:
         parser.error("--open is for running without the Mac app")
     if args.app and len(os.environ.get(APP_TOKEN, "")) < 32:

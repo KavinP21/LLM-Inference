@@ -2093,7 +2093,9 @@
     try {
       const result = await api("/api/settings");
       state.settings = result.settings;
-      $("sandbox-help").textContent = result.sandbox
+      $("sandbox-help").textContent = result.sandbox_kind === "container"
+        ? "Instinct is running in a Docker container. Commands and the terminal can only change the project folder you mounted and the app's own data; the rest of your computer is out of reach. Each chat's permissions are under the message box."
+        : result.sandbox
         ? "Commands and the terminal can read your files but only write inside the workspace. Each chat's permissions are under the message box."
         : "This system has no sandbox: commands and the terminal run with your own permissions.";
       $("terminal-badge").hidden = !result.sandbox;

@@ -307,7 +307,9 @@ class AppService:
             if group and group not in choices:
                 choices[group] = {
                     "id": group,
-                    "label": model_label(worker.get("model", "")),
+                    "label": model_label(
+                        worker.get("model") or worker.get("label", "")
+                    ),
                     "context": worker.get("max_model_length"),
                 }
         return list(choices.values())
@@ -850,7 +852,11 @@ class AppService:
         if path == "/api/settings":
             if method == "POST":
                 self.update_settings(payload)
-            return {"settings": self.settings, "sandbox": sandbox.available()}
+            return {
+                "settings": self.settings,
+                "sandbox": sandbox.confined(),
+                "sandbox_kind": sandbox.kind(),
+            }
         if method == "GET" and path == "/api/live":
             return self.live()
         if method == "GET" and path == "/api/models":
