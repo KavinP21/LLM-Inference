@@ -86,7 +86,11 @@ def _definitions(config, monkeypatch):
             pass
 
     monkeypatch.setattr(cli, "LocalProcessBackend", Process)
-    asyncio.run(asyncio.run(cli.create_pool(json.loads(json.dumps(config)))).close())
+    async def build():
+        pool = await cli.create_pool(json.loads(json.dumps(config)))
+        await pool.close()
+
+    asyncio.run(build())
     return seen
 
 
