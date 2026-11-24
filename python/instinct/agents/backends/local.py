@@ -279,6 +279,7 @@ class LocalModelBackend:
                 max_context_tokens=self.config.max_model_length,
                 kv_cache_bytes=self.config.kv_cache_bytes,
                 prefix_cache_bytes=options.get("prefix_cache_bytes"),
+                prefix_cache_entries=options.get("prefix_cache_entries"),
                 prefill_chunk_size=options.get("prefill_chunk_size", 512),
                 kv_bits=options.get("kv_bits", 16),
                 memory_limit_bytes=options.get("memory_limit_bytes"),

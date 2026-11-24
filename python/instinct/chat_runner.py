@@ -176,6 +176,7 @@ class ChatRunner:
         max_context_tokens: int | None = None,
         kv_cache_bytes: int = 4 << 30,
         prefix_cache_bytes: int | None = None,
+        prefix_cache_entries: int | None = None,
         prefill_chunk_size: int = 512,
         kv_bits: int = 16,
         memory_limit_bytes: int | None = None,
@@ -210,6 +211,10 @@ class ChatRunner:
             prefill_chunk_size=prefill_chunk_size,
             kv_bits=kv_bits,
         )
+        if prefix_cache_entries is not None:
+            # Each entry of a recurrent model also holds a state slot (about
+            # 50 MB for Qwen3.5-4B), outside kv_cache_bytes.
+            options["prefix_cache_entries"] = prefix_cache_entries
         self.memory_limit_bytes = memory_limit_bytes
         loaded = threading.Event()
         failure: list[BaseException] = []

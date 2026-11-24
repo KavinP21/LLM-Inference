@@ -177,16 +177,15 @@ class DecodeBatch:
                 (pages * page + positions % page).astype(np.int32)
             )
             self._tables[name] = mx.array(packed)
-        # Without the Metal kernel, each group's keys are gathered into a
-        # dense block (the last ``span`` of each sequence) for plain attention.
-        self._metal = portable.metal_kernels(mx)
+        # The custom kernels read keys straight from the pages. Without them
+        # (or for a shape whose CUDA kernel failed its check), each group's
+        # keys are gathered into a dense block, the last ``span`` of each
+        # sequence, for plain attention.
+        self._custom = portable.custom_kernels(mx)
         self._dense: dict[str, tuple[Any, Any]] = {}
-        if not self._metal:
-            for name, group in cache.groups.items():
-                span = min(self.longest, group.window or self.longest)
-                self._dense[name] = portable.decode_rows(
-                    mx, self._tables[name], self.lengths, page_size=page, span=span
-                )
+        if self._custom is None:
+            for name in cache.groups:
+                self._dense_rows(name)
 
     @property
     def positions(self) -> Any:
@@ -205,9 +204,13 @@ class DecodeBatch:
     ) -> Any:
         group = self.cache.layer_group[layer]
         self.cache.write(layer, self._write[group.name], k, v)
-        if not self._metal:
+        if self._custom is None:
             return self._attend_dense(layer, group.name, q, scale, softcap)
-        out = paged_decode_attention(
+        if self._custom == "cuda":
+            from .backends.cuda_kernels import paged_decode_attention as kernel
+        else:
+            kernel = paged_decode_attention
+        out = kernel(
             self.mx,
             q,
             self.cache.keys[layer],
@@ -223,12 +226,27 @@ class DecodeBatch:
             if self.cache.bits == 8
             else None,
         )
+        if out is None:  # This shape's CUDA kernel failed its check.
+            return self._attend_dense(layer, group.name, q, scale, softcap)
         return out.reshape(self.count, -1)
+
+    def _dense_rows(self, name: str) -> tuple[Any, Any]:
+        if name not in self._dense:
+            window = self.cache.groups[name].window
+            span = min(self.longest, window or self.longest)
+            self._dense[name] = portable.decode_rows(
+                self.mx,
+                self._tables[name],
+                self.lengths,
+                page_size=self.cache.page_size,
+                span=span,
+            )
+        return self._dense[name]
 
     def _attend_dense(
         self, layer: int, name: str, q: Any, scale: float, softcap: float
     ) -> Any:
-        rows, valid = self._dense[name]
+        rows, valid = self._dense_rows(name)
         batch, span = int(rows.shape[0]), int(rows.shape[1])
         keys, values = self.cache.gather(layer, rows.reshape(-1))
         heads, dim = int(keys.shape[1]), int(keys.shape[2])

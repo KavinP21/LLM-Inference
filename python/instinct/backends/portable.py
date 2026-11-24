@@ -1,9 +1,10 @@
-"""The engine's GPU work in plain MLX ops, for devices without Metal.
+"""The engine's GPU work in plain MLX ops, and the choice of custom kernels.
 
-``metal_kernels`` holds hand-written Metal kernels for paged decode attention
-and Qwen3.5's gated delta rule. They only run on Apple GPUs. Everywhere else
-(NVIDIA through MLX's CUDA backend, or the CPU) the engine uses the versions
-here, which compute the same thing from ordinary MLX ops.
+Paged decode attention and Qwen3.5's gated delta rule have hand-written
+kernels: ``metal_kernels`` on Apple GPUs and ``cuda_kernels`` on NVIDIA GPUs
+(through MLX's CUDA backend). The versions here compute the same thing from
+ordinary MLX ops. They run on the CPU, and on NVIDIA for any shape whose CUDA
+kernel failed its first-use check (see ``cuda_kernels``).
 
 MLX's fused ops (RoPE with per-sequence offsets or explicit frequencies,
 attention at head dim 512, RMS norm without a weight, ``mx.compile``) may be
@@ -12,7 +13,7 @@ graph is evaluated, mid-step. So off Metal each one is tried once on tiny
 inputs against a plain version, and a plain version replaces any that fails
 or disagrees. ``report`` says which were used.
 
-``INSTINCT_KERNELS`` overrides the choice: ``portable`` skips the Metal
+``INSTINCT_KERNELS`` overrides the choice: ``portable`` skips the custom
 kernels, and ``plain`` also replaces every fused op (for checking a device
 or the plain versions themselves).
 """
@@ -35,22 +36,51 @@ def mode() -> str:
     return value
 
 
+def custom_kernels(mx: Any) -> str | None:
+    """Which hand-written kernels can run on the default device: "metal",
+    "cuda" or None."""
+    if mode() != "auto":
+        return None
+    try:
+        if mx.default_device() != mx.gpu:
+            return None
+    except (AttributeError, RuntimeError):
+        return None
+    for name in ("metal", "cuda"):
+        backend = getattr(mx, name, None)
+        try:
+            if backend is not None and backend.is_available():
+                return name
+        except (AttributeError, RuntimeError):
+            continue
+    return None
+
+
 def metal_kernels(mx: Any) -> bool:
     """Whether the custom Metal kernels can run on the default device."""
-    if mode() != "auto":
-        return False
-    metal = getattr(mx, "metal", None)
-    try:
-        return bool(metal and metal.is_available()) and mx.default_device() == mx.gpu
-    except (AttributeError, RuntimeError):
-        return False
+    return custom_kernels(mx) == "metal"
 
 
 def report(mx: Any) -> dict[str, str]:
     """Which implementation each piece of work uses on this device."""
-    custom = "metal" if metal_kernels(mx) else "portable"
+    custom = custom_kernels(mx) or "portable"
     fused = {name: "fused" if _fused(mx, name) else "plain" for name in _PROBES}
-    return {"decode_attention": custom, "gated_delta": custom, **fused}
+    return {
+        "decode_attention": custom,
+        "gated_delta": custom,
+        **fused,
+        **kernel_fallbacks(mx),
+    }
+
+
+def kernel_fallbacks(mx: Any) -> dict[str, str]:
+    """Custom kernels that failed their check for some shape and run the
+    plain version there instead."""
+    if custom_kernels(mx) != "cuda":
+        return {}
+    from . import cuda_kernels
+
+    return {name: "portable" for name in cuda_kernels.fallbacks()}
 
 
 def _fused(mx: Any, name: str) -> bool:
@@ -225,10 +255,23 @@ def gated_delta(
     once with batched matmuls, and only applying the incoming state is
     sequential across chunks.
     """
-    if metal_kernels(mx):
+    kind = custom_kernels(mx)
+    if kind == "metal":
         from .metal_kernels import gated_delta as kernel
 
         return kernel(mx, q, k, v, g, beta, state)
+    if kind == "cuda":
+        from . import cuda_kernels
+
+        result = cuda_kernels.gated_delta(mx, q, k, v, g, beta, state)
+        if result is not None:
+            return result
+    return _gated_delta_plain(mx, q, k, v, g, beta, state)
+
+
+def _gated_delta_plain(
+    mx: Any, q: Any, k: Any, v: Any, g: Any, beta: Any, state: Any
+) -> tuple[Any, Any]:
     f32 = mx.float32
     batch, steps, k_heads, _ = (int(n) for n in q.shape)
     v_heads = int(v.shape[2])
