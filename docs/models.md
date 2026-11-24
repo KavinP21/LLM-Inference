@@ -122,4 +122,6 @@ The engine also runs FP16 Qwen2 and Gemma 3 `.engine` files.
   prompt is slow: 29 minutes for 262K tokens on Gemma (see
   [benchmarks](benchmarks.md#256k-context)). Gemma 4's audio input hasn't been
   tried here.
-- Both models have a portable path for MLX's CUDA backend. See [NVIDIA setup](nvidia.md) for validation status.
+- Both models run on NVIDIA GPUs through MLX's CUDA backend, with custom CUDA
+  kernels that fall back to a portable path. Qwen3.5 fits an 8 GB card and
+  Gemma 4 needs 20 GB. See [NVIDIA setup](nvidia.md).

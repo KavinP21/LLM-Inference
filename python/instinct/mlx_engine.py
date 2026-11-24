@@ -594,7 +594,7 @@ class MlxEngine:
             "max_num_sequences": self.max_num_sequences,
             "max_model_length": self.max_model_length,
             "kv_bits": self.kv_bits,
-            "kernels": self.kernels,
+            "kernels": {**self.kernels, **portable.kernel_fallbacks(self.mx)},
             "kv_pools": pools,
             "kv_device_bytes": self.cache.device_bytes,
             "prefix_cache": self.prefix_cache.stats() if self.prefix_cache else None,

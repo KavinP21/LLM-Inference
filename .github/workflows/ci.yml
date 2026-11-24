@@ -43,7 +43,7 @@ jobs:
         env:
           PYTHONPATH: python
           INSTINCT_INSPECT_MODEL: build/instinct-inspect-model
-      - run: bash -n tools/*.sh tools/pace/*.sh tools/pace/*.sbatch
+      - run: bash -n tools/*.sh tools/pace/*.sh tools/pace/*.sbatch tools/nvidia/*.sh
 
   mlx-linux:
     # The MLX engine on Linux without Metal, through the same portable kernels
@@ -55,9 +55,24 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install "mlx[cpu]==0.32.4" numpy pytest safetensors
-      - run: python -m pytest -q tests/test_mlx_engine.py tests/test_portable_kernels.py
+      - run: python -m pytest -q tests/test_mlx_engine.py tests/test_portable_kernels.py tests/test_cuda_dispatch.py
         env:
           PYTHONPATH: python
+
+  cuda-kernels:
+    # The MLX engine's CUDA kernels, compiled with NVRTC the way MLX compiles
+    # them at run time, for Turing through Hopper. Needs no GPU; only the
+    # wheels' compiler and headers are installed.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: >-
+          python -m pip install --no-deps "mlx-cuda-12==0.32.4"
+          "nvidia-cuda-nvrtc-cu12==12.9.*" "nvidia-cuda-runtime-cu12==12.9.*"
+      - run: python tools/nvidia/compile_kernels.py
 
   sanitizers:
     runs-on: ubuntu-24.04

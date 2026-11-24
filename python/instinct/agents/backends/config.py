@@ -151,6 +151,7 @@ CHAT_OPTIONS = frozenset(
         "kv_bits",
         "prefill_chunk_size",
         "prefix_cache_bytes",
+        "prefix_cache_entries",
         "memory_limit_bytes",
     }
 )
@@ -239,6 +240,9 @@ class WorkerConfig:
             raise ValueError(f"effort must be one of {sorted(EFFORT_BUDGETS)}")
         if self.engine_options.get("kv_bits", 16) not in {8, 16}:
             raise ValueError("kv_bits must be 8 or 16")
+        entries = self.engine_options.get("prefix_cache_entries", 1)
+        if type(entries) is not int or not 1 <= entries <= 1024:
+            raise ValueError("prefix_cache_entries must be an integer from 1 to 1024")
         if {
             "max_model_length",
             "kv_cache_bytes",

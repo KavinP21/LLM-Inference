@@ -1,5 +1,9 @@
 # RTX/WSL2 setup and first validation
 
+This page is for the standalone C++ CUDA engine, which reads Qwen2 `.engine`
+files. To run the Instinct app with Gemma 4 or Qwen3.5 on an NVIDIA PC, see
+[nvidia.md](nvidia.md) instead.
+
 The NVIDIA machine is the only source of CUDA correctness and performance results. Use Ubuntu
 24.04 under WSL2, keep the Windows NVIDIA driver current, and install the CUDA 12.8 toolkit inside
 WSL without installing a second Linux display driver.

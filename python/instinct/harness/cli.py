@@ -6,8 +6,10 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import signal
 import stat
+import subprocess
 import threading
 from pathlib import Path
 
@@ -78,6 +80,49 @@ def load_mcp_config(path: str | Path, workspace: Path) -> list[MCPServerConfig]:
 
 
 APP_TOKEN = "INSTINCT_APP_TOKEN"
+
+
+def in_wsl() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        return "microsoft" in Path("/proc/sys/kernel/osrelease").read_text().lower()
+    except OSError:
+        return False
+
+
+def open_browser(url: str) -> bool:
+    """Open ``url`` in the person's browser: Windows' default browser from
+    WSL (whose localhost reaches this server), or this machine's otherwise."""
+    if in_wsl():
+        # `start` hands the URL to Windows' default browser. Run it from a
+        # Windows folder so cmd.exe doesn't warn about a UNC current folder.
+        windows = Path("/mnt/c")
+        commands = [["wslview", url], ["cmd.exe", "/c", "start", "", url]]
+        for command in commands:
+            if not shutil.which(command[0]):
+                continue
+            try:
+                done = subprocess.run(
+                    command,
+                    cwd=windows if windows.is_dir() else None,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if done.returncode == 0:
+                return True
+        return False
+    import webbrowser
+
+    try:
+        return bool(webbrowser.open(url))
+    except webbrowser.Error:
+        return False
 
 
 async def serve(args):
@@ -205,6 +250,19 @@ async def serve(args):
             threading.Thread(target=watch_app, daemon=True).start()
         else:
             print(f"Instinct is serving at {server.origin}.", flush=True)
+            if getattr(args, "open", False):
+                # The sign-in link carries this run's one-time token after
+                # the #, which the browser never sends anywhere.
+                link = f"{server.origin}/#token={server.bootstrap_token}"
+                if await asyncio.to_thread(open_browser, link):
+                    print("Opened Instinct in your browser.", flush=True)
+                else:
+                    print(
+                        "Couldn't open a browser. To sign in, open this link "
+                        "on this computer (it stops working when Instinct "
+                        f"stops):\n{link}",
+                        flush=True,
+                    )
         await stopped.wait()
     finally:
         await asyncio.to_thread(sharing.stop)
@@ -240,6 +298,11 @@ def main():
     # Used by the Mac app: token from $INSTINCT_APP_TOKEN, a JSON ready line
     # with the port, and exit when the app closes our stdin.
     parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the app in your browser, signed in (on WSL, Windows' browser)",
+    )
     parser.add_argument(
         "--skills-dir",
         action="append",
@@ -284,6 +347,8 @@ def main():
         parser.error("--config is required unless --demo is given")
     if not 0 <= args.port <= 65535:
         parser.error("port must be between zero and 65535")
+    if args.app and args.open:
+        parser.error("--open is for running without the Mac app")
     if args.app and len(os.environ.get(APP_TOKEN, "")) < 32:
         parser.error(f"--app needs a token of at least 32 characters in ${APP_TOKEN}")
     try:

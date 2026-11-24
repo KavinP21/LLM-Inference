@@ -1,0 +1,12 @@
+# What tools/nvidia/instinct.sh installs. Versions match the ones the engine
+# is tested with on the Mac.
+mlx[cuda12]==0.32.4
+# Headers MLX needs to compile its kernels, and Instinct's, at run time.
+nvidia-cuda-runtime-cu12==12.9.*
+numpy==2.5.3
+transformers==5.17.0
+tokenizers==0.23.2
+huggingface-hub==1.32.0
+safetensors==0.8.0
+Jinja2==3.1.6
+Pillow==12.3.0

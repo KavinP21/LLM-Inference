@@ -19,7 +19,9 @@ Underneath is an LLM inference engine written from scratch in Python and C++,
 with an Apple MLX/Metal backend and a CUDA backend. On Apple silicon it runs
 the app's Gemma 4 (MoE, with images) and Qwen3.5 (hybrid linear attention)
 straight from their 4-bit checkpoints, plus Qwen2 and Gemma 3 `.engine` files,
-with paged KV arenas, continuous batching and custom Metal kernels. PyTorch and
+with paged KV arenas, continuous batching and custom Metal kernels. On NVIDIA
+GPUs the same engine runs through MLX's CUDA backend with custom CUDA kernels.
+PyTorch and
 Transformers are only used to export weights, tokenize and check outputs;
 they're never in the generation loop.
 
@@ -66,7 +68,7 @@ workload and run settings.
 | Qwen2.5 on MLX | Matches Transformers greedy output token for token (4 prompts × 32 tokens) |
 | Gemma 3 on MLX | 3 of 4 continuations match exactly; the 4th diverges after 25 tokens at an FP16 near-tie |
 | 256K context | Gemma 4 answers from a 262K-token prompt and releases every page afterwards; prefill takes 29 minutes |
-| NVIDIA via MLX | Portable kernels are available for MLX's CUDA backend. Tested on Apple silicon and on Linux CPU in CI. NVIDIA hardware validation is pending. See [NVIDIA setup](docs/nvidia.md). |
+| NVIDIA via MLX | Custom CUDA kernels for paged decode attention and Qwen3.5's gated delta rule, with a portable fallback. They compile for Turing through Hopper and match float64 references under a CPU emulator in CI, but **haven't run on an NVIDIA GPU yet**. An 8 GB RTX 3070 Ti runs Qwen3.5; Gemma 4 needs 20 GB or more. See [NVIDIA setup](docs/nvidia.md). |
 | C++ CUDA engine | Compiles in CI. Reads only Qwen2 `.engine` files and **hasn't run on a GPU** |
 
 See [docs/roadmap.md](docs/roadmap.md) for what's next.
@@ -109,8 +111,9 @@ with create_engine(
 For several concurrent requests, use `submit()`, then call `step()` until they
 finish. `cancel()` and `stats()` are also available. [docs/setup-mlx.md](docs/setup-mlx.md)
 covers Gemma export and the correctness tools, and [docs/setup-wsl.md](docs/setup-wsl.md)
-covers building the CUDA backend under WSL2, and [docs/pace.md](docs/pace.md)
-benchmarking on an H100 on Georgia Tech's PACE ICE cluster.
+covers building the C++ CUDA engine under WSL2. [docs/nvidia.md](docs/nvidia.md)
+covers running the app on an NVIDIA PC (WSL2 or Linux), and [docs/pace.md](docs/pace.md)
+covers benchmarking on an H100 on Georgia Tech's PACE ICE cluster.
 
 ## Also in this repo
 
@@ -141,7 +144,8 @@ INSTINCT_INSPECT_MODEL=build/instinct-inspect-model PYTHONPATH=python python -m 
 The Metal tests check tiny random Qwen and Gemma models against independent
 references at page boundaries, with mixed-length batches, chunked prefill,
 cancellation and the custom kernels on and off. CI runs the Python suite without model weights on Linux and macOS, a separate
-MLX CPU job, the C++ tests under ASan/UBSan, and a CUDA build and import check.
+MLX CPU job, the C++ tests under ASan/UBSan, a CUDA build and import check, and
+an NVRTC compile of the MLX engine's CUDA kernels.
 
 ## Layout
 
