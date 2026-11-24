@@ -86,6 +86,7 @@ def _definitions(config, monkeypatch):
             pass
 
     monkeypatch.setattr(cli, "LocalProcessBackend", Process)
+
     async def build():
         pool = await cli.create_pool(json.loads(json.dumps(config)))
         await pool.close()
